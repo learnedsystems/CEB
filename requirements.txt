@@ -1,0 +1,7 @@
+numpy
+pandas
+klepto
+networkx
+sqlparse
+moz_sql_parser
+psycopg2-binary

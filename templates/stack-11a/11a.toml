@@ -1,0 +1,158 @@
+title = ""
+
+[base_sql]
+
+sql = '''SELECT t1.name, count(*)
+FROM
+site as s,
+so_user as u1,
+question as q1,
+answer as a1,
+tag as t1,
+tag_question as tq1
+WHERE
+q1.owner_user_id = u1.id
+AND a1.question_id = q1.id
+AND a1.owner_user_id = u1.id
+AND s.site_id = q1.site_id
+AND s.site_id = a1.site_id
+AND s.site_id = u1.site_id
+AND s.site_id = tq1.site_id
+AND s.site_id = t1.site_id
+AND q1.id = tq1.question_id
+AND t1.id = tq1.tag_id
+AND (Xsite_name)
+AND (Xtag_name)
+AND (Xquestion_low)
+AND (Xquestion_up)
+AND (Xu1_low)
+AND (Xu1_up)
+GROUP BY t1.name'''
+
+# template 1
+[[templates]]
+
+  name = ""
+
+  [[templates.predicates]]
+  [[templates.predicates.multi]]
+  type = "list"
+  columns = ["q1.view_count"]
+  keys = ["Xquestion_low", "Xquestion_up"]
+  dependencies = 0
+  options = [[0,100], [100,100000], [10,1000]]
+  sampling_method = "uniform"
+  pred_type = "range"
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates.multi]]
+  type = "list"
+  columns = ["q1.score"]
+  keys = ["Xquestion_low", "Xquestion_up"]
+  dependencies = 0
+  options = [[0,0], [1,10], [10,1000], [0,5], [0,1000]]
+  sampling_method = "uniform"
+  pred_type = "range"
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates.multi]]
+  type = "list"
+  columns = ["q1.favorite_count"]
+  keys = ["Xquestion_low", "Xquestion_up"]
+  dependencies = 0
+  options = [[0,1], [1,10], [5,5000], [0,10000]]
+  sampling_method = "uniform"
+  pred_type = "range"
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates]]
+  [[templates.predicates.multi]]
+  type = "list"
+  columns = ["u1.upvotes"]
+  keys = ["Xu1_low", "Xu1_up"]
+  dependencies = 0
+  options = [[0,1], [1,100], [10,1000000], [0,100]]
+  sampling_method = "uniform"
+  pred_type = "range"
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates.multi]]
+  type = "list"
+  columns = ["u1.reputation"]
+  keys = ["Xu1_low", "Xu1_up"]
+  dependencies = 0
+  options = [[0,10], [0,100], [10,100000]]
+  sampling_method = "uniform"
+  pred_type = "range"
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates.multi]]
+  # a lot or very few
+  type = "list"
+  columns = ["u1.downvotes"]
+  keys = ["Xu1_low", "Xu1_up"]
+  dependencies = 0
+  options = [[0,1], [0,10], [10,100000]]
+  sampling_method = "uniform"
+  pred_type = "range"
+  min_samples = 1
+  max_samples = 1
+
+  # all the unknown predicates in the base sql will be specified in groups
+  [[templates.predicates]]
+  type = "sqls"
+  columns = ["s.site_name"]
+  keys = ["Xsite_name"]
+  dependencies = 0
+
+  pred_type = "in"
+
+  sqls = ["SELECT s.site_name FROM site as s WHERE s.site_name IN ('stackoverflow','math','superuser','askubuntu')",
+  "SELECT s.site_name, count(*) FROM site as s, question as q WHERE q.site_id = s.site_id GROUP BY s.site_name HAVING COUNT(*) > 15000 ORDER BY count(*) desc"]
+
+  sampling_method = "quantile"
+  num_quantiles = 2
+  min_samples = 1
+  max_samples = 5
+
+  # all the unknown predicates in the base sql will be specified in groups
+
+  [[templates.predicates]]
+
+  # length of these lists should be the same
+  type = "sql"
+  columns = ["t1.name"]
+  keys = ["Xtag_name"]
+  dependencies = 1
+  pred_type = "in"
+
+  sql = '''
+  select t.name, count(*)
+  from
+  tag as t,
+  site as s,
+  question as q1,
+  tag_question as tq
+  where
+  t.site_id = s.site_id
+  and q1.site_id = s.site_id
+  and tq.site_id = s.site_id
+  and tq.question_id = q1.id
+  and tq.tag_id = t.id
+  and (Xsite_name)
+  and (Xquestion_low)
+  and (Xquestion_up)
+  group by t.name
+  having count(*) > 500
+  order by count(*) desc
+  '''
+
+  sampling_method = "quantile"
+  num_quantiles = 2
+  min_samples = 2
+  max_samples = 15

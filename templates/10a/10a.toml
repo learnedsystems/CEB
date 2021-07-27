@@ -1,0 +1,153 @@
+title = "regex 1"
+
+# person info, e.g., birth location, movie info, e.g., genre/language
+
+[base_sql]
+sql = '''
+SELECT n.name, mi1.info, MIN(t.production_year), MAX(t.production_year)
+FROM title as t,
+kind_type as kt,
+movie_info as mi1,
+info_type as it1,
+cast_info as ci,
+role_type as rt,
+name as n
+WHERE
+t.id = ci.movie_id
+AND t.id = mi1.movie_id
+AND mi1.info_type_id = it1.id
+AND t.kind_id = kt.id
+AND ci.person_id = n.id
+AND ci.movie_id = mi1.movie_id
+AND ci.role_id = rt.id
+AND (Xit1)
+AND (Xmovie_info)
+AND (Xname)
+AND (Xmovie_kind)
+AND (Xrole)
+GROUP BY mi1.info, n.name
+'''
+
+# template 1
+[[templates]]
+
+  name = "1a"
+
+  [[templates.predicates]]
+  type = "sql"
+  columns = ["n.name"]
+  keys = ["Xname"]
+  dependencies = 0
+  pred_type = "ILIKE"
+
+  sampling_method = "quantile"
+  #num_quantiles = 2
+  thresholds = [200, 400, 800, 1600, 3200, 6400, 10000]
+  min_count = 200
+  min_chars = 3
+  max_chars = 7
+
+  sql = '''
+  SELECT (n.name)
+	FROM name as n, cast_info as ci
+  WHERE n.id = ci.person_id
+  AND random() < 0.1
+  '''
+
+  [[templates.predicates]]
+  type = "sql"
+  columns = ["kt.kind"]
+  keys = ["Xmovie_kind"]
+  dependencies = 1
+  pred_type = "IN"
+
+  sql = '''
+  SELECT kt.kind, count(*)
+  FROM kind_type as kt, title as t,
+  cast_info as ci, name as n
+  WHERE t.id = ci.movie_id
+  AND t.kind_id = kt.id
+  AND n.id = ci.person_id
+  AND (Xname)
+  GROUP BY kt.kind
+  '''
+
+  sampling_method = "quantile"
+  num_quantiles = 2
+  min_samples = 3
+  max_samples = 15
+
+  [[templates.predicates]]
+
+  type = "sql"
+  columns = ["rt.role"]
+  keys = ["Xrole"]
+  dependencies = 1
+  pred_type = "IN"
+
+  sql = '''
+  SELECT rt.role, count(*)
+  FROM role_type as rt, cast_info as ci,
+  name as n WHERE
+  n.id = ci.person_id
+  AND ci.role_id = rt.id
+  AND (Xname)
+  GROUP BY rt.role
+  '''
+
+  sampling_method = "quantile"
+  num_quantiles = 2
+  min_samples = 3
+  max_samples = 10
+
+  [[templates.predicates]]
+  type = "sql"
+  columns = ["it1.id"]
+  keys = ["Xit1"]
+  dependencies = 1
+  pred_type = "IN"
+
+  sql = '''
+  SELECT it.id, count(*)
+	FROM movie_info as mi, info_type as it, title as t
+	WHERE t.id = mi.movie_id
+	AND mi.info_type_id = it.id
+	GROUP BY it.id HAVING (COUNT(*) > 50000 AND
+      COUNT(DISTINCT mi.info) < 500)
+  ORDER BY COUNT(*) DESC
+  '''
+
+  sampling_method = "quantile"
+  num_quantiles = 1
+  min_samples = 1
+  max_samples = 3
+
+  [[templates.predicates]]
+  type = "sql"
+  columns = ["mi1.info"]
+  keys = ["Xmovie_info"]
+  dependencies = 1
+  pred_type = "IN"
+
+  sql = '''
+  SELECT mi1.info, count(*)
+  FROM movie_info as mi1,
+  info_type as it1, kind_type as kt,
+  title as t, cast_info as ci, name as n
+  WHERE t.id = mi1.movie_id
+  AND mi1.info_type_id = it1.id
+  AND t.kind_id = kt.id
+  AND ci.movie_id = t.id
+  AND ci.person_id = n.id
+  AND (Xit1)
+  AND (Xmovie_kind)
+  AND (Xname)
+  GROUP BY mi1.info
+  HAVING count(*) > 50
+  ORDER BY count(*) desc
+  '''
+
+  sampling_method = "quantile"
+  num_quantiles = 2
+  min_samples = 10
+  max_samples = 20

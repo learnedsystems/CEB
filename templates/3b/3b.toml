@@ -1,0 +1,194 @@
+title = "Template 4"
+# combining toml3 + cast_info stuff
+# TODO: add movie_info join with preds on it on top of this and compare jl#s
+
+[base_sql]
+sql = '''SELECT t.title, n.name, cn.name, COUNT(*)
+FROM title as t,
+movie_keyword as mk,
+keyword as k,
+movie_companies as mc,
+company_name as cn,
+company_type as ct,
+kind_type as kt,
+cast_info as ci,
+name as n,
+role_type as rt
+WHERE t.id = mk.movie_id
+AND t.id = mc.movie_id
+AND t.id = ci.movie_id
+AND ci.movie_id = mc.movie_id
+AND ci.movie_id = mk.movie_id
+AND mk.movie_id = mc.movie_id
+AND k.id = mk.keyword_id
+AND cn.id = mc.company_id
+AND ct.id = mc.company_type_id
+AND kt.id = t.kind_id
+AND ci.person_id = n.id
+AND ci.role_id = rt.id
+AND (Xtitle)
+AND (Xname)
+AND (Xcompany)
+AND (Xmovie_kind)
+AND (Xrole)
+GROUP BY t.title, n.name, cn.name
+ORDER BY COUNT(*) DESC
+'''
+
+# template 1
+[[templates]]
+
+  name = "1a"
+
+  [[templates.predicates]]
+  type = "sql"
+  columns = ["t.title"]
+  keys = ["Xtitle"]
+  dependencies = 0
+  pred_type = "ILIKE"
+
+  sampling_method = "quantile"
+  thresholds = [500, 1000, 5000, 10000, 50000, 100000]
+  min_count = 200
+  min_chars = 2
+  max_chars = 7
+
+  sql = '''
+  SELECT (t.title)
+	FROM title AS t
+  '''
+
+  [[templates.predicates]]
+  [[templates.predicates.multi]]
+  type = "sql"
+  columns = ["n.name_pcode_nf"]
+  keys = ["Xname"]
+  dependencies = 0
+  pred_type = "ILIKE"
+
+  sampling_method = "quantile"
+  #num_quantiles = 2
+  thresholds = [1000, 2000, 4000, 8000, 20000, 40000]
+  min_count = 2000
+  min_chars = 1
+  max_chars = 3
+
+  sql = '''
+  SELECT (n.name_pcode_nf)
+	FROM name as n, cast_info as ci
+  WHERE n.id = ci.person_id
+  AND random() < 0.1
+  '''
+
+  [[templates.predicates.multi]]
+  type = "sql"
+  columns = ["n.name_pcode_cf"]
+  keys = ["Xname"]
+  dependencies = 0
+  pred_type = "ILIKE"
+
+  sampling_method = "quantile"
+  #num_quantiles = 2
+  thresholds = [1000, 2000, 4000, 8000, 20000, 40000]
+  min_count = 2000
+  min_chars = 1
+  max_chars = 3
+
+  sql = '''
+  SELECT (n.name_pcode_nf)
+	FROM name as n, cast_info as ci
+  WHERE n.id = ci.person_id
+  AND random() < 0.1
+  '''
+
+  [[templates.predicates.multi]]
+  type = "sql"
+  columns = ["n.surname_pcode"]
+  keys = ["Xname"]
+  dependencies = 0
+  pred_type = "ILIKE"
+
+  sampling_method = "quantile"
+  #num_quantiles = 2
+  thresholds = [1000, 2000, 4000, 8000, 20000, 40000]
+  min_count = 2000
+  min_chars = 1
+  max_chars = 3
+
+  sql = '''
+  SELECT (n.name_pcode_nf)
+	FROM name as n, cast_info as ci
+  WHERE n.id = ci.person_id
+  AND random() < 0.1
+  '''
+
+  [[templates.predicates]]
+
+  type = "sql"
+  columns = ["rt.role"]
+  keys = ["Xrole"]
+  dependencies = 1
+  pred_type = "IN"
+
+  sql = '''
+  SELECT rt.role, count(*)
+  FROM role_type as rt, cast_info as ci,
+  name as n, title as t WHERE
+  n.id = ci.person_id
+  AND ci.role_id = rt.id
+  AND ci.movie_id = t.id
+  AND (Xname)
+  AND (Xtitle)
+  GROUP BY rt.role
+  '''
+
+  sampling_method = "quantile"
+  num_quantiles = 1
+  min_samples = 3
+  max_samples = 10
+
+  [[templates.predicates]]
+  type = "sql"
+  columns = ["kt.kind"]
+  keys = ["Xmovie_kind"]
+  dependencies = 1
+  pred_type = "IN"
+
+  sql = '''
+  SELECT kt.kind, count(*)
+  FROM kind_type as kt, title as t,
+  cast_info as ci, name as n
+  WHERE t.id = ci.movie_id
+  AND t.kind_id = kt.id
+  AND n.id = ci.person_id
+  AND (Xname)
+  AND (Xtitle)
+  GROUP BY kt.kind
+  '''
+
+  sampling_method = "quantile"
+  num_quantiles = 1
+  min_samples = 3
+  max_samples = 15
+
+  [[templates.predicates]]
+  type = "sql"
+  columns = ["cn.name"]
+  keys = ["Xcompany"]
+  dependencies = 1
+  pred_type = "ILIKE"
+
+  sampling_method = "quantile"
+  num_quantiles = 1
+  min_count = 100
+  min_chars = 1
+  max_chars = 4
+
+  sql = '''
+  SELECT (cn.name)
+	FROM company_name as cn, movie_companies as mc,
+  title as t WHERE
+  t.id = mc.movie_id
+  AND cn.id = mc.company_id
+  AND (Xtitle)
+  '''

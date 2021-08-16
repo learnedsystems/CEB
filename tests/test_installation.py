@@ -1,13 +1,12 @@
 import sys
 sys.path.append(".")
 from query_representation.query import *
-from losses.losses import *
+from evaluation.eval_fns import *
 import glob
 import random
 
 query_dir = "./queries/imdb/"
-test_queries = ["4a/4a100.pkl"]
-num_per_template=10
+test_queries = ["4a/4a100.pkl", "1a/1a10.pkl"]
 
 def test_load():
     for q in test_queries:
@@ -27,7 +26,13 @@ def test_pg_cost():
         ests = get_postgres_cardinalities(qrep)
         preds.append(ests)
 
-    compute_postgres_plan_cost(qreps, preds)
+    ppc = get_eval_fn("ppc")
+    errors = ppc.eval(qreps, preds, samples_type="test",
+            result_dir=None, user = "imdb", db_name = "imdb",
+            db_host = "localhost", port = 5432,
+            alg_name = "test")
+
+    print("Postgres Plan Cost: ", np.mean(errors))
 
 def test_plan_cost():
     qreps = []
@@ -39,7 +44,10 @@ def test_plan_cost():
         ests = get_postgres_cardinalities(qrep)
         preds.append(ests)
 
-    compute_plan_cost(qreps, preds, cost_model="C")
+    pc = get_eval_fn("plancost")
+    errors = pc.eval(qreps, preds, samples_type="test",
+            result_dir=None, alg_name = None)
+    print("Plan Cost: ", np.mean(errors))
 
 test_load()
 test_pg_cost()

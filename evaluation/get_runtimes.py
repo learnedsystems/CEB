@@ -19,7 +19,7 @@ RERUN_TIMEOUTS = True
 
 def read_flags():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--results_dir", type=str, required=False,
+    parser.add_argument("--result_dir", type=str, required=False,
             default="./results")
     parser.add_argument("--cost_model", type=str, required=False,
             default="cm1")
@@ -37,7 +37,7 @@ def read_flags():
     parser.add_argument("--db_host", type=str, required=False,
             default="localhost")
     parser.add_argument("--user", type=str, required=False,
-            default="arthurfleck")
+            default="imdb")
     parser.add_argument("--pwd", type=str, required=False,
             default="password")
     parser.add_argument("--port", type=str, required=False,
@@ -125,13 +125,13 @@ def main():
         cur_runtimes["exp_analyze"].append(exp_analyze)
 
     cost_model = args.cost_model
-    costs_fn = args.results_dir + "/" + cost_model + "_" + args.costs_fn
+    costs_fn = args.result_dir + "/" + cost_model + "_" + args.costs_fn
     assert os.path.exists(costs_fn)
 
     costs = pd.read_csv(costs_fn)
     assert isinstance(costs, pd.DataFrame)
 
-    rt_fn = args.results_dir + "/" + "runtimes_" + args.costs_fn
+    rt_fn = args.result_dir + "/" + "runtimes_" + args.costs_fn
     # go in order and execute runtimes...
     if os.path.exists(rt_fn):
         runtimes = pd.read_csv(rt_fn)

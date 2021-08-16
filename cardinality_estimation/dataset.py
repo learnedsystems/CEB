@@ -6,6 +6,7 @@ import numpy as np
 import time
 
 from query_representation.utils import *
+
 import pdb
 
 def to_variable(arr, use_cuda=True, requires_grad=False):
@@ -35,14 +36,11 @@ class QueryDataset(data.Dataset):
         self.maxv = self.featurizer.max_val
         self.feattype = self.featurizer.featurization_type
 
-        # -1 to ignore SOURCE_NODE
-        # FIXME: check if SOURCE NODE actually in the samples
-        total_nodes = [len(s["subset_graph"].nodes())-1 for s in samples]
-        total_expected_samples = sum(total_nodes)
-
-        # TODO: we want to avoid this, and convert them on the fly. Just keep
-        # some indexing information around.
+        # TODO: we may want to avoid this, and convert them on the fly. Just
+        # keep some indexing information around.
         self.X, self.Y, self.info = self._get_feature_vectors(samples)
+
+        self.num_samples = len(self.X)
 
     def _get_query_features(self, qrep, dataset_qidx,
             query_idx):
@@ -182,12 +180,12 @@ class QueryDataset(data.Dataset):
             cur_info = {}
             cur_info["num_tables"] = len(nodes)
             cur_info["dataset_idx"] = dataset_qidx + node_idx
+            cur_info["node_idx"] = node_idx
             cur_info["query_idx"] = query_idx
-            cur_info["total"] = 0.00
+
             sample_info.append(cur_info)
 
         return X,Y,sample_info
-
 
     def _get_feature_vectors(self, samples):
         '''
@@ -247,6 +245,7 @@ class QueryDataset(data.Dataset):
         '''
         '''
         if self.load_query_together:
+            assert False, "needs to be implemented"
             start_idx = self.start_idxs[index]
             end_idx = start_idx + self.idx_lens[index]
             if self.feattype == "combined":

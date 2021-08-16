@@ -88,11 +88,6 @@ class Featurizer():
 
         self.templates = []
 
-        # for pgm stuff
-        # self.foreign_keys = {}    # table.key : table.key
-        # self.primary_keys = set() # table.key
-        # self.alias_to_keys = defaultdict(set)
-
         self.max_in_degree = 0
         self.max_out_degree = 0
         self.max_paths = 0
@@ -129,12 +124,6 @@ class Featurizer():
     def execute(self, sql):
         '''
         '''
-        # archive only considers the stuff stored in disk
-        ## FIXME: get stuff that works on both places
-        # works on aws
-        # con = pg.connect(user=self.user, port=self.port,
-                # password=self.pwd, database=self.db_name)
-
         con = pg.connect(user=self.user, host=self.db_host, port=self.port,
                 password=self.pwd, database=self.db_name)
         cursor = con.cursor()
@@ -192,7 +181,6 @@ class Featurizer():
             {pred_column: (idx, num_vals)}
         where the idx refers to the elements position in the feature vector,
         and num_vals refers to the number of values it will occupy.
-        E.g. TODO.
         '''
         args = locals()
         arg_key = ""
@@ -559,84 +547,41 @@ class Featurizer():
     def get_table_features(self, table, bitmap_dict=None):
         '''
         '''
-        if self.featurization_type == "set":
-            tables_vector = np.zeros(self.max_table_feature_len)
-            if table not in self.table_featurizer:
-                # print("table: {} not found in featurizer".format(table))
-                return tables_vector
-            tables_vector[self.table_featurizer[table]] = 1.00
-            if bitmap_dict is not None and self.sample_bitmap:
-                if self.sample_bitmap_key not in bitmap_dict:
-                    return tables_vector
-                bitmap = bitmap_dict[self.sample_bitmap_key]
-                _, num_bins = self.sample_bitmap_featurizer[table]
-
-                for val in bitmap:
-                    if table+str(val) in self.bitmap_mapping:
-                        cur_bin = self.bitmap_mapping[table+str(val)]
-                    else:
-                        cur_bin = self.bitmap_next_mapping[table]
-                        self.bitmap_next_mapping[table] += 1
-                        self.bitmap_mapping[table+str(val)] = cur_bin
-
-                    idx = cur_bin % num_bins
-
-                    #### only difference compared to the non-set case. combine
-                    #### the code.
-                    tables_vector[idx] = 1.00
+        tables_vector = np.zeros(self.table_features_len)
+        if table not in self.table_featurizer:
+            print("table: {} not found in featurizer".format(table))
             return tables_vector
 
-        else:
-            tables_vector = np.zeros(self.table_features_len)
-            if table not in self.table_featurizer:
-                print("table: {} not found in featurizer".format(table))
+        tables_vector[self.table_featurizer[table]] = 1.00
+        if bitmap_dict is not None and self.sample_bitmap:
+            if self.sample_bitmap_key not in bitmap_dict:
                 return tables_vector
+            bitmap = bitmap_dict[self.sample_bitmap_key]
+            start_idx, num_bins = self.sample_bitmap_featurizer[table]
 
-            tables_vector[self.table_featurizer[table]] = 1.00
-            if bitmap_dict is not None and self.sample_bitmap:
-                if self.sample_bitmap_key not in bitmap_dict:
-                    return tables_vector
-                bitmap = bitmap_dict[self.sample_bitmap_key]
-                start_idx, num_bins = self.sample_bitmap_featurizer[table]
-                # print(start_idx, num_bins)
-                # pdb.set_trace()
+            for val in bitmap:
+                if table+str(val) in self.bitmap_mapping:
+                    cur_bin = self.bitmap_mapping[table+str(val)]
+                else:
+                    cur_bin = self.bitmap_next_mapping[table]
+                    self.bitmap_next_mapping[table] += 1
+                    self.bitmap_mapping[table+str(val)] = cur_bin
 
-                for val in bitmap:
-                    if table+str(val) in self.bitmap_mapping:
-                        cur_bin = self.bitmap_mapping[table+str(val)]
-                    else:
-                        cur_bin = self.bitmap_next_mapping[table]
-                        self.bitmap_next_mapping[table] += 1
-                        self.bitmap_mapping[table+str(val)] = cur_bin
+                idx = cur_bin % num_bins
+                tables_vector[start_idx+idx] = 1.00
 
-                    idx = cur_bin % num_bins
-                    tables_vector[start_idx+idx] = 1.00
-
-            return tables_vector
+        return tables_vector
 
     def get_join_features(self, join_str):
-        if self.featurization_type == "set":
-            # essentially, exactly the same as w/o set, since we just used a
-            # 1-hot encoding to represent these
-            keys = join_str.split("=")
-            keys.sort()
-            keys = ",".join(keys)
-            joins_vector = np.zeros(len(self.join_featurizer))
-            if keys not in self.join_featurizer:
-                # print("join_str: {} not found in featurizer".format(join_str))
-                return joins_vector
-            joins_vector[self.join_featurizer[keys]] = 1.00
+        keys = join_str.split("=")
+        keys.sort()
+        keys = ",".join(keys)
+        joins_vector = np.zeros(len(self.join_featurizer))
+        if keys not in self.join_featurizer:
+            print("join_str: {} not found in featurizer".format(join_str))
             return joins_vector
-        else:
-            keys = join_str.split("=")
-            keys.sort()
-            keys = ",".join(keys)
-            joins_vector = np.zeros(len(self.join_featurizer))
-            if keys not in self.join_featurizer:
-                print("join_str: {} not found in featurizer".format(join_str))
-                return joins_vector
-            joins_vector[self.join_featurizer[keys]] = 1.00
-            return joins_vector
+        joins_vector[self.join_featurizer[keys]] = 1.00
+        return joins_vector
 
     def get_pred_features(self, col, val, cmp_op,
             pred_est=None):
@@ -644,313 +589,104 @@ class Featurizer():
         if pred_est is not None:
             assert self.heuristic_features
 
-        ## TODO: only difference is in computing pred_idx_start, otherwise both
-        ## schemes seem same, so comine code + clean
-        if self.featurization_type == "set":
-            feat_idx_start = 0
-            preds_vector = np.zeros(self.max_pred_len)
-            if col not in self.featurizer:
-                # print("col: {} not found in featurizer".format(col))
-                return preds_vector
-
-            assert col in self.column_stats
-            # column one-hot value
-            cidx = self.columns_onehot_idx[col]
-            preds_vector[cidx] = 1.0
-            feat_idx_start += len(self.columns_onehot_idx)
-
-            cmp_op_idx, num_vals, continuous = self.featurizer[col]
-            # set comparison operator 1-hot value, same for all types
-            cmp_idx = self.cmp_ops_onehot[cmp_op]
-            preds_vector[feat_idx_start + cmp_idx] = 1.00
-
-            pred_idx_start = feat_idx_start + len(self.cmp_ops)
-            col_info = self.column_stats[col]
-
-            # 1 additional value for pg_est feature
-            if pred_est:
-                preds_vector[-1] = pred_est
-
-            if not continuous:
-                if self.separate_cont_bins:
-                    pred_idx_start += self.continuous_feature_size
-
-                if "like" in cmp_op:
-                    assert len(val) == 1
-                    num_buckets = min(self.max_discrete_featurizing_buckets,
-                            col_info["num_values"])
-
-                    # first half of spaces reserved for "IN" predicates
-                    if self.separate_regex_bins:
-                        pred_idx_start += num_buckets
-
-                    regex_val = val[0].replace("%","")
-                    pred_idx = deterministic_hash(regex_val) % num_buckets
-                    preds_vector[pred_idx_start+pred_idx] = 1.00
-                    for v in regex_val:
-                        pred_idx = deterministic_hash(str(v)) % num_buckets
-                        preds_vector[pred_idx_start+pred_idx] = 1.00
-
-                    REGEX_USE_BIGRAMS = True
-                    REGEX_USE_TRIGRAMS = True
-                    if REGEX_USE_BIGRAMS:
-                        for i,v in enumerate(regex_val):
-                            if i != len(regex_val)-1:
-                                pred_idx = deterministic_hash(v+regex_val[i+1]) % num_buckets
-                                preds_vector[pred_idx_start+pred_idx] = 1.00
-
-                    if REGEX_USE_TRIGRAMS:
-                        for i,v in enumerate(regex_val):
-                            if i < len(regex_val)-2:
-                                pred_idx = deterministic_hash(v+regex_val[i+1]+ \
-                                        regex_val[i+2]) % num_buckets
-                                preds_vector[pred_idx_start+pred_idx] = 1.00
-
-                    # FIXME: not sure if we should have this feature or not,
-                    # just a number in a one-hot vector might be strange..
-                    preds_vector[pred_idx_start + num_buckets] = len(regex_val)
-                    if bool(re.search(r'\d', regex_val)):
-                        preds_vector[pred_idx_start + num_buckets + 1] = 1
-
-                else:
-                    num_buckets = min(self.max_discrete_featurizing_buckets,
-                            col_info["num_values"])
-                    for v in val:
-                        pred_idx = deterministic_hash(str(v)) % num_buckets
-                        preds_vector[pred_idx_start+pred_idx] = 1.00
-            else:
-                # do min-max stuff
-                # assert len(val) == 2
-                min_val = float(col_info["min_value"])
-                max_val = float(col_info["max_value"])
-                min_max = [min_val, max_val]
-                if isinstance(val, int):
-                    cur_val = float(val)
-                    norm_val = (cur_val - min_val) / (max_val - min_val)
-                    norm_val = max(norm_val, 0.00)
-                    norm_val = min(norm_val, 1.00)
-                    preds_vector[pred_idx_start+0] = norm_val
-                    preds_vector[pred_idx_start+1] = norm_val
-                else:
-                    for vi, v in enumerate(val):
-                        if "literal" == v:
-                            v = val["literal"]
-                        # handling the case when one end of the range is
-                        # missing
-                        if v is None and vi == 0:
-                            v = min_val
-                        elif v is None and vi == 1:
-                            v = max_val
-
-                        if v == 'NULL' and vi == 0:
-                            v = min_val
-                        elif v == 'NULL' and vi == 1:
-                            v = max_val
-
-                        cur_val = float(v)
-                        norm_val = (cur_val - min_val) / (max_val - min_val)
-                        norm_val = max(norm_val, 0.00)
-                        norm_val = min(norm_val, 1.00)
-                        preds_vector[pred_idx_start+vi] = norm_val
-
-            # if preds_vector[-1] != pred_est:
-                # print(pred_est)
-                # print("no match pred est")
-                # pdb.set_trace()
-            # assert preds_vector[-1] == pred_est
-
-        else:
-            preds_vector = np.zeros(self.pred_features_len)
-
-            if col not in self.featurizer:
-                print("col: {} not found in featurizer".format(col))
-                return preds_vector
-
-            # set comparison operator 1-hot value
-            cmp_op_idx, num_vals, continuous = self.featurizer[col]
-            cmp_idx = self.cmp_ops_onehot[cmp_op]
-            preds_vector[cmp_op_idx+cmp_idx] = 1.00
-
-            pred_idx_start = cmp_op_idx + len(self.cmp_ops)
-            num_pred_vals = num_vals - len(self.cmp_ops)
-            col_info = self.column_stats[col]
-            # assert num_pred_vals >= 2
-
-            # 1 additional value for pg_est feature
-            # assert num_pred_vals <= col_info["num_values"] + 1
-
-            ## FIXME: we are overshooting by one here
-            if pred_est:
-                # preds_vector[pred_idx_start + num_pred_vals] = pred_est
-                preds_vector[pred_idx_start + num_pred_vals-1] = pred_est
-
-            if not continuous:
-                if "like" in cmp_op:
-                    assert len(val) == 1
-                    num_buckets = min(self.max_discrete_featurizing_buckets,
-                            col_info["num_values"])
-
-                    if self.separate_regex_bins:
-                        # first half of spaces reserved for "IN" predicates
-                        pred_idx_start += num_buckets
-
-                    regex_val = val[0].replace("%","")
-                    pred_idx = deterministic_hash(regex_val) % num_buckets
-                    preds_vector[pred_idx_start+pred_idx] = 1.00
-                    for v in regex_val:
-                        pred_idx = deterministic_hash(str(v)) % num_buckets
-                        preds_vector[pred_idx_start+pred_idx] = 1.00
-
-                    REGEX_USE_BIGRAMS = True
-                    REGEX_USE_TRIGRAMS = True
-                    if REGEX_USE_BIGRAMS:
-                        for i,v in enumerate(regex_val):
-                            if i != len(regex_val)-1:
-                                pred_idx = deterministic_hash(v+regex_val[i+1]) % num_buckets
-                                preds_vector[pred_idx_start+pred_idx] = 1.00
-
-                    if REGEX_USE_TRIGRAMS:
-                        for i,v in enumerate(regex_val):
-                            if i < len(regex_val)-2:
-                                pred_idx = deterministic_hash(v+regex_val[i+1]+ \
-                                        regex_val[i+2]) % num_buckets
-                                preds_vector[pred_idx_start+pred_idx] = 1.00
-
-                    preds_vector[pred_idx_start + num_buckets] = len(regex_val)
-                    if bool(re.search(r'\d', regex_val)):
-                        preds_vector[pred_idx_start + num_buckets + 1] = 1
-
-                else:
-                    num_buckets = min(self.max_discrete_featurizing_buckets,
-                            col_info["num_values"])
-                    for v in val:
-                        pred_idx = deterministic_hash(str(v)) % num_buckets
-                        preds_vector[pred_idx_start+pred_idx] = 1.00
-            else:
-                # do min-max stuff
-                # assert len(val) == 2
-                min_val = float(col_info["min_value"])
-                max_val = float(col_info["max_value"])
-                min_max = [min_val, max_val]
-                if isinstance(val, int):
-                    cur_val = float(val)
-                    norm_val = (cur_val - min_val) / (max_val - min_val)
-                    norm_val = max(norm_val, 0.00)
-                    norm_val = min(norm_val, 1.00)
-                    preds_vector[pred_idx_start+0] = norm_val
-                    preds_vector[pred_idx_start+1] = norm_val
-                else:
-                    for vi, v in enumerate(val):
-                        if "literal" == v:
-                            v = val["literal"]
-                        # handling the case when one end of the range is
-                        # missing
-                        if v is None and vi == 0:
-                            v = min_val
-                        elif v is None and vi == 1:
-                            v = max_val
-
-                        if v == 'NULL' and vi == 0:
-                            v = min_val
-                        elif v == 'NULL' and vi == 1:
-                            v = max_val
-
-                        cur_val = float(v)
-                        norm_val = (cur_val - min_val) / (max_val - min_val)
-                        norm_val = max(norm_val, 0.00)
-                        norm_val = min(norm_val, 1.00)
-                        preds_vector[pred_idx_start+vi] = norm_val
-
-        return preds_vector
-
-    def get_features(self, subgraph, true_sel=None):
-        '''
-        @subgraph:
-        '''
-        tables_vector = np.zeros(len(self.table_featurizer))
         preds_vector = np.zeros(self.pred_features_len)
 
-        for nd in subgraph.nodes(data=True):
-            node = nd[0]
-            data = nd[1]
-            tables_vector[self.table_featurizer[data["real_name"]]] = 1.00
+        if col not in self.featurizer:
+            print("col: {} not found in featurizer".format(col))
+            return preds_vector
 
-            for i, col in enumerate(data["pred_cols"]):
-                # add pred related feature
-                val = data["pred_vals"][i]
-                cmp_op = data["pred_types"][i]
-                cmp_op_idx, num_vals, continuous = self.featurizer[col]
-                cmp_idx = self.cmp_ops_onehot[cmp_op]
-                preds_vector[cmp_op_idx+cmp_idx] = 1.00
+        # set comparison operator 1-hot value
+        cmp_op_idx, num_vals, continuous = self.featurizer[col]
+        cmp_idx = self.cmp_ops_onehot[cmp_op]
+        preds_vector[cmp_op_idx+cmp_idx] = 1.00
 
-                pred_idx_start = cmp_op_idx + len(self.cmp_ops)
-                num_pred_vals = num_vals - len(self.cmp_ops)
-                col_info = self.column_stats[col]
-                # assert num_pred_vals >= 2
-                assert num_pred_vals <= col_info["num_values"]
-                if cmp_op == "in" or \
-                        "like" in cmp_op or \
-                        cmp_op == "eq":
+        pred_idx_start = cmp_op_idx + len(self.cmp_ops)
+        num_pred_vals = num_vals - len(self.cmp_ops)
+        col_info = self.column_stats[col]
 
-                    if continuous:
-                        assert len(val) <= self.continuous_feature_size
-                        min_val = float(col_info["min_value"])
-                        max_val = float(col_info["max_value"])
-                        for vi, v in enumerate(val):
-                            v = float(v)
-                            normalized_val = (v - min_val) / (max_val - min_val)
-                            preds_vector[pred_idx_start+vi] = 1.00
-                    else:
-                        num_buckets = min(self.max_discrete_featurizing_buckets,
-                                col_info["num_values"])
-                        assert num_pred_vals == num_buckets
-                        # turn to 1 all the qualifying indexes in the 1-hot vector
-                        if "like" in cmp_op:
-                            print(cmp_op)
-                            pdb.set_trace()
-                        for v in val:
-                            pred_idx = deterministic_hash(v) % num_buckets
+        # 1 additional value for pg_est feature
+        if pred_est:
+            preds_vector[pred_idx_start + num_pred_vals-1] = pred_est
+
+        if not continuous:
+            if "like" in cmp_op:
+                assert len(val) == 1
+                num_buckets = min(self.max_discrete_featurizing_buckets,
+                        col_info["num_values"])
+
+                if self.separate_regex_bins:
+                    # first half of spaces reserved for "IN" predicates
+                    pred_idx_start += num_buckets
+
+                regex_val = val[0].replace("%","")
+                pred_idx = deterministic_hash(regex_val) % num_buckets
+                preds_vector[pred_idx_start+pred_idx] = 1.00
+                for v in regex_val:
+                    pred_idx = deterministic_hash(str(v)) % num_buckets
+                    preds_vector[pred_idx_start+pred_idx] = 1.00
+
+                REGEX_USE_BIGRAMS = True
+                REGEX_USE_TRIGRAMS = True
+                if REGEX_USE_BIGRAMS:
+                    for i,v in enumerate(regex_val):
+                        if i != len(regex_val)-1:
+                            pred_idx = deterministic_hash(v+regex_val[i+1]) % num_buckets
                             preds_vector[pred_idx_start+pred_idx] = 1.00
 
-                elif cmp_op in RANGE_PREDS:
-                    assert cmp_op == "lt"
-
-                    # does not have to be MIN / MAX, if there are very few values
-                    # OR if the predicate is on string data, e.g., BETWEEN 'A' and 'F'
-
-                    if not continuous:
-                        # FIXME: temporarily, just treat it as discrete data
-                        num_buckets = min(self.max_discrete_featurizing_buckets,
-                                col_info["num_values"])
-                        for v in val:
-                            pred_idx = deterministic_hash(str(v)) % num_buckets
+                if REGEX_USE_TRIGRAMS:
+                    for i,v in enumerate(regex_val):
+                        if i < len(regex_val)-2:
+                            pred_idx = deterministic_hash(v+regex_val[i+1]+ \
+                                    regex_val[i+2]) % num_buckets
                             preds_vector[pred_idx_start+pred_idx] = 1.00
-                    else:
-                        # do min-max stuff
-                        assert len(val) == 2
 
-                        min_val = float(col_info["min_value"])
-                        max_val = float(col_info["max_value"])
-                        min_max = [min_val, max_val]
-                        for vi, v in enumerate(val):
-                            # handling the case when one end of the range is
-                            # missing
-                            if v is None and vi == 0:
-                                v = min_val
-                            elif v is None and vi == 1:
-                                v = max_val
+                preds_vector[pred_idx_start + num_buckets] = len(regex_val)
 
-                            cur_val = float(v)
-                            norm_val = (cur_val - min_val) / (max_val - min_val)
-                            norm_val = max(norm_val, 0.00)
-                            norm_val = min(norm_val, 1.00)
-                            preds_vector[pred_idx_start+vi] = norm_val
+                # regex has num or not feature
+                if bool(re.search(r'\d', regex_val)):
+                    preds_vector[pred_idx_start + num_buckets + 1] = 1
 
-        # based on edges, add the join conditions
+            else:
+                num_buckets = min(self.max_discrete_featurizing_buckets,
+                        col_info["num_values"])
+                for v in val:
+                    pred_idx = deterministic_hash(str(v)) % num_buckets
+                    preds_vector[pred_idx_start+pred_idx] = 1.00
+        else:
+            # do min-max stuff
+            min_val = float(col_info["min_value"])
+            max_val = float(col_info["max_value"])
+            min_max = [min_val, max_val]
+            if isinstance(val, int):
+                cur_val = float(val)
+                norm_val = (cur_val - min_val) / (max_val - min_val)
+                norm_val = max(norm_val, 0.00)
+                norm_val = min(norm_val, 1.00)
+                preds_vector[pred_idx_start+0] = norm_val
+                preds_vector[pred_idx_start+1] = norm_val
+            else:
+                for vi, v in enumerate(val):
+                    if "literal" == v:
+                        v = val["literal"]
 
-        # TODO: combine all vectors, or not.
-        if true_sel is not None:
-            preds_vector[-1] = true_sel
+                    # handling the case when one end of the range predicate is
+                    # missing
+                    if v is None and vi == 0:
+                        v = min_val
+                    elif v is None and vi == 1:
+                        v = max_val
+
+                    if v == 'NULL' and vi == 0:
+                        v = min_val
+                    elif v == 'NULL' and vi == 1:
+                        v = max_val
+
+                    # use min-max normalization for continuous features
+                    cur_val = float(v)
+                    norm_val = (cur_val - min_val) / (max_val - min_val)
+                    norm_val = max(norm_val, 0.00)
+                    norm_val = min(norm_val, 1.00)
+                    preds_vector[pred_idx_start+vi] = norm_val
 
         return preds_vector
 
@@ -958,7 +694,7 @@ class Featurizer():
         if self.ynormalization == "log":
             est_card = np.exp((y + \
                 self.min_val)*(self.max_val-self.min_val))
-        elif self.ynormalization == "pg_total_selectivity":
+        elif self.ynormalization == "selectivity":
             est_card = y*cards["total"]
         else:
             assert False

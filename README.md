@@ -12,10 +12,9 @@
       - [Query Representation](#query-representation)
       - [Evaluating Estimates](#evaluating-estimates)
       - [Getting Runtimes](#getting-runtimes)
-      - [Featurization](#featurization)
+      - [Learned Models](#learned-models)
       - [Generating Queries](#generating-queries)
       - [Generating Cardinalities](#generating-cardinalities)
-  * [Acknowledgements](#acknowledgements)
   * [Future Work](#futurework)
   * [License](#license)
 
@@ -44,7 +43,7 @@ We use docker to install and configure PostgreSQL, and setup the relevant databa
 
 ```bash
 cd docker
-export LCARD_USER=arthurfleck
+export LCARD_USER=imdb
 export LCARD_PORT=5432
 sudo docker build --build-arg LCARD_USER=${LCARD_USER} -t pg12 .
 sudo docker run --name card-db -p ${LCARD_PORT}:5432 -d pg12
@@ -54,12 +53,15 @@ sudo docker exec -it card-db /imdb_setup.sh
 
 Here are a few useful commands to check / debug your setup:
 ```bash
+# if your instance gets restarted / docker image gets shutdown
+docker restart card-db
+
 # get a bash shell within the docker image
 docker exec -it card-db bash
 # note that postgresql data on docker is stored at /var/lib/postgresql/data
 
 # connect psql on your host to the postgresql server running on docker
-psql -d imdb -h localhost -U arthurfleck -p $LCARD_PORT
+psql -d imdb -h localhost -U imdb -p $LCARD_PORT
 ```
 
 To test this, run
@@ -86,7 +88,6 @@ These can be installed with
 
 ```bash
 pip3 install -r requirements.txt
-sudo apt-get install -y python-pygraphviz
 ```
 
 ## Usage
@@ -160,7 +161,7 @@ A few other points to note:
 Given a query, and estimates for each of its subplans, we can use various error
 functions to evaluate how good the estimates are. We can directly compare the
 true values and the estimated values, using for instance:
-  * Q-Error, Relative Error, Absolute Error etc. Q-Error is generally regarded
+  * Q-Error, Relative Error, Absolute Error etc. Q-Error is generally considered
   to be the most useful of these metrics from the perspective of
   query-optimization.
 
@@ -181,58 +182,64 @@ cost models, there can be many possibilities considered here.
   * Plan-Cost: this considers only left deep plans, and uses a simple user
                specified cost function (referred to as C in the paper).
 
+
 ```python
 from query_representation.query import *
-from losses.losses import *
+from evaluation.eval_fns import *
 
 qfn = "queries/imdb/4a/4a100.pkl"
 qrep = load_qrep(qfn)
 ests = get_postgres_cardinalities(qrep)
 
 # estimation errors for each subplan in the query
-qerr = compute_qerror([qrep], [ests])
-abs_err = compute_abs_error([qrep], [ests])
-rel_err = compute_relative_error([qrep], [ests])
-print("avg q-error: {}, avg abs-error: {}, avg rel-error: {}".format(
-          np.round(np.mean(qerr),2), np.round(np.mean(abs_err)),
-              np.mean(rel_err)))
+qerr_fn = get_eval_fn("qerr")
+abs_fn = get_eval_fn("abs")
+rel_fn = get_eval_fn("rel")
+
+qerr = qerr_fn.eval([qrep], [ests])
+abs_err = abs_fn.eval([qrep], [ests])
+relerr = rel_fn.eval([qrep], [ests])
+
+print("avg q-error: {}, avg abs-error: {}, avg relative error: {}".format(
+              np.round(np.mean(qerr),2), np.round(np.mean(abs_err), 2),
+                            np.round(np.mean(relerr), 2)))
 
 # check the function comments to see the description of the arguments
 # can change the db arguments appropriately depending on the PostgreSQL
 # installation.
-ppc, opt_ppc = compute_postgres_plan_cost([qrep], [ests], user="arthurfleck",
-    pwd="password", db_name="imdb", db_host="localhost", port=5432,
-    num_processes=-1, result_dir="./ppc_results/", cost_model="cm1")
+ppc = get_eval_fn("ppc")
+ppc = ppc.eval([qrep], [ests], user="imdb", pwd="password", db_name="imdb",
+        db_host="localhost", port=5432, num_processes=-1, result_dir=None,
+        cost_model="cm1")
 
 # we considered only one query, so the returned lists have just one element
-print("PPC is: {}, Best possible PPC: {}".format(np.round(ppc[0]),
-          np.round(opt_ppc[0])))
+print("PPC is: {}".format(np.round(ppc[0])))
 
-plan_cost, opt_plan_cost = compute_plan_cost([qrep], [ests], cost_model="C")
-print("Plan-Cost is: {}, Best possible Plan-Cost:{}".format(
-      np.round(plan_cost[0]), np.round(opt_plan_cost[0])))
+pc = get_eval_fn("plancost")
+plan_cost = pc.eval([qrep], [ests], cost_model="C")
+print("Plan-Cost is: {}".format(np.round(plan_cost[0])))
 ```
 
 For evaluating postgres on all queries in CEB / or just from some templates,
 run:
 
 ```bash
-python3 examples/evaluate_postgres_estimates.py --query_templates 1a,2a
+python3 main.py --query_templates 1a,2a --algs postgres --eval_fns qerr,ppc --result_dir results
 ```
-
 ### Getting runtimes
 
-There are two steps to generating the runtimes; first, we generate the PPC, and
-the corresponding SQLs to execute. These SQL strings would be annotated with
-various pg_hint_plan hints to enforce join order, operator selection and index
-selection (see losses/plan_losses.py for details). These strings can be
-executed on PostgreSQL with pg_hint_plan loaded, but you may want to use a
-different setup for execution --- so other processes on the computer do not
-interfere with the execution times, and do things like clear the cache after
-every execution (cold start), or repeat each execution a few times etc.
-depending on your goals. Here, we provide a simple example to execute the
-SQLs, but note that this  does not clear caches, or take care about isolating
-the execution from other processes, so these timings won't be reliable.
+There are two steps to generating the runtimes; first, we generate the Postgres
+Plan Cost, and the corresponding SQLs to execute. These SQL strings would be
+annotated with various pg_hint_plan hints to enforce join order, operator
+selection and index Postgres Plan Costselection (see losses/plan_losses.py for
+    details). These strings can be executed on PostgreSQL with pg_hint_plan
+loaded, but you may want to use a different setup for execution --- so other
+processes on the computer do not interfere with the execution times, and do
+things like clear the cache after every execution (cold start), or repeat each
+execution a few times etc.  depending on your goals. Here, we provide a simple
+example to execute the SQLs, but note that this  does not clear caches, or take
+care about isolating the execution from other processes, so these timings won't
+be reliable.
 
 ```bash
 # writes out the file results/Postgres/cm1_ppc.csv with the sqls to execute
@@ -241,12 +248,28 @@ the execution from other processes, so these timings won't be reliable.
 python3 main.py --algs postgres -n 5 --query_template 1a --eval_fns qerr,ppc,plancost --result_dir results
 
 # executes the sqls on PostgreSQL server, with the given credientials
-python3 losses/get_runtimes.py --port 5432 --user arthurfleck --pwd password --result_dir results/Postgres
+python3 evaluation/get_runtimes.py --port 5432 --user imdb --pwd password --result_dir results/Postgres
 ```
 
-TODO: describe the setup used in the paper.
+TODO: describe the execution setup used in the paper.
 
-### Featurization (TODO)
+### Learned Models
+
+We provide baseline implementation of a few common learning algorithms. We can
+run them with:
+
+```bash
+python3 main.py --query_templates 1a,2a --algs xgb --eval_fns qerr,ppc,plancost --result_dir results
+python3 main.py --query_templates 1a,2a --algs fcnn --eval_fns qerr,ppc,plancost --result_dir results --lr 0.0001
+```
+
+Please look at cardinality\_estimation/algs.py for the list of provided
+implementations.
+
+The featurization scheme is implemented in
+cardinality\_estimation/featurizer.py. Look at the keyword arguments for
+Featurizer.setup() for the various configurations we use to generate the 1-d
+featurization of the queries.
 
 ### Generating Queries
 
@@ -257,7 +280,7 @@ base SQL structure of the templates in the IMDb workload are given here
 can use:
 
 ```bash
-python3 query_gen/gen_queries.py --query_output_dir qreps --template_dir ./templates/imdb/3a/ -n 10 --user arthurfleck --pwd password --db_name imdb --port 5432
+python3 query_gen/gen_queries.py --query_output_dir qreps --template_dir ./templates/imdb/3a/ -n 10 --user imdb --pwd password --db_name imdb --port 5432
 ```
 
 ### Generating Cardinalities (TODO)
@@ -270,9 +293,6 @@ python3 query_gen/gen_queries.py --query_output_dir qreps --template_dir ./templ
 <!--evaluating a cardinality estimator with various loss functions-->
 
 
-<!--## Acknowledgements-->
-
 ## Licence
 
-<!--TODO: Figure this out.-->
 <!--TODO: Add citation information.-->

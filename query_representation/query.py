@@ -1,8 +1,7 @@
 import networkx as nx
 from networkx.readwrite import json_graph
 
-# from utils.utils import *
-from utils import *
+from query_representation.utils import *
 import time
 import itertools
 import json

@@ -53,7 +53,6 @@ def eval_alg(alg, eval_funcs, qreps, samples_type):
     print("all loss computations took: ", time.time()-start)
 
 def get_alg(alg):
-
     if alg == "saved":
         assert args.model_dir is not None
         return SavedPreds(model_dir=args.model_dir)
@@ -78,6 +77,19 @@ def get_alg(alg):
         return XGBoost(grid_search=False, tree_method="hist",
                        subsample=1.0, n_estimators = 100,
                        max_depth=10, lr = 0.01)
+    elif alg == "fcnn":
+        return FCNN(max_epochs = args.max_epochs, lr=args.lr,
+                mb_size = args.mb_size,
+                weight_decay = args.weight_decay,
+                load_query_together = args.load_query_together,
+                result_dir = args.result_dir,
+                num_hidden_layers=args.num_hidden_layers,
+                eval_epoch = args.eval_epoch,
+                optimizer_name=args.optimizer_name,
+                clip_gradient=args.clip_gradient,
+                loss_func_name = args.loss_func_name,
+                hidden_layer_size = args.hidden_layer_size)
+
     else:
         assert False
 
@@ -123,6 +135,15 @@ def get_query_fns():
         test_qfns += cur_test_fns
 
     print("skipped templates: ", " ".join(skipped_templates))
+
+    # going to shuffle all these lists, so queries are evenly distributed. Plan
+    # Cost functions for some of these templates take a lot longer; so when we
+    # compute them in parallel, we want the queries to be shuffled so the
+    # workload is divided evely
+    random.shuffle(train_qfns)
+    random.shuffle(test_qfns)
+    random.shuffle(val_qfns)
+
     return train_qfns, test_qfns, val_qfns
 
 def load_qdata(fns):
@@ -216,7 +237,7 @@ def read_flags():
     parser.add_argument("--db_host", type=str, required=False,
             default="localhost")
     parser.add_argument("--user", type=str, required=False,
-            default="arthurfleck")
+            default="imdb")
     parser.add_argument("--pwd", type=str, required=False,
             default="password")
     parser.add_argument("--port", type=int, required=False,
@@ -250,7 +271,28 @@ def read_flags():
 
     ## NN training features
     parser.add_argument("--weight_decay", type=float, required=False,
-            default=0.1)
+            default=0.0)
+    parser.add_argument("--max_epochs", type=int,
+            required=False, default=10)
+    parser.add_argument("--eval_epoch", type=int,
+            required=False, default=1)
+    parser.add_argument("--mb_size", type=int, required=False,
+            default=1024)
+
+    parser.add_argument("--num_hidden_layers", type=int,
+            required=False, default=2)
+    parser.add_argument("--hidden_layer_size", type=int,
+            required=False, default=128)
+    parser.add_argument("--load_query_together", type=int, required=False,
+            default=0)
+    parser.add_argument("--optimizer_name", type=str, required=False,
+            default="adam")
+    parser.add_argument("--clip_gradient", type=float,
+            required=False, default=20.0)
+    parser.add_argument("--lr", type=float,
+            required=False, default=0.0001)
+    parser.add_argument("--loss_func_name", type=str, required=False,
+            default="mse")
 
     return parser.parse_args()
 

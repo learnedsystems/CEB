@@ -19,10 +19,10 @@ import pdb
 def get_eval_fn(loss_name):
     if loss_name == "qerr":
         return QError()
-    elif loss_name == "mse":
-        return MSE()
     elif loss_name == "abs":
         return AbsError()
+    elif loss_name == "rel":
+        return RelativeError()
     elif loss_name == "ppc":
         return PostgresPlanCost()
     elif loss_name == "plancost":
@@ -115,7 +115,7 @@ class RelativeError(EvalFunc):
         '''
         assert len(preds) == len(qreps)
         assert isinstance(preds[0], dict)
-        ytrue, yhat = _get_all_cardinalities(queries, preds)
+        ytrue, yhat = _get_all_cardinalities(qreps, preds)
         # TODO: may want to choose a minimum estimate
         # epsilons = np.array([1]*len(yhat))
         # ytrue = np.maximum(ytrue, epsilons)
@@ -124,7 +124,7 @@ class RelativeError(EvalFunc):
         return errors
 
 class PostgresPlanCost(EvalFunc):
-    def eval(self, qreps, preds, user="arthurfleck",pwd="password",
+    def eval(self, qreps, preds, user="imdb",pwd="password",
             db_name="imdb", db_host="localhost", port=5432, num_processes=-1,
             result_dir=None, cost_model="cm1", **kwargs):
         ''''
@@ -134,10 +134,11 @@ class PostgresPlanCost(EvalFunc):
             set_cost_model. e.g., cm1: disable materialization and parallelism, and
             enable all other flags.
         @ret:
-            pg_costs:
-            pg_plans:
-            pg_sqls: TODO.
-            TODO: decide how to save result logs, incl. sqls to execute.
+            pg_costs
+            Further, the following are saved in the result logs
+                pg_costs:
+                pg_plans: explains used to get the pg costs
+                pg_sqls: sqls to execute
         '''
         assert isinstance(qreps, list)
         assert isinstance(preds, list)
@@ -217,13 +218,13 @@ class PostgresPlanCost(EvalFunc):
             for i, plan in enumerate(plans):
                 if plan is None:
                     continue
-                # no idea why explains we get from cursor.fetchall() have so
-                # many indexes
-
                 # we know cost of this; we know best cost;
                 title_fmt = """{}. {} Estimates, Plan Cost: {}\n True cardinalities Plan Cost: {}"""
                 title = title_fmt.format(qreps[i]["name"], alg_name, costs[i],
                         opt_costs[i])
+
+                # no idea why explains we get from cursor.fetchall() have so
+                # many nested lists[][]
                 plot_explain_join_order(plan[0][0][0], true_cardinalities[i],
                         est_cardinalities[i], pdf, title)
 

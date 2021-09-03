@@ -51,6 +51,25 @@ RANGE_PREDS = ["gt", "gte", "lt", "lte"]
 
 CREATE_INDEX_TMP = '''CREATE INDEX IF NOT EXISTS {INDEX_NAME} ON {TABLE} ({COLUMN});'''
 
+def qrep_to_df(qrep):
+    '''
+    Every subplan will be a row in the returned dataframe.
+    Since each subplan can contain multiple tables / columns etc., we will have
+    a unique column for each table/column accessed (FEAT_TYPE), and then it can
+    have a bit-value to indicate presence, or a more complex value to indicate
+    the predicate filter on that column etc.
+
+    Format of dataframe column will be:
+        {FEAT_TYPE}-{FEAT_NAME}
+        table-table_name
+        predicate_mi1-column_present
+        predicate_ci-pg_est
+        predicate_ci-filter_values
+
+    Each such column name should map to a unique value
+    '''
+    pass
+
 class Featurizer():
     def __init__(self, user, pwd, db_name, db_host ,port):
         '''

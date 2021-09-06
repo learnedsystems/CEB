@@ -45,11 +45,14 @@ We use docker to install and configure PostgreSQL, and setup the relevant databa
 cd docker
 export LCARD_USER=imdb
 export LCARD_PORT=5432
-sudo docker build --build-arg LCARD_USER=${LCARD_USER} -t pg12 .
-sudo docker run --name card-db -p ${LCARD_PORT}:5432 -d pg12
-sudo docker restart card-db
-sudo docker exec -it card-db /imdb_setup.sh
+docker build --build-arg LCARD_USER=${LCARD_USER} -t pg12 .
+docker run --name card-db -p ${LCARD_PORT}:5432 -d pg12
+docker restart card-db
+docker exec -it card-db /imdb_setup.sh
 ```
+
+Note: Depending on the settings of your docker instance, you may require sudo
+in the above commands.
 
 Here are a few useful commands to check / debug your setup:
 ```bash

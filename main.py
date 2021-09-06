@@ -89,6 +89,19 @@ def get_alg(alg):
                 clip_gradient=args.clip_gradient,
                 loss_func_name = args.loss_func_name,
                 hidden_layer_size = args.hidden_layer_size)
+    elif alg == "mscn":
+        return MSCN(max_epochs = args.max_epochs, lr=args.lr,
+                load_padded_mscn_feats = args.load_padded_mscn_feats,
+                mb_size = args.mb_size,
+                weight_decay = args.weight_decay,
+                load_query_together = args.load_query_together,
+                result_dir = args.result_dir,
+                num_hidden_layers=args.num_hidden_layers,
+                eval_epoch = args.eval_epoch,
+                optimizer_name=args.optimizer_name,
+                clip_gradient=args.clip_gradient,
+                loss_func_name = args.loss_func_name,
+                hidden_layer_size = args.hidden_layer_size)
 
     else:
         assert False
@@ -134,7 +147,7 @@ def get_query_fns():
         val_qfns += cur_val_fns
         test_qfns += cur_test_fns
 
-    print("skipped templates: ", " ".join(skipped_templates))
+    print("Skipped templates: ", " ".join(skipped_templates))
 
     # going to shuffle all these lists, so queries are evenly distributed. Plan
     # Cost functions for some of these templates take a lot longer; so when we
@@ -185,15 +198,18 @@ def get_featurizer(trainqs, valqs, testqs):
     # these configuration properties do not influence the basic statistics
     # collected in the featurizer.update_column_stats call; Therefore, we don't
     # include this in the cached version
-    featurizer.setup(ynormalization=args.ynormalization)
+    featurizer.setup(ynormalization=args.ynormalization,
+            featurization_type=feat_type)
     featurizer.update_ystats(trainqs+valqs+testqs)
 
     return featurizer
 
 def main():
+
     train_qfns, test_qfns, val_qfns = get_query_fns()
     print("""Selected {} train queries, {} test queries, and {} val queries"""\
             .format(len(train_qfns), len(test_qfns), len(val_qfns)))
+
     trainqs = load_qdata(train_qfns)
 
     # Note: can be quite memory intensive to load them all; might want to just
@@ -270,6 +286,9 @@ def read_flags():
             default="log")
 
     ## NN training features
+    parser.add_argument("--load_padded_mscn_feats", type=int, required=False,
+            default=1, help="""loads all the mscn features with padded zeros in memory -- speeds up training, but can take too much RAM.""")
+
     parser.add_argument("--weight_decay", type=float, required=False,
             default=0.0)
     parser.add_argument("--max_epochs", type=int,
@@ -286,7 +305,7 @@ def read_flags():
     parser.add_argument("--load_query_together", type=int, required=False,
             default=0)
     parser.add_argument("--optimizer_name", type=str, required=False,
-            default="adam")
+            default="adamw")
     parser.add_argument("--clip_gradient", type=float,
             required=False, default=20.0)
     parser.add_argument("--lr", type=float,

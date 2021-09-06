@@ -171,7 +171,8 @@ class Featurizer():
 
         return exp_output
 
-    def setup(self, heuristic_features=True,
+    def setup(self,
+            heuristic_features=True,
             ynormalization="log",
             table_features = True,
             pred_features = True,
@@ -288,7 +289,7 @@ class Featurizer():
                 # for pg_est of current table
                 pred_len += 1
                 if self.featurization_type == "set":
-                    # for pg est of current query
+                    # for pg est of current subplan/query
                     pred_len += 1
 
             if is_float(info["min_value"]) and is_float(info["max_value"]) \
@@ -324,8 +325,7 @@ class Featurizer():
                 self.max_pred_len = pred_len
 
         if self.featurization_type == "set":
-            print("""adding one-hot vector to specify which column \
-                    predicate's column""")
+            print("""adding one-hot vector to specify which column predicate's column""")
             self.max_pred_len += self.num_cols
             print("maximum length of single pred feature: ", self.max_pred_len)
 
@@ -602,14 +602,10 @@ class Featurizer():
         joins_vector[self.join_featurizer[keys]] = 1.00
         return joins_vector
 
-    def get_pred_features(self, col, val, cmp_op,
+    def get_pred_features_combined(self, col, val, cmp_op,
             pred_est=None):
 
-        if pred_est is not None:
-            assert self.heuristic_features
-
         preds_vector = np.zeros(self.pred_features_len)
-
         if col not in self.featurizer:
             print("col: {} not found in featurizer".format(col))
             return preds_vector
@@ -620,6 +616,7 @@ class Featurizer():
         preds_vector[cmp_op_idx+cmp_idx] = 1.00
 
         pred_idx_start = cmp_op_idx + len(self.cmp_ops)
+
         num_pred_vals = num_vals - len(self.cmp_ops)
         col_info = self.column_stats[col]
 
@@ -708,6 +705,137 @@ class Featurizer():
                     preds_vector[pred_idx_start+vi] = norm_val
 
         return preds_vector
+
+    def get_pred_features_set(self, col, val, cmp_op,
+            pred_est=None):
+        feat_idx_start = 0
+        preds_vector = np.zeros(self.max_pred_len)
+        if col not in self.featurizer:
+            # print("col: {} not found in featurizer".format(col))
+            return preds_vector
+
+        assert col in self.column_stats
+        # column one-hot value
+        cidx = self.columns_onehot_idx[col]
+        preds_vector[cidx] = 1.0
+        feat_idx_start += len(self.columns_onehot_idx)
+
+        cmp_op_idx, num_vals, continuous = self.featurizer[col]
+        # set comparison operator 1-hot value, same for all types
+        cmp_idx = self.cmp_ops_onehot[cmp_op]
+        preds_vector[feat_idx_start + cmp_idx] = 1.00
+
+        pred_idx_start = feat_idx_start + len(self.cmp_ops)
+        col_info = self.column_stats[col]
+
+        if not continuous:
+            if self.separate_cont_bins:
+                pred_idx_start += self.continuous_feature_size
+
+            if "like" in cmp_op:
+                assert len(val) == 1
+                num_buckets = min(self.max_discrete_featurizing_buckets,
+                        col_info["num_values"])
+
+                # first half of spaces reserved for "IN" predicates
+                if self.separate_regex_bins:
+                    pred_idx_start += num_buckets
+
+                regex_val = val[0].replace("%","")
+                pred_idx = deterministic_hash(regex_val) % num_buckets
+                preds_vector[pred_idx_start+pred_idx] = 1.00
+                for v in regex_val:
+                    pred_idx = deterministic_hash(str(v)) % num_buckets
+                    preds_vector[pred_idx_start+pred_idx] = 1.00
+
+                REGEX_USE_BIGRAMS = True
+                REGEX_USE_TRIGRAMS = True
+                if REGEX_USE_BIGRAMS:
+                    for i,v in enumerate(regex_val):
+                        if i != len(regex_val)-1:
+                            pred_idx = deterministic_hash(v+regex_val[i+1]) % num_buckets
+                            preds_vector[pred_idx_start+pred_idx] = 1.00
+
+                if REGEX_USE_TRIGRAMS:
+                    for i,v in enumerate(regex_val):
+                        if i < len(regex_val)-2:
+                            pred_idx = deterministic_hash(v+regex_val[i+1]+ \
+                                    regex_val[i+2]) % num_buckets
+                            preds_vector[pred_idx_start+pred_idx] = 1.00
+
+                # FIXME: not sure if we should have this feature or not,
+                # just a number in a one-hot vector might be strange..
+                preds_vector[pred_idx_start + num_buckets] = len(regex_val)
+                if bool(re.search(r'\d', regex_val)):
+                    preds_vector[pred_idx_start + num_buckets + 1] = 1
+
+            else:
+                num_buckets = min(self.max_discrete_featurizing_buckets,
+                        col_info["num_values"])
+                for v in val:
+                    pred_idx = deterministic_hash(str(v)) % num_buckets
+                    preds_vector[pred_idx_start+pred_idx] = 1.00
+        else:
+            # do min-max stuff
+            # assert len(val) == 2
+            min_val = float(col_info["min_value"])
+            max_val = float(col_info["max_value"])
+            min_max = [min_val, max_val]
+            if isinstance(val, int):
+                cur_val = float(val)
+                norm_val = (cur_val - min_val) / (max_val - min_val)
+                norm_val = max(norm_val, 0.00)
+                norm_val = min(norm_val, 1.00)
+                preds_vector[pred_idx_start+0] = norm_val
+                preds_vector[pred_idx_start+1] = norm_val
+            else:
+                for vi, v in enumerate(val):
+                    if "literal" == v:
+                        v = val["literal"]
+                    # handling the case when one end of the range is
+                    # missing
+                    if v is None and vi == 0:
+                        v = min_val
+                    elif v is None and vi == 1:
+                        v = max_val
+
+                    if v == 'NULL' and vi == 0:
+                        v = min_val
+                    elif v == 'NULL' and vi == 1:
+                        v = max_val
+
+                    cur_val = float(v)
+                    norm_val = (cur_val - min_val) / (max_val - min_val)
+                    norm_val = max(norm_val, 0.00)
+                    norm_val = min(norm_val, 1.00)
+                    preds_vector[pred_idx_start+vi] = norm_val
+
+        # 1 additional value for pg_est feature
+        if pred_est:
+            assert preds_vector[-1] == 0.0
+            assert preds_vector[-2] == 0.0
+            preds_vector[-2] = pred_est
+
+        # if preds_vector[-1] != pred_est:
+            # print(pred_est)
+            # print("no match pred est")
+            # pdb.set_trace()
+        # assert preds_vector[-1] == pred_est
+        return preds_vector
+
+    def get_pred_features(self, col, val, cmp_op,
+            pred_est=None):
+
+        if pred_est is not None:
+            assert self.heuristic_features
+
+        if self.featurization_type == "combined":
+            return self.get_pred_features_combined(col, val,
+                    cmp_op,pred_est)
+
+        elif self.featurization_type == "set":
+            return self.get_pred_features_set(col, val,
+                    cmp_op,pred_est)
 
     def unnormalize(self, y):
         if self.ynormalization == "log":

@@ -632,11 +632,6 @@ class MSCN(CardinalityEstimationAlg):
             losses = self.loss_func(pred, ybatch)
             loss = losses.sum() / len(losses)
 
-            # print(pred)
-            # print(ybatch)
-            print(loss)
-            # pdb.set_trace()
-
             self.optimizer.zero_grad()
             loss.backward()
             if self.clip_gradient is not None:
@@ -667,7 +662,6 @@ class MSCN(CardinalityEstimationAlg):
             start = time.time()
             self.train_one_epoch()
             print("train epoch took: ", time.time()-start)
-
 
     def num_parameters(self):
         def _calc_size(net):

@@ -203,6 +203,7 @@ def _plot_join_order_graph(G, base_table_nodes, join_nodes, pdf, title,
 
     # graphviz is better, but its is a bitch to install, so grandalf is also ok otherwise
     # G = G.reverse(copy=True)
+
     g = grandalf.utils.convert_nextworkx_graph_to_grandalf(G) # undocumented function
     class defaultview(object):
         w, h = 10, 10
@@ -258,7 +259,8 @@ def _plot_join_order_graph(G, base_table_nodes, join_nodes, pdf, title,
         vmax=vmax))
 
     sm._A = []
-    plt.colorbar(sm, alpha=0.2, fraction=0.1, pad=0.0)
+    plt.colorbar(sm, alpha=0.2, fraction=0.1, pad=0.0,
+            label="PostgreSQL Estimated Cost")
 
     _plot_labels(0, -10, "est_card", "b", 8)
     _plot_labels(0, +10, "true_card", "darkorange", 8)

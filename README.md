@@ -245,7 +245,7 @@ care about isolating the execution from other processes, so these timings won't
 be reliable.
 
 ```bash
-# writes out the file results/Postgres/cm1_ppc.csv with the sqls to execute
+# writes out the file results/Postgres/PostgresPlanCost.csv with the sqls to execute
 # the sqls are modified with pg_hint_plan hints to use the cardinalities output
 # by the given algorithm' estimates;
 python3 main.py --algs postgres -n 5 --query_template 1a --eval_fns qerr,ppc,plancost --result_dir results
@@ -258,12 +258,13 @@ TODO: describe the execution setup used in the paper.
 
 ### Learned Models
 
-We provide baseline implementation of a few common learning algorithms. We can
-run them with:
+We provide baseline implementation of a few common learning algorithms. Here
+are a few sample commands to run these:
 
 ```bash
 python3 main.py --query_templates 1a,2a --algs xgb --eval_fns qerr,ppc,plancost --result_dir results
-python3 main.py --query_templates 1a,2a --algs fcnn --eval_fns qerr,ppc,plancost --result_dir results --lr 0.0001
+python3 main.py --query_templates 1a,2a --algs mscn --eval_fns qerr,ppc,plancost --result_dir results --lr 0.0001
+python3 main.py --query_templates all --algs fcnn --eval_fns qerr,ppc,plancost --result_dir results --lr 0.0001
 ```
 
 Please look at cardinality\_estimation/algs.py for the list of provided
@@ -288,14 +289,4 @@ python3 query_gen/gen_queries.py --query_output_dir qreps --template_dir ./templ
 
 ### Generating Cardinalities (TODO)
 
-<!--### Common tasks:-->
-<!--* TODO: put simple python script computing various errors for pg ests.-->
-
-<!--* see tests for basic loading / processing of the queries.-->
-<!--* see test_pg_cardinalities in tests/tests.py for a simple example of-->
-<!--evaluating a cardinality estimator with various loss functions-->
-
-
-## Licence
-
-<!--TODO: Add citation information.-->
+## Future Work

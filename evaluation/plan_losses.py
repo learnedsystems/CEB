@@ -12,8 +12,8 @@ import copy
 
 ## for using pg_hint_plan; Refer to their documentation for more details.
 PG_HINT_CMNT_TMP = '''/*+ {COMMENT} */'''
-PG_HINT_JOIN_TMP = "{JOIN_TYPE} ({TABLES}) "
-PG_HINT_CARD_TMP = "Rows ({TABLES} #{CARD}) "
+PG_HINT_JOIN_TMP = "{JOIN_TYPE}({TABLES}) "
+PG_HINT_CARD_TMP = "Rows({TABLES} #{CARD}) "
 PG_HINT_SCAN_TMP = "{SCAN_TYPE}({TABLE}) "
 PG_HINT_LEADING_TMP = "Leading({JOIN_ORDER})"
 PG_HINT_JOINS = {}
@@ -137,6 +137,9 @@ def get_pghint_modified_sql(sql, cardinalities, join_ops,
 
 def get_plan_cost_of_ests(query, est_cardinalities, true_cardinalities,
         join_graph, cursor, sql_costs):
+    '''
+    Main function for computing Postgres Plan Costs.
+    '''
     est_card_sql = get_pghint_modified_sql(query, est_cardinalities, None,
             None, None)
     assert "explain" in est_card_sql.lower()
@@ -155,11 +158,8 @@ def get_plan_cost_of_ests(query, est_cardinalities, true_cardinalities,
     cost_sql = get_pghint_modified_sql(est_opt_sql, true_cardinalities,
             est_join_ops, leading_hint, scan_ops)
 
-    # set this to sql to be executed, as pg_hint_plan will enforce the
-    # estimated cardinalities, and let postgres make decisions for join order
-    # and everything about operators based on the estimated cardinalities
-    exec_sql = get_pghint_modified_sql(est_opt_sql, est_cardinalities,
-            None, None, None)
+    ## original code
+    # est_cost, est_explain = get_pg_cost_from_sql(cost_sql, cursor)
 
     # cost_sql will be seen often, as true_cardinalities remain fixed; and
     # different estimates can lead to the same plan. So we cache the results.
@@ -182,6 +182,23 @@ def get_plan_cost_of_ests(query, est_cardinalities, true_cardinalities,
         # without caching
         est_cost, est_explain = get_pg_cost_from_sql(cost_sql, cursor)
 
+    est_join_order_sql2, est_join_ops2, scan_ops2 = get_pg_join_order(join_graph,
+            est_explain)
+    debug_leading = get_leading_hint(join_graph, est_explain)
+    assert debug_leading == leading_hint
+
+    # for further debugging
+    # for k,v in scan_ops2.items():
+        # assert scan_ops[k] == v
+    # for k,v in est_join_ops2.items():
+        # assert est_join_ops[k] == v
+
+    # set this to sql to be executed, as pg_hint_plan will enforce the
+    # estimated cardinalities, and let postgres make decisions for join order
+    # and everything about operators based on the estimated cardinalities
+    exec_sql = get_pghint_modified_sql(est_opt_sql, est_cardinalities,
+            None, None, None)
+
     return exec_sql, est_cost, est_explain
 
 def compute_cost_pg_single(queries, join_graphs, true_cardinalities,
@@ -195,13 +212,13 @@ def compute_cost_pg_single(queries, join_graphs, true_cardinalities,
     @use_qplan_cache: query plans for the same query can be repeated often;
     Setting this to true uses a cache across runs for such plans.
     '''
-    # FIXME: some installation thing between diff setups.
+    # some weird effects between different installations
     try:
         con = pg.connect(port=port,dbname=db_name,
-                user=user,password=pwd)
+                user=user,password=pwd, host=db_host)
     except:
         con = pg.connect(port=port,dbname=db_name,
-                user=user,password=pwd, host=db_host)
+                user=user,password=pwd)
 
     # FIXME: always use this?
     if use_qplan_cache:
@@ -308,9 +325,6 @@ class PPC():
                     self.cost_model)]
             batch_size = len(sqls)
         else:
-            # FIXME: check if just letting python multiprocessing manage the
-            # batches is as fast --- manual batching adds a bunch of
-            # unneccessary code.
             num_processes = pool._processes
             batch_size = max(1, math.ceil(len(sqls) / num_processes))
             assert num_processes * batch_size >= len(sqls)

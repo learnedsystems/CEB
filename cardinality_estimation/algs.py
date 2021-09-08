@@ -161,8 +161,11 @@ class TrueCardinalities(CardinalityEstimationAlg):
             preds.append(pred_dict)
         return preds
 
+    def get_exp_name(self):
+        return self.__str__()
+
     def __str__(self):
-        return "true"
+        return "True"
 
 class TrueRandom(CardinalityEstimationAlg):
     def __init__(self):

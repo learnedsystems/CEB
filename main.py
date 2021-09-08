@@ -282,7 +282,7 @@ def read_flags():
             default=5432)
 
     parser.add_argument("--result_dir", type=str, required=False,
-            default=None)
+            default="results")
     parser.add_argument("--query_templates", type=str, required=False,
             default="all")
 

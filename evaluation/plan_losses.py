@@ -182,17 +182,6 @@ def get_plan_cost_of_ests(query, est_cardinalities, true_cardinalities,
         # without caching
         est_cost, est_explain = get_pg_cost_from_sql(cost_sql, cursor)
 
-    est_join_order_sql2, est_join_ops2, scan_ops2 = get_pg_join_order(join_graph,
-            est_explain)
-    debug_leading = get_leading_hint(join_graph, est_explain)
-    assert debug_leading == leading_hint
-
-    # for further debugging
-    # for k,v in scan_ops2.items():
-        # assert scan_ops[k] == v
-    # for k,v in est_join_ops2.items():
-        # assert est_join_ops[k] == v
-
     # set this to sql to be executed, as pg_hint_plan will enforce the
     # estimated cardinalities, and let postgres make decisions for join order
     # and everything about operators based on the estimated cardinalities

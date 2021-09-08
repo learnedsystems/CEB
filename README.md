@@ -13,6 +13,11 @@
       - [Evaluating Estimates](#evaluating-estimates)
       - [Getting Runtimes](#getting-runtimes)
       - [Learned Models](#learned-models)
+        - [Examples](#examples)
+        - [Featurization](#featurization)
+        - [Featurization Knobs](#featurization-knobs)
+        - [Loss Functions](#loss-functions)
+
       - [Generating Queries](#generating-queries)
       - [Generating Cardinalities](#generating-cardinalities)
   * [Future Work](#futurework)
@@ -258,6 +263,8 @@ TODO: describe the execution setup used in the paper.
 
 ### Learned Models
 
+#### Examples
+
 We provide baseline implementation of a few common learning algorithms. Here
 are a few sample commands to run these:
 
@@ -270,10 +277,57 @@ python3 main.py --query_templates all --algs fcnn --eval_fns qerr,ppc,plancost -
 Please look at cardinality\_estimation/algs.py for the list of provided
 implementations.
 
-The featurization scheme is implemented in
-cardinality\_estimation/featurizer.py. Look at the keyword arguments for
-Featurizer.setup() for the various configurations we use to generate the 1-d
-featurization of the queries.
+#### Flattened 1d v/s Set features
+
+The featurization scheme is implemented in cardinality\_estimation/featurizer.py. Look at the keyword arguments for Featurizer.setup() for the various configurations we use to generate the 1-d featurization of the queries.
+
+The goal is to featurize each subplan in a query, so we can make cardinality
+predictions on them; There are two featurization approaches.
+
+<b> Flattened </b> This flattens a given subplan into a single 1d feature vector. This can be very convenient as most learning methods operate on 1d arrays; As a drawback, it requires reserving a spot in this feature vector for each column used in the workloads; Thus, you need to know the exact workloads the query will be evaluated on (this is not uncommon, as templated / dashboard queries would match such workloads, but it does reduce the scope of such classifiers.
+
+<b> Set </b> This maps a given subplan into three sets (table, predicate,
+  joins) of feature vectors; For instance, the tables set will contain one
+feature vector for each of the tables in the subplan, and the predicate set
+will contain one feature vector for each of the predicate filters in the
+subplan. If a subplan has three tables, five filter predicates, and two joins,
+it will map the subplan into a (3,TABLE_FEATURE_SIZE), (5, PREDICATE_FEATURE_SIZE), (2, JOIN_FEATURE_SIZE) vectors. Notice, for e.g., with predicates, the featurizer only needs to map a filter predicate on a single column to a feature vector; This is used in the set based MSCN architecture, which learns on pooled aggregations of different sized sets like these. The main benefit is that it avoids potentially massively large flattened 1d feature vectors, and can support a larger class of ad-hoc queries. The drawback is that different subplans have different number of tables, predicates etc. And in order to get the MSCN implemenations working, we need to pad these with zeros so all `sets' are of same size, thus it requires A LOT of additional memory spent on just padding small subplans, e.g., a subplan which has 1 predicate filter will have size (1,PREDICATE_FEATURE_SIZE). But to pass it to the MSCN architecture, we'll need to pad it with zeros so its size will be (MAX_PREDICATE_FILTERS, PREDICATE_FEATURE_SIZE), where the MAX_PREDICATE_FILTERS is the largest value it is in the batch we pass into the MSCN model. We have not explored optimizing / using sparse representations for the MSCN architecture, which can perhaps save these memory cost blowups.
+
+Using the flag --load_padded_mscn_feats 0 will only load the non-zero sets, and
+pad them as needed. The current implementation is very slow, and it is almost
+10x slower to train like this (we can use parallel dataloaders, or implement
+  this step in C etc. to speed this up considerably). --load_padded_mscn_feats 1 will pre-load all these padded sets into memory (very unpractical on the full CEB workload), but runs fast.
+
+#### Featurization Knobs
+
+There are several assumptions that go into the featurization step, and a lot of
+scope for improvement. I'll describe the most interesting ones here:
+
+* <b> PostgreSQL estimates </b> We find that these estimates significantly
+improve model performance (although they do slow inference times in a practical
+    system, as the featurization will require calling the PostgreSQL estimator;
+    the impact of this slowdown needs to be studied)
+
+* <b> Featurizing Categorical Columns </b>: It's easy to featurize continuous
+columns; What about =, or IN predicates? Its unclear what is the best approach
+in general. Providing heuristic estimates, like PostgreSQL estimates, is a
+general approach, but might not be as useful. Sample Bitmaps is another
+approach that can be quite informative for the model, but these are large 1d
+vectors, which significantly increase the size of feature vectors / memory
+requirements etc.; We take the approach of hashing the predicate filter values
+to a small array, whose size is controlled by the feature: --max_discrete_featurizing_buckets; Intuitively, if the number of unique values in the column is not too much larger than the number of buckets we use, then this can be a useful signal for workloads with repeating patterns; In CEB, we typically had (IN, =) predicates on columns with not very large alphabet sizes, so --max_discrete_featurizing_buckets 10 significantly improves the performance of these models;
+
+But its debatable if this is scalable to more challenging workloads. Thus, in general, it may be interesting to develop methods, and evaluate models, while setting --max_discrete_featurizing_buckets 1; In a previous paper, [Cost Guided Cardinality Estimation](#https://ieeexplore.ieee.org/document/9094107), we used this setting. Methods that can improve model performance when max_discrete_featurizing_buckets == 1, might perhaps model a more common scenario where the alphabet size of categorical columns is too large, so these features become less useful.
+
+#### Loss Functions
+
+The standard approach is to optimize the neural networks for Q-Error; One way
+to implement this is to first take the log of the target values by (use flag:
+  --ynormalization log), and then optimize for mean squared error. As shown in
+the [paper](http://www.vldb.org/pvldb/vol12/p1044-dutt.pdf), this is close
+enough to optimizing for Q-Error, and has some nicer properties (smoother
+    function than Q-Error, which may help in training). In practice, we find
+this to work slightly better in general than optimizing for q-error directly.
 
 ### Generating Queries
 

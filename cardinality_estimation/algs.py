@@ -157,8 +157,6 @@ class TrueCardinalities(CardinalityEstimationAlg):
                 nodes.remove(SOURCE_NODE)
             for alias_key in nodes:
                 info = sample["subset_graph"].nodes()[alias_key]
-                print(info["cardinality"])
-                pdb.set_trace()
                 pred_dict[(alias_key)] = info["cardinality"]["actual"]
             preds.append(pred_dict)
         return preds

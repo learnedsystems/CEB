@@ -92,11 +92,21 @@ After setting up the database, you should be able to use the scripts here by
 passing in the appropriate user, db_name, db_host, and ports to appropriate python
 function calls.
 
-#### Local Setup (TODO)
-
 ### Workload
 
-Download the IMDb CEB workload to `queries/imdb`.
+Our goal is to eventually add multiple database / query workloads to evaluate
+these models; CEB contains IMDb and StackExchange databases. Moreover, we
+provide other known workloads on IMDb, like the Join Order Benchmark (JOB), or
+its simpler versions JOB-M, JOB-light in the same format as well, which makes
+it easy to use the various tools for computing plan costs, runtimes etc. on
+those queries (see next sections for the description of the CEB format etc).
+
+Note that you only need to download one of these workloads in order to get
+started with CEB, and can choose which one fits your needs best.
+
+#### IMDb CEB
+
+Download the full IMDb CEB workload to `queries/imdb`.
 
 ```bash
 bash scripts/download_imdb_workload.sh
@@ -104,6 +114,31 @@ bash scripts/download_imdb_workload.sh
 
 Each directory represents a query template. Each query, and all it's subplans, is represented using a pickle file, of the form `1a100.pkl`.
 
+#### JOB
+
+```bash
+bash scripts/download_job_workloads.sh
+```
+
+This will download both the JOB and JOB-M workloads to the queries/job or
+queries/jobm directories. In terms of the various Plan-Cost metrics (see
+    Section [Evaluating Estimates](#evaluating-estimates)), these workloads are
+somewhat less challenging than CEB, but do have a few non-trivial queries where
+cardinality estimates become very important.
+
+For the JOB-light workload, see the [generating
+cardinalities](#generating-cardinalities) section. Since the JOB-light workload
+has relatively small queries, it serves as a nice example of the tools to take
+in input sqls and generate the cardinalities of all the subplans, and store
+them in the format we support. As a drawback, even PostgreSQL estimates do very
+well on JOB-light in terms of the Plan Cost metrics, thus it is not very
+challenging from the perspective of query optimization.
+
+#### StackExchange CEB
+
+```bash
+bash scripts/download_stack_workload.sh
+```
 
 ### Python Requirements
 
@@ -211,6 +246,68 @@ cost models, there can be many possibilities considered here.
   * Plan-Cost: this considers only left deep plans, and uses a simple user
                specified cost function (referred to as C in the paper).
 
+Here is a self contained example showing the API to compute these different
+kind of errors on a single query.
+
+```python
+from query_representation.query import *
+from evaluation.eval_fns import *
+
+qfn = "queries/imdb/4a/4a100.pkl"
+qrep = load_qrep(qfn)
+ests = get_postgres_cardinalities(qrep)
+
+# estimation errors for each subplan in the query
+qerr_fn = get_eval_fn("qerr")
+abs_fn = get_eval_fn("abs")
+rel_fn = get_eval_fn("rel")
+
+qerr = qerr_fn.eval([qrep], [ests])
+abs_err = abs_fn.eval([qrep], [ests])
+relerr = rel_fn.eval([qrep], [ests])
+
+print("avg q-error: {}, avg abs-error: {}, avg relative error: {}".format(
+              np.round(np.mean(qerr),2), np.round(np.mean(abs_err), 2),
+                            np.round(np.mean(relerr), 2)))
+
+# check the function comments to see the description of the arguments
+# can change the db arguments appropriately depending on the PostgreSQL
+# installation.
+ppc = get_eval_fn("ppc")
+ppc = ppc.eval([qrep], [ests], user="ceb", pwd="password", db_name="imdb",
+        db_host="localhost", port=5432, num_processes=-1, result_dir=None,
+        cost_model="cm1")
+
+# we considered only one query, so the returned lists have just one element
+print("PPC is: {}".format(np.round(ppc[0])))
+
+pc = get_eval_fn("plancost")
+plan_cost = pc.eval([qrep], [ests], cost_model="C")
+print("Plan-Cost is: {}".format(np.round(plan_cost[0])))
+```
+
+For evaluating either true cardinalities, or PostgreSQL estimates on all queries in CEB / or just from some templates, run:
+
+```bash
+python3 main.py --query_templates 1a,2a --algs true,postgres --eval_fns qerr,ppc,plancost --query_dir queries/imdb
+```
+
+Similarly, if you have setup JOB, JOB-M in the previous steps, you can run:
+
+```bash
+python3 main.py --query_templates 1a,2a --algs true,postgres --eval_fns qerr,ppc,plancost --query_dir queries/job
+python3 main.py --query_templates 1a,2a --algs true,postgres --eval_fns qerr,ppc,plancost --query_dir queries/jobm
+```
+Since, JOB (and JOB-M), have only 2-4 queries per template, we do not separate
+them out by templates.
+
+If you have setup the StackExchange DB and workload, then you can run a similar
+command, but passing the additional required parameters for the db\_name:
+
+```bash
+python3 main.py --query_templates all --algs true,postgres --eval_fns qerr,ppc,plancost --query_dir queries/stack --db_name stack
+```
+
 #### Notes on Postgres Plan Cost
 
 * What is a good cost? This is very context dependent; What we really care
@@ -252,49 +349,6 @@ implements these requirements; But it is somewhat hacky and not easy to use. We
 plan to eventually add a cleaner version to this repo. Similarly, you can add
 other database backends as well.
 
-```python
-from query_representation.query import *
-from evaluation.eval_fns import *
-
-qfn = "queries/imdb/4a/4a100.pkl"
-qrep = load_qrep(qfn)
-ests = get_postgres_cardinalities(qrep)
-
-# estimation errors for each subplan in the query
-qerr_fn = get_eval_fn("qerr")
-abs_fn = get_eval_fn("abs")
-rel_fn = get_eval_fn("rel")
-
-qerr = qerr_fn.eval([qrep], [ests])
-abs_err = abs_fn.eval([qrep], [ests])
-relerr = rel_fn.eval([qrep], [ests])
-
-print("avg q-error: {}, avg abs-error: {}, avg relative error: {}".format(
-              np.round(np.mean(qerr),2), np.round(np.mean(abs_err), 2),
-                            np.round(np.mean(relerr), 2)))
-
-# check the function comments to see the description of the arguments
-# can change the db arguments appropriately depending on the PostgreSQL
-# installation.
-ppc = get_eval_fn("ppc")
-ppc = ppc.eval([qrep], [ests], user="ceb", pwd="password", db_name="imdb",
-        db_host="localhost", port=5432, num_processes=-1, result_dir=None,
-        cost_model="cm1")
-
-# we considered only one query, so the returned lists have just one element
-print("PPC is: {}".format(np.round(ppc[0])))
-
-pc = get_eval_fn("plancost")
-plan_cost = pc.eval([qrep], [ests], cost_model="C")
-print("Plan-Cost is: {}".format(np.round(plan_cost[0])))
-```
-
-For evaluating postgres on all queries in CEB / or just from some templates,
-run:
-
-```bash
-python3 main.py --query_templates 1a,2a --algs postgres --eval_fns qerr,ppc --result_dir results
-```
 ### Getting runtimes
 
 There are two steps to generating the runtimes; first, we generate the Postgres

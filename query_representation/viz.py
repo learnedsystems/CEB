@@ -70,9 +70,9 @@ def explain_to_nx(explain):
                     + plan["Plans"][1]["Total Cost"]
 
             # +1 to avoid cases which are very close
-            if not total_cost+1 >= children_cost:
-                print("aliases: {} children cost: {}, total cost: {}".format(\
-                        aliases, children_cost, total_cost))
+            # if not total_cost+1 >= children_cost:
+                # print("aliases: {} children cost: {}, total cost: {}".format(\
+                        # aliases, children_cost, total_cost))
                 # pdb.set_trace()
             G.nodes[node]["cur_cost"] = total_cost - children_cost
             G.nodes[node]["node_label"] = plan["Node Type"][0]

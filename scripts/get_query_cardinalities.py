@@ -228,11 +228,6 @@ def get_cardinality(qrep, card_type, key_name, db_host, db_name, user, pwd,
         if source_node in node_list:
             node_list.remove(source_node)
 
-    # if node_list
-    # print(node_list)
-    # pdb.set_trace()
-    # for subqi, (subset, info) in enumerate(qrep["subset_graph"].nodes().items()):
-
     card_key = "cardinality"
     if db_year is not None:
         card_key = str(db_year) + card_key
@@ -296,6 +291,8 @@ def get_cardinality(qrep, card_type, key_name, db_host, db_name, user, pwd,
             output = execute_query(subsql, user, db_host, port, pwd, db_name, [])
             card = pg_est_from_explain(output)
             cards[key_name] = card
+            if subqi % 10 == 0:
+                save_qrep(fn, qrep)
 
         elif card_type == "actual":
             if subqi % 10 == 0:

@@ -126,13 +126,16 @@ class Postgres(CardinalityEstimationAlg):
         for sample in test_samples:
             pred_dict = {}
             nodes = list(sample["subset_graph"].nodes())
-            # if SOURCE_NODE in nodes:
-                # nodes.remove(SOURCE_NODE)
 
             for alias_key in nodes:
                 info = sample["subset_graph"].nodes()[alias_key]
-                true_card = info["cardinality"]["actual"]
-                est = info["cardinality"]["expected"]
+                try:
+                    true_card = info["cardinality"]["actual"]
+                    est = info["cardinality"]["expected"]
+                except:
+                    print(alias_key)
+                    print(info)
+                    pdb.set_trace()
                 pred_dict[(alias_key)] = est
 
             preds.append(pred_dict)

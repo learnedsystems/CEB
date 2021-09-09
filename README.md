@@ -12,6 +12,7 @@
       - [Query Representation](#query-representation)
       - [Evaluating Estimates](#evaluating-estimates)
       - [Getting Runtimes](#getting-runtimes)
+      - [Visualizing Results](#visualizing-results)
       - [Learned Models](#learned-models)
         - [Examples](#examples)
         - [Featurization](#featurization)
@@ -38,7 +39,7 @@ Download the IMDb CEB workload to `queries/imdb`.
 bash scripts/download_imdb_workload.sh
 ```
 
-Each directory represents a query template. Each query, and all it's sub-plans, is represented using a pickle file, of the form `1a100.pkl`.
+Each directory represents a query template. Each query, and all it's subplans, is represented using a pickle file, of the form `1a100.pkl`.
 
 ### PostgreSQL
 
@@ -72,11 +73,6 @@ docker exec -it card-db bash
 psql -d imdb -h localhost -U imdb -p $LCARD_PORT
 ```
 
-To test this, run
-```bash
-python3 tests/test_installation.py
-```
-
 To clean up everything, if you don't want to use the docker image anymore, run:
 ```bash
 bash clean.sh
@@ -96,6 +92,12 @@ These can be installed with
 
 ```bash
 pip3 install -r requirements.txt
+```
+
+To test the whole setup, including the docker installation, run
+
+```bash
+python3 tests/test_installation.py
 ```
 
 ## Usage
@@ -136,7 +138,7 @@ for i in range(len(preds)):
         print("     Predicate values: ", pred_vals[i][j])
 ```
 
-Next, we see how to access each of the sub-plans, and their cardinality
+Next, we see how to access each of the subplans, and their cardinality
 estimates.
 
 ```python
@@ -190,6 +192,46 @@ cost models, there can be many possibilities considered here.
   * Plan-Cost: this considers only left deep plans, and uses a simple user
                specified cost function (referred to as C in the paper).
 
+#### Notes on Postgres Plan Cost
+
+* What is a good cost? This is very context dependent; What we really care
+about is runtimes, but plan costs are nice proxies for them because they can be
+computed quickly, and repeatedly. But these costs don't have units. But, it can
+be helpful to compare them with the Postgres Plan Cost generated using the true
+cardinality as estimators (use flag: --algs true).
+
+* We can normalize these Postgres Plan Costs by dividing by the optimal cost OR
+subtracting the optimal cost; But it is not clear what is the best approach;
+For instance, it is common to see that some templates in CEB (e.g., 3a,4a),
+    have much lower magnitude of PPC (e.g., < 100k), while some templates have
+    PPC in the order of > 1e7; For a particular query, if the optimal cost is
+    20k, and your estimator's cost is 40k, then this would lead to a relative
+    error of 2.0; While for a large query, with an optimal cost of 1e7, and the
+    estimator's cost of 1.5e7, would lead to a relative error of 1.5. But in
+    these cases, as expected, we find the runtime differences to be more
+    prominent in the latter case.
+
+#### Adding other DBMS backends
+We can similarly define MySQL Plan Cost, and plan costs using other database
+backends. Plan costs are computed using the following steps:
+
+1. Insert cardinality estimates into the optimizer; Get the output plan. (Note
+     that since we used the estimated cardinalities, the cost we get for this plan does not mean much).
+1. Insert the true cardinality estimates into the optimizer; Cost the plan from
+   the previous step using the true cardinalities. This reflects how `good`
+   that plan is in reality; we call it the DBMS Plan Cost.
+
+These require two abilities: inserting cardinality estimates into an optimizer
+(typically, not provided by most optimizers), and then precisely specifiying a
+plan (for the step 2 above); It is usually possible to precisely specify a
+plan, although this can be tricky. An example of this process with PostgreSQL
+is in the file evaluation/plan\_losses.py; look at the function
+\_get_pg_plancosts;
+
+We've a mysql [fork](https://github.com/parimarjan/mysql-server) that
+implements these requirements; But it is somewhat hacky and not easy to use. We
+plan to eventually add a cleaner version to this repo. Similarly, you can add
+other database backends as well.
 
 ```python
 from query_representation.query import *
@@ -253,13 +295,25 @@ be reliable.
 # writes out the file results/Postgres/PostgresPlanCost.csv with the sqls to execute
 # the sqls are modified with pg_hint_plan hints to use the cardinalities output
 # by the given algorithm' estimates;
-python3 main.py --algs postgres -n 5 --query_template 1a --eval_fns qerr,ppc,plancost --result_dir results
+python3 main.py --algs postgres -n 5 --query_template 1a --eval_fns qerr,ppc,plancost
 
 # executes the sqls on PostgreSQL server, with the given credientials
 python3 evaluation/get_runtimes.py --port 5432 --user imdb --pwd password --result_dir results/Postgres
 ```
 
-TODO: describe the execution setup used in the paper.
+In the [Flow-Loss paper](http://vldb.org/pvldb/vol14/p2019-negi.pdf), we
+executed these plans on AWS machines w/ NVME hard disks, using the code in this [repo](http://github.com/parimarjan/prism-testbed/). It is not clear what is the best environment to evaluate runtime of these plans, and you should choose the appropriate settings for your project.
+
+### Visualizing Results
+
+When you execute,
+```bash
+python3 main.py --algs postgres -n 5 --query_template 1a --eval_fns qerr,ppc
+```
+
+it should create files results/Postgres/train_query_plans.pdf etc. which
+contain a pdf with the query plan generated using the cardinalities from
+PostgreSQL, and additional details. TODO: add example images.
 
 ### Learned Models
 
@@ -317,7 +371,7 @@ vectors, which significantly increase the size of feature vectors / memory
 requirements etc.; We take the approach of hashing the predicate filter values
 to a small array, whose size is controlled by the feature: --max_discrete_featurizing_buckets; Intuitively, if the number of unique values in the column is not too much larger than the number of buckets we use, then this can be a useful signal for workloads with repeating patterns; In CEB, we typically had (IN, =) predicates on columns with not very large alphabet sizes, so --max_discrete_featurizing_buckets 10 significantly improves the performance of these models;
 
-But its debatable if this is scalable to more challenging workloads. Thus, in general, it may be interesting to develop methods, and evaluate models, while setting --max_discrete_featurizing_buckets 1; In a previous paper, [Cost Guided Cardinality Estimation](#https://ieeexplore.ieee.org/document/9094107), we used this setting. Methods that can improve model performance when max_discrete_featurizing_buckets == 1, might perhaps model a more common scenario where the alphabet size of categorical columns is too large, so these features become less useful.
+But its debatable if this is scalable to more challenging workloads. Thus, in general, it may be interesting to develop methods, and evaluate models, while setting --max_discrete_featurizing_buckets 1; In a previous paper, [Cost Guided Cardinality Estimation](https://ieeexplore.ieee.org/document/9094107), we used this setting. Methods that can improve model performance when max_discrete_featurizing_buckets == 1, might perhaps model a more common scenario where the alphabet size of categorical columns is too large, so these features become less useful.
 
 #### Loss Functions
 
@@ -342,5 +396,26 @@ python3 query_gen/gen_queries.py --query_output_dir qreps --template_dir ./templ
 ```
 
 ### Generating Cardinalities (TODO)
+
+TODO: joblight; set directories; appropriate credentials etc.
+
+```bash
+python3 scripts/single_sql_to_multiple.py
+
+# this updates all the subplans of each qrep object with the postgresql
+# estimates that we use in featurization etc. of the subplans. This is stored in
+# the field \[subplan\]\["cardinality"\]\["expected"\]
+python3 scripts/get_query_cardinalities.py --port 5432 --db_name imdb --query_dir queries/joblight/all_joblight/ --card_type pg --key_name expected --pwd password --user imdb
+
+# this updates all the subplans of each qrep object with the actual
+# estimates that we use in featurization etc. of the subplans. This is stored in
+# the field \[subplan\]\["cardinality"\]\["actual"\]
+# This step could take really long depending on the size of the query, the
+# evaluation setup you have etc. Also, be careful with the resource utilization
+#by this script: by default, it parallelizes the executions, but this might
+#cause PostgreSQL to crash in case there is not enough resources (check flags
+#    --no_parallel 1 to do it one query at a time)
+python3 scripts/get_query_cardinalities.py --port 5432 --db_name imdb --query_dir queries/joblight/all_joblight/ --card_type actual --key_name actual --pwd password --user imdb
+```
 
 ## Future Work

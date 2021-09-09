@@ -135,7 +135,7 @@ def get_pghint_modified_sql(sql, cardinalities, join_ops,
     sql = pg_hint_str + sql
     return sql
 
-def get_plan_cost_of_ests(query, est_cardinalities, true_cardinalities,
+def _get_pg_plancost(query, est_cardinalities, true_cardinalities,
         join_graph, cursor, sql_costs):
     '''
     Main function for computing Postgres Plan Costs.
@@ -224,12 +224,12 @@ def compute_cost_pg_single(queries, join_graphs, true_cardinalities,
     ret = []
     for i, query in enumerate(queries):
         join_graph = join_graphs[i]
-        est_sql, est_cost, est_explain = get_plan_cost_of_ests(query,
+        est_sql, est_cost, est_explain = _get_pg_plancost(query,
                 est_cardinalities[i], true_cardinalities[i], join_graphs[i],
                 cursor, sql_costs_archive)
 
         if opt_costs[i] is None:
-            _, opt_costs[i], _ = get_plan_cost_of_ests(query,
+            _, opt_costs[i], _ = _get_pg_plancost(query,
                     true_cardinalities[i], true_cardinalities[i],
                     join_graphs[i], cursor, sql_costs_archive)
             if est_cost < opt_costs[i]:

@@ -10,3 +10,4 @@ grandalf
 xgboost
 scikit-learn
 torch
+pygtrie

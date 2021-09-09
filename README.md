@@ -27,19 +27,7 @@
 ## Setup
 
 If you are only interested in evaluating the cardinalities, using a loss
-function such as Q-Error, or if you just want to use the queries for some other task, then you just need to download the workload. But the main goal of this dataset is to make it easy to evaluate the impact of cardinality estimates on query optimization. For this, we use PostgreSQL. We provide a dockerized setup with the appropriate setup to get started right away; Instead, you can also easily adapt it to your own installation of PostgreSQL.
-
-Docker is the easiest way to started with CEB. But, for a long term project, it is probably better to use a system wide installation of PostgreSQL.
-
-### Workload
-
-Download the IMDb CEB workload to `queries/imdb`.
-
-```bash
-bash scripts/download_imdb_workload.sh
-```
-
-Each directory represents a query template. Each query, and all it's subplans, is represented using a pickle file, of the form `1a100.pkl`.
+function such as Q-Error, or if you just want to use the queries for some other task, then you just need to download the workload. But the main goal of this dataset is to make it easy to evaluate the impact of cardinality estimates on query optimization. For this, we use PostgreSQL (and eventually plan to add support for other open source DBMS' like MySQL). We provide a dockerized setup with the appropriate setup to get started right away; Instead, you can also easily adapt it to your own installation of PostgreSQL. Docker is the easiest way to started with CEB.
 
 ### PostgreSQL
 
@@ -49,16 +37,36 @@ We use docker to install and configure PostgreSQL, and setup the relevant databa
 
 ```bash
 cd docker
-export LCARD_USER=imdb
+export LCARD_USER=ceb
 export LCARD_PORT=5432
 docker build --build-arg LCARD_USER=${LCARD_USER} -t pg12 .
-docker run --name card-db -p ${LCARD_PORT}:5432 -d pg12
+docker run -itd --shm-size=1g --name card-db -p ${LCARD_PORT}:5432 -d pg12
 docker restart card-db
 docker exec -it card-db /imdb_setup.sh
 ```
 
-Note: Depending on the settings of your docker instance, you may require sudo
-in the above commands.
+Note: Depending on the settings of your docker instance, you may require sudo in the above commands. Also, in the docker run command, you may want to choose the --shm-size parameter depending on your requirements.
+
+<b> Optionally </b> you can use the following command to install the stackexchange database; But the stackexchange database is A LOT larger than the IMDb database --- make sure you have up to 150GB space on your device before running the following command.
+
+```bash
+docker exec -it card-db /stack_setup.sh
+
+# These commands ensure there are only foreign key : primary key
+# indexes on the stackexchange database; Without the drop_indexes.sql command,
+#the database contains a few indexes that utilize multiple columns, which may
+#potentially be better suited for the join topology in the stackexchange
+#database, but which index setup is the most appropriate remains to be explored further.
+
+psql -d stack -U $LCARD_USER -p $LCARD_PORT -h localhost < drop_indexes.sql
+psql -d stack -U $LCARD_USER -p $LCARD_PORT -h localhost < create_indexes.sql
+```
+
+The StackExchange database was based on one of the dumps released from the
+StackExchange foundation; We've used various heuristics / simplifications in
+constructing the database from the StackExchange dump, and restore the database
+from a PostgreSQL snapshot (see stack_setup.sh for its download link).
+The StackExchange database holds a lot of potential to develop more challenging query templates as well, although we have not explored it as much as IMDb. Refer to the [workload](#workload) section for a comparison between IMDb and StackExchange workloads.
 
 Here are a few useful commands to check / debug your setup:
 ```bash
@@ -85,6 +93,17 @@ passing in the appropriate user, db_name, db_host, and ports to appropriate pyth
 function calls.
 
 #### Local Setup (TODO)
+
+### Workload
+
+Download the IMDb CEB workload to `queries/imdb`.
+
+```bash
+bash scripts/download_imdb_workload.sh
+```
+
+Each directory represents a query template. Each query, and all it's subplans, is represented using a pickle file, of the form `1a100.pkl`.
+
 
 ### Python Requirements
 
@@ -258,7 +277,7 @@ print("avg q-error: {}, avg abs-error: {}, avg relative error: {}".format(
 # can change the db arguments appropriately depending on the PostgreSQL
 # installation.
 ppc = get_eval_fn("ppc")
-ppc = ppc.eval([qrep], [ests], user="imdb", pwd="password", db_name="imdb",
+ppc = ppc.eval([qrep], [ests], user="ceb", pwd="password", db_name="imdb",
         db_host="localhost", port=5432, num_processes=-1, result_dir=None,
         cost_model="cm1")
 
@@ -298,7 +317,7 @@ be reliable.
 python3 main.py --algs postgres -n 5 --query_template 1a --eval_fns qerr,ppc,plancost
 
 # executes the sqls on PostgreSQL server, with the given credientials
-python3 evaluation/get_runtimes.py --port 5432 --user imdb --pwd password --result_dir results/Postgres
+python3 evaluation/get_runtimes.py --port 5432 --user ceb --pwd password --result_dir results/Postgres
 ```
 
 In the [Flow-Loss paper](http://vldb.org/pvldb/vol14/p2019-negi.pdf), we
@@ -392,7 +411,7 @@ base SQL structure of the templates in the IMDb workload are given here
 can use:
 
 ```bash
-python3 query_gen/gen_queries.py --query_output_dir qreps --template_dir ./templates/imdb/3a/ -n 10 --user imdb --pwd password --db_name imdb --port 5432
+python3 query_gen/gen_queries.py --query_output_dir qreps --template_dir ./templates/imdb/3a/ -n 10 --user ceb --pwd password --db_name imdb --port 5432
 ```
 
 ### Generating Cardinalities (TODO)
@@ -400,12 +419,13 @@ python3 query_gen/gen_queries.py --query_output_dir qreps --template_dir ./templ
 TODO: joblight; set directories; appropriate credentials etc.
 
 ```bash
-python3 scripts/single_sql_to_multiple.py
+# Change the input / output directories appropriately in the script etc.
+python3 scripts/sql_to_qrep.py
 
 # this updates all the subplans of each qrep object with the postgresql
 # estimates that we use in featurization etc. of the subplans. This is stored in
 # the field \[subplan\]\["cardinality"\]\["expected"\]
-python3 scripts/get_query_cardinalities.py --port 5432 --db_name imdb --query_dir queries/joblight/all_joblight/ --card_type pg --key_name expected --pwd password --user imdb
+python3 scripts/get_query_cardinalities.py --port 5432 --db_name imdb --query_dir queries/joblight/all_joblight/ --card_type pg --key_name expected --pwd password --user ceb
 
 # this updates all the subplans of each qrep object with the actual
 # estimates that we use in featurization etc. of the subplans. This is stored in
@@ -415,7 +435,7 @@ python3 scripts/get_query_cardinalities.py --port 5432 --db_name imdb --query_di
 #by this script: by default, it parallelizes the executions, but this might
 #cause PostgreSQL to crash in case there is not enough resources (check flags
 #    --no_parallel 1 to do it one query at a time)
-python3 scripts/get_query_cardinalities.py --port 5432 --db_name imdb --query_dir queries/joblight/all_joblight/ --card_type actual --key_name actual --pwd password --user imdb
+python3 scripts/get_query_cardinalities.py --port 5432 --db_name imdb --query_dir queries/joblight/all_joblight/ --card_type actual --key_name actual --pwd password --user ceb
 ```
 
 ## Future Work

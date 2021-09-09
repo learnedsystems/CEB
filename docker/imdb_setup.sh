@@ -1,6 +1,5 @@
 #!/bin/sh
 
-sleep 5
 createdb -U $POSTGRES_USER imdb
 
 wget -O /var/lib/postgresql/pg_imdb.tar https://www.dropbox.com/s/vq1owleo9nuyxdf/pg_imdb.tar.gz?dl=1

@@ -7,6 +7,7 @@ import itertools
 import json
 import pdb
 import pickle
+import copy
 
 def get_subset_cache_name(sql):
     return str(deterministic_hash(sql)[0:5])

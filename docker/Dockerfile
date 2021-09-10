@@ -24,7 +24,9 @@ RUN chmod +x /install_pg_hint.sh
 RUN /install_pg_hint.sh
 
 ADD imdb_setup.sh /
+ADD stack_setup.sh /
 RUN chmod +x /imdb_setup.sh
+RUN chmod +x /stack_setup.sh
 
 # not running it right away because we want to restart docker container so
 # postgresql conf variables take effect

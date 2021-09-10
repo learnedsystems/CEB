@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from .plan_losses import PPC, PlanCost
+from .plan_losses import PPC, PlanCost,get_leading_hint
 from query_representation.utils import deterministic_hash,make_dir
 from query_representation.viz import *
 from matplotlib.backends.backend_pdf import PdfPages
@@ -35,6 +35,25 @@ def get_eval_fn(loss_name):
 class EvalFunc():
     def __init__(self, **kwargs):
         pass
+
+    def save_logs(self, qreps, errors, **kwargs):
+        result_dir = kwargs["result_dir"]
+        if result_dir is None:
+            return
+
+        if "samples_type" in kwargs:
+            samples_type = kwargs["samples_type"]
+        else:
+            samples_type = ""
+
+        resfn = os.path.join(result_dir, self.__str__() + ".csv")
+        res = pd.DataFrame(data=errors, columns=["errors"])
+        res["samples_type"] = samples_type
+        # TODO: add other data?
+        if os.path.exists(resfn):
+            res.to_csv(resfn, mode="a",header=False)
+        else:
+            res.to_csv(resfn, header=True)
 
     def eval(self, qreps, preds, **kwargs):
         '''
@@ -96,6 +115,8 @@ class QError(EvalFunc):
 
         errors = np.maximum((ytrue / yhat), (yhat / ytrue))
 
+        self.save_logs(qreps, errors, **kwargs)
+
         return errors
 
 class AbsError(EvalFunc):
@@ -124,6 +145,78 @@ class RelativeError(EvalFunc):
         return errors
 
 class PostgresPlanCost(EvalFunc):
+    def save_logs(self, qreps, errors, **kwargs):
+        if "result_dir" not in kwargs:
+            return
+
+        result_dir = kwargs["result_dir"]
+        if result_dir is None:
+            return
+
+        sqls = kwargs["sqls"]
+        plans = kwargs["plans"]
+        opt_costs = kwargs["opt_costs"]
+        true_cardinalities = kwargs["true_cardinalities"]
+        est_cardinalities = kwargs["est_cardinalities"]
+
+        costs = errors
+
+        if "samples_type" in kwargs:
+            samples_type = kwargs["samples_type"]
+        else:
+            samples_type = ""
+        if "alg_name" in kwargs:
+            alg_name = kwargs["alg_name"]
+        else:
+            alg_name = "Est"
+
+        costs_fn = os.path.join(result_dir, self.__str__() + ".csv")
+
+        if os.path.exists(costs_fn):
+            costs_df = pd.read_csv(costs_fn)
+        else:
+            columns = ["qname", "join_order", "exec_sql", "cost"]
+            costs_df = pd.DataFrame(columns=columns)
+
+        cur_costs = defaultdict(list)
+
+        for i, qrep in enumerate(qreps):
+            # sql_key = str(deterministic_hash(qrep["sql"]))
+            # cur_costs["sql_key"].append(sql_key)
+            qname = os.path.basename(qrep["name"])
+            cur_costs["qname"].append(qname)
+
+            joinorder = get_leading_hint(qrep["join_graph"], plans[i])
+            cur_costs["join_order"].append(joinorder)
+
+            cur_costs["exec_sql"].append(sqls[i])
+            cur_costs["cost"].append(costs[i])
+
+        cur_df = pd.DataFrame(cur_costs)
+        combined_df = pd.concat([costs_df, cur_df], ignore_index=True)
+        combined_df.to_csv(costs_fn, index=False)
+
+        # FIXME: hard to append to pdfs, so use samples_type to separate
+        # out the different times this function is currently called.
+
+        pdffn = samples_type + "_query_plans.pdf"
+        pdf = PdfPages(os.path.join(result_dir, pdffn))
+        for i, plan in enumerate(plans):
+            if plan is None:
+                continue
+            # we know cost of this; we know best cost;
+            title_fmt = """{}. PostgreSQL Plan Cost w/ True Cardinalities: {}\n; PostgreSQL Plan Cost w/ {} Estimates: {}\n PostgreSQL Plan using {} Estimates"""
+
+            title = title_fmt.format(qreps[i]["name"], opt_costs[i],
+                    alg_name, costs[i], alg_name)
+
+            # no idea why explains we get from cursor.fetchall() have so
+            # many nested lists[][]
+            plot_explain_join_order(plan[0][0][0], true_cardinalities[i],
+                    est_cardinalities[i], pdf, title)
+
+        pdf.close()
+
     def eval(self, qreps, preds, user="imdb",pwd="password",
             db_name="imdb", db_host="localhost", port=5432, num_processes=-1,
             result_dir=None, cost_model="cm1", **kwargs):
@@ -143,18 +236,11 @@ class PostgresPlanCost(EvalFunc):
         assert isinstance(qreps, list)
         assert isinstance(preds, list)
         assert isinstance(qreps[0], dict)
-        if "alg_name" in kwargs:
-            alg_name = kwargs["alg_name"]
-        else:
-            alg_name = "Est"
-
-        if "LCARD_USER" in os.environ:
-            user = os.environ["LCARD_USER"]
-        if "LCARD_PORT" in os.environ:
-            port = os.environ["LCARD_PORT"]
 
         if num_processes == -1:
             pool = mp.Pool(int(mp.cpu_count()))
+        elif num_processes == -2:
+            pool = None
         else:
             pool = mp.Pool(num_processes)
 
@@ -192,45 +278,14 @@ class PostgresPlanCost(EvalFunc):
                             num_processes=num_processes,
                             pool=pool)
 
-        if result_dir is not None:
-            make_dir(result_dir)
-            costs_fn = result_dir + "/" + cost_model + "_ppc.csv"
-            if os.path.exists(costs_fn):
-                costs_df = pd.read_csv(costs_fn)
-            else:
-                columns = ["sql_key", "plan", "exec_sql", "cost"]
-                costs_df = pd.DataFrame(columns=columns)
+        self.save_logs(qreps, costs, **kwargs, sqls=sqls,
+                plans=plans, opt_costs=opt_costs,
+                true_cardinalities=true_cardinalities,
+                est_cardinalities=est_cardinalities,
+                result_dir=result_dir)
 
-            cur_costs = defaultdict(list)
-
-            for i, qrep in enumerate(qreps):
-                sql_key = str(deterministic_hash(qrep["sql"]))
-                cur_costs["sql_key"].append(sql_key)
-                cur_costs["plan"].append(plans[i])
-                cur_costs["exec_sql"].append(sqls[i])
-                cur_costs["cost"].append(costs[i])
-
-            cur_df = pd.DataFrame(cur_costs)
-            combined_df = pd.concat([costs_df, cur_df], ignore_index=True)
-            combined_df.to_csv(costs_fn, index=False)
-
-            pdf = PdfPages(os.path.join(result_dir, "query_plans.pdf"))
-            for i, plan in enumerate(plans):
-                if plan is None:
-                    continue
-                # we know cost of this; we know best cost;
-                title_fmt = """{}. {} Estimates, Plan Cost: {}\n True cardinalities Plan Cost: {}"""
-                title = title_fmt.format(qreps[i]["name"], alg_name, costs[i],
-                        opt_costs[i])
-
-                # no idea why explains we get from cursor.fetchall() have so
-                # many nested lists[][]
-                plot_explain_join_order(plan[0][0][0], true_cardinalities[i],
-                        est_cardinalities[i], pdf, title)
-
-            pdf.close()
-
-        pool.close()
+        if pool is not None:
+            pool.close()
         return costs
 
 class SimplePlanCost(EvalFunc):

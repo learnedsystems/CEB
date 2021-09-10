@@ -11,6 +11,7 @@ import random
 import klepto
 from sklearn.model_selection import train_test_split
 import pdb
+import copy
 
 def eval_alg(alg, eval_funcs, qreps, samples_type):
     '''
@@ -24,6 +25,7 @@ def eval_alg(alg, eval_funcs, qreps, samples_type):
 
     for efunc in eval_funcs:
         rdir = None
+
         if args.result_dir is not None:
             rdir = os.path.join(args.result_dir, exp_name)
             make_dir(rdir)
@@ -31,17 +33,8 @@ def eval_alg(alg, eval_funcs, qreps, samples_type):
         errors = efunc.eval(qreps, ests, args=args, samples_type=samples_type,
                 result_dir=rdir, user = args.user, db_name = args.db_name,
                 db_host = args.db_host, port = args.port,
+                num_processes = args.num_eval_processes,
                 alg_name = alg_name)
-
-        if args.result_dir is not None:
-            resfn = os.path.join(rdir, efunc.__str__() + ".csv")
-            res = pd.DataFrame(data=errors, columns=["errors"])
-            res["samples_type"] = samples_type
-            # todo: add other data?
-            if os.path.exists(resfn):
-                res.to_csv(resfn, mode="a",header=False)
-            else:
-                res.to_csv(resfn, header=True)
 
         print("{}, {}, {}, #samples: {}, {}: mean: {}, median: {}, 99p: {}"\
                 .format(args.db_name, samples_type, alg, len(errors),
@@ -89,6 +82,19 @@ def get_alg(alg):
                 clip_gradient=args.clip_gradient,
                 loss_func_name = args.loss_func_name,
                 hidden_layer_size = args.hidden_layer_size)
+    elif alg == "mscn":
+        return MSCN(max_epochs = args.max_epochs, lr=args.lr,
+                load_padded_mscn_feats = args.load_padded_mscn_feats,
+                mb_size = args.mb_size,
+                weight_decay = args.weight_decay,
+                load_query_together = args.load_query_together,
+                result_dir = args.result_dir,
+                num_hidden_layers=args.num_hidden_layers,
+                eval_epoch = args.eval_epoch,
+                optimizer_name=args.optimizer_name,
+                clip_gradient=args.clip_gradient,
+                loss_func_name = args.loss_func_name,
+                hidden_layer_size = args.hidden_layer_size)
 
     else:
         assert False
@@ -99,6 +105,14 @@ def get_query_fns():
     train_qfns = []
     test_qfns = []
     val_qfns = []
+
+    if args.train_test_split_kind == "template":
+        # the train/test split will be on the template names
+        sorted_fns = copy.deepcopy(fns)
+        sorted_fns.sort()
+        train_tmps, test_tmps = train_test_split(sorted_fns,
+                test_size=args.test_size,
+                random_state=args.diff_templates_seed)
 
     for qi,qdir in enumerate(fns):
         template_name = os.path.basename(qdir)
@@ -119,13 +133,24 @@ def get_query_fns():
         else:
             assert False
 
-        if args.test_diff_templates:
+        if args.train_test_split_kind == "template":
             cur_val_fns = []
-            assert False
-        else:
-            cur_val_fns, qfns = train_test_split(qfns,
-                    test_size=1-args.val_size,
-                    random_state=args.seed)
+            if qdir in train_tmps:
+                cur_train_fns = qfns
+                cur_test_fns = []
+            elif qdir in test_tmps:
+                cur_train_fns = []
+                cur_test_fns = qfns
+            else:
+                assert False
+        elif args.train_test_split_kind == "query":
+            if args.val_size == 0:
+                cur_val_fns = []
+            else:
+                cur_val_fns, qfns = train_test_split(qfns,
+                        test_size=1-args.val_size,
+                        random_state=args.seed)
+
             cur_train_fns, cur_test_fns = train_test_split(qfns,
                     test_size=args.test_size,
                     random_state=args.seed)
@@ -134,7 +159,18 @@ def get_query_fns():
         val_qfns += cur_val_fns
         test_qfns += cur_test_fns
 
-    print("skipped templates: ", " ".join(skipped_templates))
+    print("Skipped templates: ", " ".join(skipped_templates))
+
+    if args.train_test_split_kind == "query":
+        print("""Selected {} train queries, {} test queries, and {} val queries"""\
+                .format(len(train_qfns), len(test_qfns), len(val_qfns)))
+    elif args.train_test_split_kind == "template":
+        train_tmp_names = [os.path.basename(tfn) for tfn in train_tmps]
+        test_tmp_names = [os.path.basename(tfn) for tfn in test_tmps]
+        print("""Selected {} train templates, {} test templates"""\
+                .format(len(train_tmp_names), len(test_tmp_names)))
+        print("""Training templates: {}\nEvaluation templates: {}""".\
+                format(",".join(train_tmp_names), ",".join(test_tmp_names)))
 
     # going to shuffle all these lists, so queries are evenly distributed. Plan
     # Cost functions for some of these templates take a lot longer; so when we
@@ -160,7 +196,8 @@ def load_qdata(fns):
 
 def get_featurizer(trainqs, valqs, testqs):
     featkey = deterministic_hash("db-" + args.query_dir + \
-                args.query_templates + args.algs)
+                args.query_templates + args.algs \
+                + args.train_test_split_kind)
     misc_cache = klepto.archives.dir_archive("./misc_cache",
             cached=True, serialized=True)
     found_feats = featkey in misc_cache.archive and not args.regen_featstats
@@ -185,15 +222,16 @@ def get_featurizer(trainqs, valqs, testqs):
     # these configuration properties do not influence the basic statistics
     # collected in the featurizer.update_column_stats call; Therefore, we don't
     # include this in the cached version
-    featurizer.setup(ynormalization=args.ynormalization)
+    featurizer.setup(ynormalization=args.ynormalization,
+            featurization_type=feat_type)
     featurizer.update_ystats(trainqs+valqs+testqs)
 
     return featurizer
 
 def main():
+
     train_qfns, test_qfns, val_qfns = get_query_fns()
-    print("""Selected {} train queries, {} test queries, and {} val queries"""\
-            .format(len(train_qfns), len(test_qfns), len(val_qfns)))
+
     trainqs = load_qdata(train_qfns)
 
     # Note: can be quite memory intensive to load them all; might want to just
@@ -244,16 +282,22 @@ def read_flags():
             default=5432)
 
     parser.add_argument("--result_dir", type=str, required=False,
-            default=None)
+            default="results")
     parser.add_argument("--query_templates", type=str, required=False,
             default="all")
 
     parser.add_argument("--seed", type=int, required=False,
             default=13)
-    parser.add_argument("--test_diff_templates", type=int, required=False,
-            default=0)
-    parser.add_argument("-n", "--num_samples_per_template", type=int, required=False,
-            default=-1)
+    parser.add_argument("--num_eval_processes", type=int, required=False,
+            default=-1, help="""Used for computing plan costs in parallel. -1 use all cpus; -2: use no cpus; else use n cpus. """)
+
+    parser.add_argument("--train_test_split_kind", type=str, required=False,
+            default="query", help="""query OR template.""")
+    parser.add_argument("--diff_templates_seed", type=int, required=False,
+            default=1, help="""Seed used when train_test_split_kind == template""")
+
+    parser.add_argument("-n", "--num_samples_per_template", type=int,
+            required=False, default=-1)
     parser.add_argument("--test_size", type=float, required=False,
             default=0.5)
     parser.add_argument("--val_size", type=float, required=False,
@@ -261,7 +305,7 @@ def read_flags():
     parser.add_argument("--algs", type=str, required=False,
             default="postgres")
     parser.add_argument("--eval_fns", type=str, required=False,
-            default="qerr")
+            default="qerr,ppc,plancost")
 
     # featurizer arguments
     parser.add_argument("--regen_featstats", type=int, required=False,
@@ -270,6 +314,9 @@ def read_flags():
             default="log")
 
     ## NN training features
+    parser.add_argument("--load_padded_mscn_feats", type=int, required=False,
+            default=0, help="""loads all the mscn features with padded zeros in memory -- speeds up training, but can take too much RAM.""")
+
     parser.add_argument("--weight_decay", type=float, required=False,
             default=0.0)
     parser.add_argument("--max_epochs", type=int,
@@ -286,7 +333,7 @@ def read_flags():
     parser.add_argument("--load_query_together", type=int, required=False,
             default=0)
     parser.add_argument("--optimizer_name", type=str, required=False,
-            default="adam")
+            default="adamw")
     parser.add_argument("--clip_gradient", type=float,
             required=False, default=20.0)
     parser.add_argument("--lr", type=float,

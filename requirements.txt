@@ -5,3 +5,9 @@ networkx
 sqlparse
 moz_sql_parser
 psycopg2-binary
+matplotlib
+grandalf
+xgboost
+scikit-learn
+torch
+pygtrie

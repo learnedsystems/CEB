@@ -15,7 +15,6 @@ import pdb
 from cost_model import *
 
 TIMEOUT_CONSTANT = 909
-RERUN_TIMEOUTS = True
 
 def read_flags():
     parser = argparse.ArgumentParser()
@@ -32,7 +31,7 @@ def read_flags():
     parser.add_argument("--db_name", type=str, required=False,
             default="imdb")
     parser.add_argument("--costs_fn", type=str, required=False,
-            default="ppc.csv")
+            default="PostgresPlanCost.csv")
 
     parser.add_argument("--db_host", type=str, required=False,
             default="localhost")
@@ -46,13 +45,10 @@ def read_flags():
     return parser.parse_args()
 
 def execute_sql(sql, cost_model="cm1",
-        results_fn="jerr.pkl", explain=False,
-        materialize=True, timeout=900000):
+        explain=False,
+        materialize=False, timeout=900000):
     '''
     '''
-    # drop_cache_cmd = "./drop_cache.sh > /dev/null"
-    # p = sp.Popen(drop_cache_cmd, shell=True)
-    # p.wait()
 
     if explain:
         sql = sql.replace("explain (format json)", "explain (analyze,costs, format json)")
@@ -66,14 +62,14 @@ def execute_sql(sql, cost_model="cm1",
 
     cursor = con.cursor()
     cursor.execute("LOAD 'pg_hint_plan';")
-    cursor.execute("SET geqo_threshold = {}".format(20))
+    cursor.execute("SET geqo_threshold = {}".format(32))
     set_cost_model(cursor, cost_model)
 
     # the idea is that we inject the #rows using the pg_hint_plan into
     # postgresql; then the join orders etc. are computed the postgresql engine
     # using the given cardinalities
-    cursor.execute("SET join_collapse_limit = {}".format(17))
-    cursor.execute("SET from_collapse_limit = {}".format(17))
+    cursor.execute("SET join_collapse_limit = {}".format(32))
+    cursor.execute("SET from_collapse_limit = {}".format(32))
     cursor.execute("SET statement_timeout = {}".format(timeout))
 
     start = time.time()
@@ -119,19 +115,21 @@ def execute_sql(sql, cost_model="cm1",
     return explain_output, end-start
 
 def main():
-    def add_runtime_row(sql_key, rt, exp_analyze):
-        cur_runtimes["sql_key"].append(sql_key)
+    def add_runtime_row(qname, rt, exp_analyze):
+        cur_runtimes["qname"].append(qname)
         cur_runtimes["runtime"].append(rt)
         cur_runtimes["exp_analyze"].append(exp_analyze)
 
     cost_model = args.cost_model
-    costs_fn = args.result_dir + "/" + cost_model + "_" + args.costs_fn
+    costs_fn = os.path.join(args.result_dir, args.costs_fn)
+
     assert os.path.exists(costs_fn)
 
     costs = pd.read_csv(costs_fn)
     assert isinstance(costs, pd.DataFrame)
 
-    rt_fn = args.result_dir + "/" + "runtimes_" + args.costs_fn
+    rt_fn = os.path.join(args.result_dir, "Runtimes.csv")
+
     # go in order and execute runtimes...
     if os.path.exists(rt_fn):
         runtimes = pd.read_csv(rt_fn)
@@ -139,28 +137,28 @@ def main():
         runtimes = None
 
     if runtimes is None:
-        columns = ["sql_key", "runtime", "exp_analyze"]
+        columns = ["qname", "runtime", "exp_analyze"]
         runtimes = pd.DataFrame(columns=columns)
 
     cur_runtimes = defaultdict(list)
 
     for i,row in costs.iterrows():
-        if row["sql_key"] in runtimes["sql_key"].values:
+        if row["qname"] in runtimes["qname"].values:
             # what is the stored value for this key?
-            rt_df = runtimes[runtimes["sql_key"] == row["sql_key"]]
+            rt_df = runtimes[runtimes["qname"] == row["qname"]]
             stored_rt = rt_df["runtime"].values[0]
             if stored_rt == TIMEOUT_CONSTANT and args.rerun_timeouts:
                 print("going to rerun timed out query")
             else:
-                print("skipping {} with stored runtime".format(row["sql_key"]))
+                print("skipping {} with stored runtime".format(row["qname"]))
                 continue
 
         exp_analyze, rt = execute_sql(row["exec_sql"],
                 cost_model=cost_model,
-                results_fn=args.costs_fn, explain=args.explain,
+                explain=args.explain,
                 timeout=args.timeout)
 
-        add_runtime_row(row["sql_key"], rt, exp_analyze)
+        add_runtime_row(row["qname"], rt, exp_analyze)
 
         rts = cur_runtimes["runtime"]
         print("#Queries:{}, AvgRt: {}".format(len(rts),

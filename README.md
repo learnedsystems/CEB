@@ -112,7 +112,15 @@ Download the full IMDb CEB workload to `queries/imdb`.
 bash scripts/download_imdb_workload.sh
 ```
 
-Each directory represents a query template. Each query, and all it's subplans, is represented using a pickle file, of the form `1a100.pkl`.
+Each directory represents a query template. Each query, and all it's subplans, is represented using a pickle file, of the form `1a100.pkl`. This workload has over 13k queries; for most purposes, especially when testing out new models, you should probably use a smaller subset of the workload as evaluating on the whole dataset can take more time. For instance, we provide flags to run on only some templates, or to have only up to N queries per template.
+
+One useful subset of the data is by considering the PostgreSQL query plans when
+using true cardinalities; We can deduplicate all the queries where the true
+cardinalities map to the same query plan. This has about 3k queries; We have not explored the difference in the model performance' in these two scenarios, but for most practical purposes, this should be a sufficiently large dataset as well. We can download this by:
+
+```bash
+bash scripts/download_imdb_uniqueplans.sh
+```
 
 #### JOB
 
@@ -404,6 +412,34 @@ python3 main.py --query_templates all --algs fcnn --eval_fns qerr,ppc,plancost -
 Please look at cardinality\_estimation/algs.py for the list of provided
 implementations.
 
+#### Train Test Split
+
+We suggest two ways to split the dataset; `--train_test_split_kind query`
+splits train/test samples among the queries on each template. So for instance,
+if we run the following
+
+```bash
+python3 main.py --query_templates all --algs fcnn --eval_fns qerr,ppc,plancost --result_dir results --train_test_split_kind query --val_size 0.2 --test_size 0.5
+```
+
+the, for each template, we will select 0.2% queries in the validation set, and
+divide the remaining equally into train and test sets.
+
+A more challenging scenario will be to have a few unseen templates. For this,
+  use the flag `--train_test_split_kind template`. For example:
+
+```bash
+python3 main.py --query_templates all --algs fcnn --eval_fns qerr,ppc,plancost --result_dir results --train_test_split_kind template --test_size 0.5 --diff_templates_seed 1
+```
+
+This will divide the templates equally into train / test sets; Note: we can
+have a validation set in this case as well, but since the templates
+performance' can be very different from each other, its not clear if the
+validation set helps much. Since there are relatively few templates, the exact
+split can create very different experiments, thus, in this scenario we suggest
+cross validating across multiple such splits (e.g., by using
+    --diff_templates_seed 1, --diff_templates_seed 2, etc.).
+
 #### Flattened 1d v/s Set features
 
 The featurization scheme is implemented in cardinality\_estimation/featurizer.py. Look at the keyword arguments for Featurizer.setup() for the various configurations we use to generate the 1-d featurization of the queries.
@@ -459,7 +495,7 @@ this to work slightly better in general than optimizing for q-error directly.
 ### Generating Queries
 
 Queries in CEB are generated based on templates. Example templates are in the
-directory /templates/. More details abotu the templating scheme, including the
+directory /templates/. More details about the templating scheme, including the
 base SQL structure of the templates in the IMDb workload are given here
 [templates](/TEMPLATES.md). For generating queries from such a template, you
 can use:
@@ -470,7 +506,11 @@ python3 query_gen/gen_queries.py --query_output_dir qreps --template_dir ./templ
 
 ### Generating Cardinalities (TODO)
 
-TODO: joblight; set directories; appropriate credentials etc.
+Here, we will provide an example that shows how to go from a bunch of sql files
+to the qrep objects which contain all the cardinality estimates for subplans,
+   and is the format used to represent queries in this project. As a simple
+   example, we have added the JOB-light queries in the repo; these have small
+   join graphs, thus, the cardinalities can be generated very fast.
 
 ```bash
 # Change the input / output directories appropriately in the script etc.
@@ -491,5 +531,7 @@ python3 scripts/get_query_cardinalities.py --port 5432 --db_name imdb --query_di
 #    --no_parallel 1 to do it one query at a time)
 python3 scripts/get_query_cardinalities.py --port 5432 --db_name imdb --query_dir queries/joblight/all_joblight/ --card_type actual --key_name actual --pwd password --user ceb
 ```
+
+### TODO: Using wanderjoin
 
 ## Future Work

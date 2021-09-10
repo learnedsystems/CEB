@@ -399,7 +399,9 @@ PostgreSQL, and additional details.
 For instance, consider the query 11c in the Join Order Benchmark. The query
 plan based on PostgreSQL estimates is 4-5x worse than the query plan based on
 the true cardinalities; We can clearly see why the PostgreSQL estimates mess up
-by looking at the visalization in this ![plot](images/job-11c-postgres.png?raw=true "Join Order Benchmark, 11c").
+by looking at the accompanying visualization ![plot](images/job-11c-postgres.png?raw=true "Join Order Benchmark, 11c")
+
+Note that the cardinalities are rounded to the nearest thousand. The red node is the most expensive cost node; PostgreSQL was estimating a very low cardinality (blue), and went for a nested loop join. The true cardinality (orange), is larger, and a Hash Join was probably a better choice (if you check the same plan with flag --algs true , you will see that the best plan does use a similar plan, but with Hash Join in the third join).
 
 ### Learned Models
 

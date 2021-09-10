@@ -394,7 +394,12 @@ python3 main.py --algs postgres -n 5 --query_template 1a --eval_fns qerr,ppc
 
 it should create files results/Postgres/train_query_plans.pdf etc. which
 contain a pdf with the query plan generated using the cardinalities from
-PostgreSQL, and additional details. TODO: add example images.
+PostgreSQL, and additional details.
+
+For instance, consider the query 11c in the Join Order Benchmark. The query
+plan based on PostgreSQL estimates is 4-5x worse than the query plan based on
+the true cardinalities; We can clearly see why the PostgreSQL estimates mess up
+by looking at the visalization in this ![plot](images/job-11c-postgres.png?raw=true "Join Order Benchmark, 11c").
 
 ### Learned Models
 

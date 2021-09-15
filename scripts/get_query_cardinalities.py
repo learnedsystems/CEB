@@ -40,6 +40,7 @@ def pg_est_from_explain(output):
     est_vals = None
     for line in output:
         line = line[0]
+        # getting estimate from the first Join, or Scan operator we see
         if "Seq Scan" in line or "Loop" in line or "Join" in line \
                 or "Index Scan" in line or "Scan" in line:
             for w in line.split():
@@ -466,7 +467,10 @@ def main():
                     args.wj_walk_timeout, i, args.sampling_percentage,
                     args.sampling_type, args.skip_zero_queries, args.db_year))
 
-    assert not args.no_parallel
+    if args.no_parallel:
+        print("Generated all cardinalities")
+        exit(1)
+
     start = time.time()
     if args.num_proc == -1:
         num_proc = cpu_count()
@@ -474,7 +478,7 @@ def main():
         num_proc = args.num_proc
     with Pool(processes = num_proc) as pool:
         qreps = pool.starmap(par_func, par_args)
-    print("updated all cardinalities in {} seconds".format(time.time()-start))
+    print("Generated all cardinalities in {} seconds".format(time.time()-start))
 
 args = read_flags()
 main()

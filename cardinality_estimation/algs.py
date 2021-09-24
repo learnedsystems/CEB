@@ -5,7 +5,6 @@ import math
 import pandas as pd
 import json
 import sys
-import xgboost as xgb
 import random
 import torch
 from collections import defaultdict
@@ -302,6 +301,7 @@ class XGBoost(CardinalityEstimationAlg):
 
     def load_model(self, model_dir):
         model_path = model_dir + "/xgb_model.json"
+        import xgboost as xgb
         self.xgb_model = xgb.XGBRegressor(objective="reg:squarederror")
         self.xgb_model.load_model(model_path)
         print("*****loaded model*****")
@@ -327,6 +327,7 @@ class XGBoost(CardinalityEstimationAlg):
             print(self.xgb_model.best_estimator_)
             print("*******************BEST ESTIMATOR DONE**************")
         else:
+            import xgboost as xgb
             self.xgb_model = xgb.XGBRegressor(tree_method=self.tree_method,
                           objective="reg:squarederror",
                           verbosity=1,

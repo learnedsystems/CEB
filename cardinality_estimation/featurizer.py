@@ -129,6 +129,10 @@ class Featurizer():
         for qrep in qreps:
             self._update_stats(qrep)
 
+    def update_using_saved_stats(self, featdata):
+        for k,v in featdata.items():
+            setattr(self, k, v)
+
     def update_ystats(self, qreps):
         y = np.array(get_all_cardinalities(qreps, self.ckey))
         if self.ynormalization == "log":

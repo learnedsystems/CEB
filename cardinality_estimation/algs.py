@@ -5,7 +5,6 @@ import math
 import pandas as pd
 import json
 import sys
-import xgboost as xgb
 import random
 import torch
 from collections import defaultdict
@@ -13,12 +12,10 @@ from collections import defaultdict
 from query_representation.utils import *
 from .dataset import QueryDataset, pad_sets, to_variable
 from .nets import *
-# from .fcnn import FCNN
-# from .mscn import MSCN
 
 from torch.utils import data
-from torch.nn.utils.clip_grad import clip_grad_norm_
-from sklearn.ensemble import GradientBoostingRegressor
+# from torch.nn.utils.clip_grad import clip_grad_norm_
+# from sklearn.ensemble import GradientBoostingRegressor
 
 class CardinalityEstimationAlg():
 
@@ -303,12 +300,14 @@ class XGBoost(CardinalityEstimationAlg):
         return X, Y
 
     def load_model(self, model_dir):
+        import xgboost as xgb
         model_path = model_dir + "/xgb_model.json"
         self.xgb_model = xgb.XGBRegressor(objective="reg:squarederror")
         self.xgb_model.load_model(model_path)
         print("*****loaded model*****")
 
     def train(self, training_samples, **kwargs):
+        import xgboost as xgb
         self.featurizer = kwargs["featurizer"]
         self.training_samples = training_samples
 
@@ -373,6 +372,8 @@ class RandomForest(CardinalityEstimationAlg):
         pass
 
     def train(self, training_samples, **kwargs):
+        from sklearn.ensemble import RandomForestRegressor
+
         self.featurizer = kwargs["featurizer"]
         self.training_samples = training_samples
 
@@ -381,7 +382,10 @@ class RandomForest(CardinalityEstimationAlg):
         if self.grid_search:
             pass
         else:
-            self.model = RandomForestRegressor(n_jobs=-1, verbose=2, **params)
+            self.model = RandomForestRegressor(n_jobs=-1,
+                    verbose=2,
+                    n_estimators = self.n_estimators,
+                    max_depth = self.max_depth)
             self.model.fit(X, Y)
 
     def test(self, test_samples):

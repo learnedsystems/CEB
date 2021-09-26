@@ -93,7 +93,7 @@ def get_alg(alg):
                 weight_decay = args.weight_decay,
                 load_query_together = args.load_query_together,
                 result_dir = args.result_dir,
-                num_hidden_layers=args.num_hidden_layers,
+                # num_hidden_layers=args.num_hidden_layers,
                 eval_epoch = args.eval_epoch,
                 optimizer_name=args.optimizer_name,
                 clip_gradient=args.clip_gradient,

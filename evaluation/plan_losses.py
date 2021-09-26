@@ -206,7 +206,7 @@ def compute_cost_pg_single(queries, join_graphs, true_cardinalities,
         con = pg.connect(port=port,dbname=db_name,
                 user=user,password=pwd)
 
-    # FIXME: always use this?
+    # can take a lot of space
     if use_qplan_cache:
         archive_fn = "./.lc_cache/sql_costs_" + cost_model
         sql_costs_archive = klepto.archives.dir_archive(archive_fn,

@@ -4,6 +4,8 @@ from query_representation.query import *
 from evaluation.eval_fns import *
 from cardinality_estimation.featurizer import *
 from cardinality_estimation.algs import *
+from cardinality_estimation.fcnn import FCNN
+from cardinality_estimation.mscn import MSCN
 
 import glob
 import argparse
@@ -225,7 +227,6 @@ def get_featurizer(trainqs, valqs, testqs):
     featurizer.setup(ynormalization=args.ynormalization,
             featurization_type=feat_type)
     featurizer.update_ystats(trainqs+valqs+testqs)
-
     return featurizer
 
 def main():
@@ -275,11 +276,11 @@ def read_flags():
     parser.add_argument("--db_host", type=str, required=False,
             default="localhost")
     parser.add_argument("--user", type=str, required=False,
-            default="imdb")
+            default="ceb")
     parser.add_argument("--pwd", type=str, required=False,
             default="password")
     parser.add_argument("--port", type=int, required=False,
-            default=5432)
+            default=5431)
 
     parser.add_argument("--result_dir", type=str, required=False,
             default="results")
@@ -314,8 +315,7 @@ def read_flags():
             default="log")
 
     ## NN training features
-    parser.add_argument("--load_padded_mscn_feats", type=int, required=False,
-            default=0, help="""loads all the mscn features with padded zeros in memory -- speeds up training, but can take too much RAM.""")
+    parser.add_argument("--load_padded_mscn_feats", type=int, required=False, default=0, help="""==1 loads all the mscn features with padded zeros in memory -- speeds up training, but can take too much RAM.""")
 
     parser.add_argument("--weight_decay", type=float, required=False,
             default=0.0)

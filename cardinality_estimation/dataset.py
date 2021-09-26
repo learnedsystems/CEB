@@ -19,6 +19,23 @@ def to_variable(arr, use_cuda=True, requires_grad=False):
         arr = Variable(arr, requires_grad=requires_grad)
     return arr
 
+def _handle_set_padding(features, max_set_vals):
+
+    if len(features) == 0:
+        return None, None
+
+    features = np.vstack(features)
+    num_pad = max_set_vals - features.shape[0]
+    assert num_pad >= 0
+
+    mask = np.ones_like(features).mean(1, keepdims=True)
+    features = np.pad(features, ((0, num_pad), (0, 0)), 'constant')
+    mask = np.pad(mask, ((0, num_pad), (0, 0)), 'constant')
+    features = np.expand_dims(features, 0)
+    mask = np.expand_dims(mask, 0)
+
+    return features, mask
+
 def pad_sets(all_table_features, all_pred_features,
         all_join_features, maxtabs, maxpreds, maxjoins):
 
@@ -36,60 +53,43 @@ def pad_sets(all_table_features, all_pred_features,
         pred_features = all_pred_features[i]
         join_features = all_join_features[i]
 
-        pred_features = np.vstack(pred_features)
-        num_pad = maxpreds - pred_features.shape[0]
-        assert num_pad >= 0
+        pred_features, predicate_mask = _handle_set_padding(pred_features,
+                maxpreds)
+        table_features, table_mask = _handle_set_padding(table_features,
+                maxtabs)
+        join_features, join_mask = _handle_set_padding(join_features,
+                maxjoins)
 
-        predicate_mask = np.ones_like(pred_features).mean(1, keepdims=True)
-        pred_features = np.pad(pred_features, ((0, num_pad), (0, 0)), 'constant')
-        predicate_mask = np.pad(predicate_mask, ((0, num_pad), (0, 0)), 'constant')
-        pred_features = np.expand_dims(pred_features, 0)
-        predicate_mask = np.expand_dims(predicate_mask, 0)
+        if table_features is not None:
+            tf.append(table_features)
+            tm.append(table_mask)
 
-        # do same for table, and joins
-        table_features = np.vstack(table_features)
-        num_pad = maxtabs - table_features.shape[0]
+        if pred_features is not None:
+            pf.append(pred_features)
+            pm.append(predicate_mask)
 
-        assert num_pad >= 0
-
-        table_mask = np.ones_like(table_features).mean(1, keepdims=True)
-        table_features = np.pad(table_features, ((0, num_pad), (0, 0)), 'constant')
-        table_mask = np.pad(table_mask, ((0, num_pad), (0, 0)), 'constant')
-        table_features = np.expand_dims(table_features, 0)
-        table_mask = np.expand_dims(table_mask, 0)
-
-        join_features = np.vstack(join_features)
-        num_pad = maxjoins - join_features.shape[0]
-
-        assert num_pad >= 0
-
-        join_mask = np.ones_like(join_features).mean(1, keepdims=True)
-        join_features = np.pad(join_features, ((0, num_pad), (0, 0)), 'constant')
-        join_mask = np.pad(join_mask, ((0, num_pad), (0, 0)), 'constant')
-        join_features = np.expand_dims(join_features, 0)
-        join_mask = np.expand_dims(join_mask, 0)
-
-        tf.append(table_features)
-        pf.append(pred_features)
-        jf.append(join_features)
-        tm.append(table_mask)
-        pm.append(predicate_mask)
-        jm.append(join_mask)
+        if join_features is not None:
+            jf.append(join_features)
+            jm.append(join_mask)
 
     tf = to_variable(tf,
             requires_grad=False).float().squeeze()
+    extra_dim = len(tf.shape)-1
+    tm = to_variable(tm,
+            requires_grad=False).byte().squeeze().unsqueeze(extra_dim)
+
     pf = to_variable(pf,
             requires_grad=False).float().squeeze()
+    extra_dim = len(pf.shape)-1
+    pm = to_variable(pm,
+            requires_grad=False).byte().squeeze().unsqueeze(extra_dim)
+
     jf = to_variable(jf,
             requires_grad=False).float().squeeze()
     extra_dim = len(jf.shape)-1
 
-    tm = to_variable(tm,
-            requires_grad=False).float().squeeze().unsqueeze(extra_dim)
-    pm = to_variable(pm,
-            requires_grad=False).float().squeeze().unsqueeze(extra_dim)
     jm = to_variable(jm,
-            requires_grad=False).float().squeeze().unsqueeze(extra_dim)
+            requires_grad=False).byte().squeeze().unsqueeze(extra_dim)
 
     return tf, pf, jf, tm, pm, jm
 

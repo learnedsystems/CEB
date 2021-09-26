@@ -43,7 +43,6 @@ class SetConv(nn.Module):
     def __init__(self, sample_feats, predicate_feats, join_feats, flow_feats,
             hid_units, num_hidden_layers=2):
         super(SetConv, self).__init__()
-
         self.sample_feats = sample_feats
         self.predicate_feats = predicate_feats
         self.join_feats = join_feats
@@ -121,12 +120,6 @@ class SetConv(nn.Module):
             hid_flow = F.relu(self.flow_mlp1(flows))
             hid_flow = F.relu(self.flow_mlp2(hid_flow))
             tocat.append(hid_flow)
-
-        # assert hid_sample.shape == hid_predicate.shape == hid_join.shape
-        # if self.flow_feats:
-            # hid = torch.cat((hid_sample, hid_predicate, hid_join, hid_flow), 1)
-        # else:
-            # hid = torch.cat((hid_sample, hid_predicate, hid_join), 1)
 
         hid = torch.cat(tocat, 1)
         hid = F.relu(self.out_mlp1(hid))

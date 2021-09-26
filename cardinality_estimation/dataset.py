@@ -146,21 +146,11 @@ class QueryDataset(data.Dataset):
                     pad_sets([x["table"]], [x["pred"]], [x["join"]],
                             self.featurizer.max_tables, self.featurizer.max_preds,
                             self.featurizer.max_joins)
-
-                # else it remains 0
-                # if tf is not None:
-                    # x["table"] = tf
-                    # x["tmask"] = tm
-                # else:
-                    # x["table"] = []
-                    # x["tmask"] = []
-
                 x["table"] = tf
-                x["tmask"] = tm
                 x["join"] = jf
                 x["pred"] = pf
                 # relevant masks
-
+                x["tmask"] = tm
                 x["pmask"] = pm
                 x["jmask"] = jm
 

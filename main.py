@@ -315,8 +315,7 @@ def read_flags():
             default="log")
 
     ## NN training features
-    parser.add_argument("--load_padded_mscn_feats", type=int, required=False,
-            default=1, help="""loads all the mscn features with padded zeros in memory -- speeds up training, but can take too much RAM.""")
+    parser.add_argument("--load_padded_mscn_feats", type=int, required=False, default=0, help="""==1 loads all the mscn features with padded zeros in memory -- speeds up training, but can take too much RAM.""")
 
     parser.add_argument("--weight_decay", type=float, required=False,
             default=0.0)

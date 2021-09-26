@@ -225,10 +225,7 @@ def get_featurizer(trainqs, valqs, testqs):
     # collected in the featurizer.update_column_stats call; Therefore, we don't
     # include this in the cached version
     featurizer.setup(ynormalization=args.ynormalization,
-            featurization_type=feat_type,
-            table_features=False,
-            join_features=False,
-            max_discrete_featurizing_buckets=1)
+            featurization_type=feat_type)
     featurizer.update_ystats(trainqs+valqs+testqs)
     return featurizer
 

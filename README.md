@@ -39,18 +39,18 @@ We use docker to install and configure PostgreSQL, and setup the relevant databa
 cd docker
 export LCARD_USER=ceb
 export LCARD_PORT=5432
-docker build --build-arg LCARD_USER=${LCARD_USER} -t pg12 .
-docker run -itd --shm-size=1g --name card-db -p ${LCARD_PORT}:5432 -d pg12
-docker restart card-db
-docker exec -it card-db /imdb_setup.sh
+sudo docker build --build-arg LCARD_USER=${LCARD_USER} -t pg12 .
+sudo docker run -itd --shm-size=1g --name card-db -p ${LCARD_PORT}:5432 -d pg12
+sudo docker restart card-db
+sudo docker exec -it card-db /imdb_setup.sh
 ```
 
-Note: Depending on the settings of your docker instance, you may require sudo in the above commands. Also, in the docker run command, you may want to choose the --shm-size parameter depending on your requirements.
+Note: Depending on the settings of your docker instance, you may not require sudo in the above commands. Also, in the docker run command, you may want to choose the --shm-size parameter depending on your requirements.
 
 <b> Optionally </b> you can use the following command to install the stackexchange database; But the stackexchange database is A LOT larger than the IMDb database --- make sure you have up to 150GB space on your device before running the following command.
 
 ```bash
-docker exec -it card-db /stack_setup.sh
+sudo docker exec -it card-db /stack_setup.sh
 
 # These commands ensure there are only foreign key : primary key
 # indexes on the stackexchange database; Without the drop_indexes.sql command,
@@ -71,10 +71,10 @@ The StackExchange database holds a lot of potential to develop more challenging 
 Here are a few useful commands to check / debug your setup:
 ```bash
 # if your instance gets restarted / docker image gets shutdown
-docker restart card-db
+sudo docker restart card-db
 
 # get a bash shell within the docker image
-docker exec -it card-db bash
+sudo docker exec -it card-db bash
 # note that postgresql data on docker is stored at /var/lib/postgresql/data
 
 # connect psql on your host to the postgresql server running on docker

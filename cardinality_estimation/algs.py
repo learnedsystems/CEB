@@ -129,6 +129,8 @@ class Postgres(CardinalityEstimationAlg):
             for alias_key in nodes:
                 info = sample["subset_graph"].nodes()[alias_key]
                 true_card = info["cardinality"]["actual"]
+                if "expected" not in info["cardinality"]:
+                    continue
                 est = info["cardinality"]["expected"]
                 pred_dict[(alias_key)] = est
 

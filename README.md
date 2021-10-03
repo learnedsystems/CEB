@@ -37,10 +37,16 @@ Standalone evaluation setup that does not depend on PostgreSQL, and has minimal 
 bash scripts/download_mlsys1.sh
 ```
 
-Installing python dependencies (TODO: reduce the number of required dependencies).
+Installing python dependencies.
 
 ```bash
 pip3 install -r requirements.txt
+```
+
+<b> Optional </b> For some of the plan graph visualizations, we will need graphviz. Note: This is not neccessary to run the benchmark, and can be hard to install with some system configurations. You can usually install it with:
+
+```bash
+sudo apt-get install graphviz
 ```
 
 And then go to <b> mlsys-1.ipynb </b> and execute the cells in order.

@@ -202,22 +202,6 @@ def load_qdata(fns):
     return qreps
 
 def get_featurizer(trainqs, valqs, testqs):
-    # featkey = deterministic_hash("db-" + args.query_dir + \
-                # args.query_templates + args.algs \
-                # + args.train_test_split_kind)
-    # misc_cache = klepto.archives.dir_archive("./misc_cache",
-            # cached=True, serialized=True)
-    # found_feats = featkey in misc_cache.archive and not args.regen_featstats
-
-    # # collecting statistics about each column (min/max/unique vals etc.) can
-    # # take a few minutes on the IMDb workload; so we cache the results
-    # if found_feats:
-        # featurizer = misc_cache.archive[featkey]
-    # else:
-        # featurizer = Featurizer(args.user, args.pwd, args.db_name,
-                # args.db_host, args.port)
-        # featurizer.update_column_stats(trainqs+valqs+testqs)
-        # misc_cache.archive[featkey] = featurizer
 
     featurizer = Featurizer(args.user, args.pwd, args.db_name,
             args.db_host, args.port)

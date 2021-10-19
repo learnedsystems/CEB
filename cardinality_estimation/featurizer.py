@@ -854,8 +854,13 @@ class Featurizer():
             assert False
 
         cardinfo = qrep["subset_graph"].nodes()[node]
-        # Y, and cur_info
-        true_val = cardinfo[self.ckey]["actual"]
+        if "actual" in cardinfo[self.ckey]:
+            true_val = cardinfo[self.ckey]["actual"]
+        else:
+            # e.g., in MLSys competition where we dont want to publish true
+            # values
+            true_val = 1.0
+
         if "total" in cardinfo[self.ckey]:
             total = cardinfo[self.ckey]["total"]
         else:

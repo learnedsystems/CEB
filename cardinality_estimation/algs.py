@@ -71,7 +71,6 @@ def format_model_test_output(pred, samples, featurizer):
             idx = query_idx + subq_idx
             est_card = featurizer.unnormalize(pred[idx])
             assert est_card > 0
-            true_card = cards["actual"]
             ests[alias_key] = est_card
 
         all_ests.append(ests)

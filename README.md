@@ -258,10 +258,13 @@ Here is a self contained example showing the API to compute these different
 kind of errors on a single query.
 
 ```python
+from os.path import dirname, join, realpath
+import query_representation
 from query_representation.query import *
 from evaluation.eval_fns import *
+from psycopg2 import OperationalError
 
-qfn = "queries/imdb/4a/4a100.pkl"
+qfn = join(dirname(realpath(query_representation.__path__._path[0])), "queries/imdb/4a/4a100.pkl")
 qrep = load_qrep(qfn)
 ests = get_postgres_cardinalities(qrep)
 
@@ -270,9 +273,9 @@ qerr_fn = get_eval_fn("qerr")
 abs_fn = get_eval_fn("abs")
 rel_fn = get_eval_fn("rel")
 
-qerr = qerr_fn.eval([qrep], [ests])
-abs_err = abs_fn.eval([qrep], [ests])
-relerr = rel_fn.eval([qrep], [ests])
+qerr = qerr_fn.eval([qrep], [ests], result_dir=None)
+abs_err = abs_fn.eval([qrep], [ests], result_dir=None)
+relerr = rel_fn.eval([qrep], [ests],result_dir=None)
 
 print("avg q-error: {}, avg abs-error: {}, avg relative error: {}".format(
               np.round(np.mean(qerr),2), np.round(np.mean(abs_err), 2),
@@ -282,9 +285,14 @@ print("avg q-error: {}, avg abs-error: {}, avg relative error: {}".format(
 # can change the db arguments appropriately depending on the PostgreSQL
 # installation.
 ppc = get_eval_fn("ppc")
-ppc = ppc.eval([qrep], [ests], user="ceb", pwd="password", db_name="imdb",
-        db_host="localhost", port=5432, num_processes=-1, result_dir=None,
-        cost_model="cm1")
+port = 5432
+try:
+    ppc = ppc.eval([qrep], [ests], user="ceb", pwd="password", db_name="imdb",
+            db_host="localhost", port=port, num_processes=-1, result_dir=None,
+            cost_model="cm1")
+except OperationalError:
+    print(f"PGSQL not running at port {port}")
+    pass
 
 # we considered only one query, so the returned lists have just one element
 print("PPC is: {}".format(np.round(ppc[0])))

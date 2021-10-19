@@ -129,6 +129,10 @@ class Featurizer():
         for qrep in qreps:
             self._update_stats(qrep)
 
+    def update_using_saved_stats(self, featdata):
+        for k,v in featdata.items():
+            setattr(self, k, v)
+
     def update_ystats(self, qreps):
         y = np.array(get_all_cardinalities(qreps, self.ckey))
         if self.ynormalization == "log":
@@ -850,8 +854,13 @@ class Featurizer():
             assert False
 
         cardinfo = qrep["subset_graph"].nodes()[node]
-        # Y, and cur_info
-        true_val = cardinfo[self.ckey]["actual"]
+        if "actual" in cardinfo[self.ckey]:
+            true_val = cardinfo[self.ckey]["actual"]
+        else:
+            # e.g., in MLSys competition where we dont want to publish true
+            # values
+            true_val = 1.0
+
         if "total" in cardinfo[self.ckey]:
             total = cardinfo[self.ckey]["total"]
         else:

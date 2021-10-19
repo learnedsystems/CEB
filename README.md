@@ -2,11 +2,12 @@
 
 ## Contents
   * [Setup](#setup)
-      - [Workload](#workload)
+      - [MLSystems workshop](#mlsys-workshop)
       - [PostgreSQL](#postgresql)
         - [Docker](#docker)
         - [Virtualbox](#virtualbox)
         - [Local Setup](#local-setup)
+      - [Workload](#workload)
       - [Python requirements](#python-requirements)
   * [Usage](#usage)
       - [Query Representation](#query-representation)
@@ -26,8 +27,29 @@
 
 ## Setup
 
-If you are only interested in evaluating the cardinalities, using a loss
-function such as Q-Error, or if you just want to use the queries for some other task, then you just need to download the workload. But the main goal of this dataset is to make it easy to evaluate the impact of cardinality estimates on query optimization. For this, we use PostgreSQL (and eventually plan to add support for other open source DBMS' like MySQL). We provide a dockerized setup with the appropriate setup to get started right away; Instead, you can also easily adapt it to your own installation of PostgreSQL. Docker is the easiest way to started with CEB.
+If you are only interested in evaluating the cardinalities, using a loss function such as Q-Error, or if you just want to use the queries for some other task, then you just need to download the workload. But the main goal of this dataset is to make it easy to evaluate the impact of cardinality estimates on query optimization. For this, we use PostgreSQL (and eventually plan to add support for other open source DBMS' like MySQL). We provide a dockerized setup with the appropriate setup to get started right away; Instead, you can also easily adapt it to your own installation of PostgreSQL. Docker is the easiest way to started with CEB.
+
+### MLSystems Workshop
+
+Standalone evaluation setup that does not depend on PostgreSQL, and has minimal dependencies.
+
+```bash
+bash scripts/download_mlsys1.sh
+```
+
+Installing python dependencies.
+
+```bash
+pip3 install -r requirements.txt
+```
+
+<b> Optional </b> For some of the plan graph visualizations, we will need graphviz. Note: This is not neccessary to run the benchmark, and can be hard to install with some system configurations. You can usually install it with:
+
+```bash
+sudo apt-get install graphviz
+```
+
+And then go to <b> mlsys-1.ipynb </b> and execute the cells in order.
 
 ### PostgreSQL
 

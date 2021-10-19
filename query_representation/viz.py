@@ -14,10 +14,10 @@ import matplotlib.patches as mpatches
 import grandalf
 from grandalf.layouts import SugiyamaLayout
 
-# from networkx.drawing.nx_agraph import write_dot,graphviz_layout
-# from networkx.drawing.nx_agraph import graphviz_layout, to_agraph
 
 from .utils import *
+from evaluation.cost_model import update_subplan_costs
+
 CROSS_JOIN_CARD = 19329323
 
 def _find_all_tables(plan):
@@ -324,3 +324,131 @@ def plot_explain_join_order(explain, true_cardinalities,
 
     _plot_join_order_graph(G, G.base_table_nodes, G.join_nodes, pdf, title, fn)
     return G
+
+def draw_plan_graph(subsetg, y, cost_model, ax=None,
+        source_node=SOURCE_NODE, final_node=None, font_size=40,
+        cbar_fontsize=24, cax=None, fig=None, width=None,
+        edge_color=None,
+        bold_opt_path=True, bold_path=None):
+
+    for n in subsetg.nodes():
+        joined = " \Join ".join(n)
+        joined = "$" + joined + "$"
+        subsetg.nodes()[n]["label"] = joined
+
+    if y is not None and cost_model is not None:
+        cost_key = "tmp_cost"
+        subsetg = subsetg.reverse()
+        tcost = update_subplan_costs(subsetg, cost_model,
+                cost_key=cost_key, ests=y)
+
+        # TODO: need to add the flow-loss computing module
+        # flows, edges = get_flows(subsetg, cost_model+cost_key)
+        # Flow-Loss specific widths
+        # MIN: 2...6
+        # MIN_WIDTH = 1.0
+        # MAX_WIDTH = 30.0
+        # NEW_RANGE = MAX_WIDTH - MIN_WIDTH
+        # OLD_RANGE = max(flows) - min(flows)
+
+        # edge_widths = {}
+        # for i, x in enumerate(flows):
+            # normx = (((x - min(flows))*NEW_RANGE) / OLD_RANGE) + MIN_WIDTH
+            # edge_widths[edges[i]] = normx
+        # widths = []
+        # for edge in subsetg.edges():
+            # key = tuple([edge[1], edge[0]])
+            # widths.append(edge_widths[key])
+
+        # reverse back
+        subsetg = subsetg.reverse()
+        widths = []
+        for edge in subsetg.edges():
+            key = tuple([edge[1], edge[0]])
+            widths.append(1.0)
+
+        edge_colors = []
+        for edge in subsetg.edges(data=True):
+            edge_colors.append(edge[2][cost_model+cost_key])
+
+        vmin = min(edge_colors)
+        vmax = max(edge_colors)
+
+        # assert len(edge_colors) == len(flows)
+        opt_labels_list = nx.shortest_path(subsetg, source_node,
+                final_node, weight=cost_model+cost_key)
+        opt_labels = {}
+        for n in subsetg.nodes(data=True):
+            if n[0] in opt_labels_list:
+                opt_labels[n[0]] = n[1]["label"]
+
+        cm = matplotlib.colors.LinearSegmentedColormap.from_list("", ["green", "yellow", "red"])
+
+    else:
+        widths = []
+        for edge in subsetg.edges():
+            key = tuple([edge[1], edge[0]])
+            widths.append(2.0)
+        cm = None
+
+    pos = nx.nx_pydot.pydot_layout(subsetg, prog="dot")
+
+    if ax is None:
+        fig, ax = plt.subplots(1,1,figsize=(30,20))
+
+    labels = nx.get_node_attributes(subsetg, 'label')
+
+    nx.draw_networkx_labels(subsetg, pos=pos,
+            labels=labels,
+            ax=ax, font_size=font_size,
+            bbox=dict(facecolor="w", edgecolor='k', boxstyle='round,pad=0.1'))
+
+    if bold_opt_path and cost_model is not None:
+        nx.draw_networkx_labels(subsetg, pos=pos,
+                labels=opt_labels, ax=ax,
+                font_size=font_size,
+                bbox=dict(facecolor="w", edgecolor='k',
+                lw=font_size/2, boxstyle='round,pad=0.5', fill=True))
+
+    if bold_path and cost_model is not None:
+        bold_labels = {}
+        for n in subsetg.nodes(data=True):
+            if n[0] in bold_path:
+                bold_labels[n[0]] = n[1]["label"]
+        nx.draw_networkx_labels(subsetg, pos=pos,
+                labels=bold_labels, ax=ax,
+                font_size=font_size,
+                bbox=dict(facecolor="w", edgecolor='k',
+                lw=font_size/2, boxstyle='round,pad=0.5', fill=True))
+
+    if edge_color is not None:
+        edge_colors = edge_color
+
+    edges = nx.draw_networkx_edges(subsetg, pos,
+            edge_color=edge_colors,
+            width=widths, ax = ax, edge_cmap=cm,
+            arrows=True,
+            arrowsize=font_size / 2,
+            arrowstyle='simple',
+            min_target_margin=5.0)
+
+    if y is not None and cost_model is not None:
+        plt.style.use("seaborn-white")
+        sm = plt.cm.ScalarMappable(cmap=cm,
+                norm=plt.Normalize(vmin=vmin, vmax=vmax))
+        sm.set_array([])
+        if fig is None:
+            cbar = plt.colorbar(sm, aspect=50,
+                    orientation="horizontal", pad =
+                    0.02)
+        else:
+            cbar = fig.colorbar(sm, ax=ax,
+                    pad = 0.02,
+                    aspect=50,
+                    orientation="horizontal")
+
+        cbar.ax.tick_params(labelsize=font_size)
+        cbar.set_label("Cost", fontsize=font_size)
+        cbar.ax.xaxis.get_offset_text().set_fontsize(font_size)
+
+    plt.tight_layout()

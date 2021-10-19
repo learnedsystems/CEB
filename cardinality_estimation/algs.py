@@ -12,12 +12,10 @@ from collections import defaultdict
 from query_representation.utils import *
 from .dataset import QueryDataset, pad_sets, to_variable
 from .nets import *
-# from .fcnn import FCNN
-# from .mscn import MSCN
 
 from torch.utils import data
-from torch.nn.utils.clip_grad import clip_grad_norm_
-from sklearn.ensemble import GradientBoostingRegressor
+# from torch.nn.utils.clip_grad import clip_grad_norm_
+# from sklearn.ensemble import GradientBoostingRegressor
 
 class CardinalityEstimationAlg():
 
@@ -73,7 +71,6 @@ def format_model_test_output(pred, samples, featurizer):
             idx = query_idx + subq_idx
             est_card = featurizer.unnormalize(pred[idx])
             assert est_card > 0
-            true_card = cards["actual"]
             ests[alias_key] = est_card
 
         all_ests.append(ests)
@@ -131,6 +128,8 @@ class Postgres(CardinalityEstimationAlg):
             for alias_key in nodes:
                 info = sample["subset_graph"].nodes()[alias_key]
                 true_card = info["cardinality"]["actual"]
+                if "expected" not in info["cardinality"]:
+                    continue
                 est = info["cardinality"]["expected"]
                 pred_dict[(alias_key)] = est
 
@@ -302,6 +301,7 @@ class XGBoost(CardinalityEstimationAlg):
         return X, Y
 
     def load_model(self, model_dir):
+        import xgboost as xgb
         model_path = model_dir + "/xgb_model.json"
         import xgboost as xgb
         self.xgb_model = xgb.XGBRegressor(objective="reg:squarederror")
@@ -309,6 +309,7 @@ class XGBoost(CardinalityEstimationAlg):
         print("*****loaded model*****")
 
     def train(self, training_samples, **kwargs):
+        import xgboost as xgb
         self.featurizer = kwargs["featurizer"]
         self.training_samples = training_samples
 
@@ -374,6 +375,8 @@ class RandomForest(CardinalityEstimationAlg):
         pass
 
     def train(self, training_samples, **kwargs):
+        from sklearn.ensemble import RandomForestRegressor
+
         self.featurizer = kwargs["featurizer"]
         self.training_samples = training_samples
 
@@ -382,7 +385,10 @@ class RandomForest(CardinalityEstimationAlg):
         if self.grid_search:
             pass
         else:
-            self.model = RandomForestRegressor(n_jobs=-1, verbose=2, **params)
+            self.model = RandomForestRegressor(n_jobs=-1,
+                    verbose=2,
+                    n_estimators = self.n_estimators,
+                    max_depth = self.max_depth)
             self.model.fit(X, Y)
 
     def test(self, test_samples):

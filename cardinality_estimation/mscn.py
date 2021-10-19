@@ -125,6 +125,8 @@ class MSCN(CardinalityEstimationAlg):
         return net, optimizer
 
     def train_one_epoch(self):
+        start = time.time()
+        epoch_losses = []
         for idx, (xbatch,ybatch,info) \
                     in enumerate(self.trainloader):
             ybatch = ybatch.to(device, non_blocking=True)
@@ -147,6 +149,12 @@ class MSCN(CardinalityEstimationAlg):
             if self.clip_gradient is not None:
                 clip_grad_norm_(self.net.parameters(), self.clip_gradient)
             self.optimizer.step()
+            epoch_losses.append(loss.item())
+
+        print("Epoch {} took {}, Avg Loss: {}".format(self.epoch,
+            round(time.time()-start, 2),
+            round(float(sum(epoch_losses))/len(epoch_losses),6),
+            ))
 
     def train(self, training_samples, **kwargs):
         assert isinstance(training_samples[0], dict)
@@ -169,10 +177,7 @@ class MSCN(CardinalityEstimationAlg):
 
         for self.epoch in range(0,self.max_epochs):
             # TODO: add periodic evaluation here
-            start = time.time()
             self.train_one_epoch()
-            print("train epoch took: ", time.time()-start)
-            # pdb.set_trace()
 
     def num_parameters(self):
         def _calc_size(net):

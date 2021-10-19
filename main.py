@@ -10,6 +10,8 @@ from cardinality_estimation.mscn import MSCN
 import glob
 import argparse
 import random
+import json
+
 import klepto
 from sklearn.model_selection import train_test_split
 import pdb
@@ -91,7 +93,7 @@ def get_alg(alg):
                 weight_decay = args.weight_decay,
                 load_query_together = args.load_query_together,
                 result_dir = args.result_dir,
-                num_hidden_layers=args.num_hidden_layers,
+                # num_hidden_layers=args.num_hidden_layers,
                 eval_epoch = args.eval_epoch,
                 optimizer_name=args.optimizer_name,
                 clip_gradient=args.clip_gradient,
@@ -117,6 +119,9 @@ def get_query_fns():
                 random_state=args.diff_templates_seed)
 
     for qi,qdir in enumerate(fns):
+        if ".json" in qdir:
+            continue
+
         template_name = os.path.basename(qdir)
         if args.query_templates != "all":
             query_templates = args.query_templates.split(",")
@@ -197,28 +202,39 @@ def load_qdata(fns):
     return qreps
 
 def get_featurizer(trainqs, valqs, testqs):
-    featkey = deterministic_hash("db-" + args.query_dir + \
-                args.query_templates + args.algs \
-                + args.train_test_split_kind)
-    misc_cache = klepto.archives.dir_archive("./misc_cache",
-            cached=True, serialized=True)
-    found_feats = featkey in misc_cache.archive and not args.regen_featstats
 
-    # collecting statistics about each column (min/max/unique vals etc.) can
-    # take a few minutes on the IMDb workload; so we cache the results
-    if found_feats:
-        featurizer = misc_cache.archive[featkey]
-    else:
-        featurizer = Featurizer(args.user, args.pwd, args.db_name,
-                args.db_host, args.port)
+    featurizer = Featurizer(args.user, args.pwd, args.db_name,
+            args.db_host, args.port)
+    featdata_fn = os.path.join(args.query_dir, "featdata.json")
+    if args.regen_featstats or not os.path.exists(featdata_fn):
         featurizer.update_column_stats(trainqs+valqs+testqs)
-        misc_cache.archive[featkey] = featurizer
+        ATTRS_TO_SAVE = ['aliases', 'cmp_ops', 'column_stats', 'joins',
+                'max_in_degree', 'max_joins', 'max_out_degree', 'max_preds',
+                'max_tables', 'regex_cols', 'tables']
+        featdata = {}
+        for k in dir(featurizer):
+            if k not in ATTRS_TO_SAVE:
+                continue
+            attrvals = getattr(featurizer, k)
+            if isinstance(attrvals, set):
+                attrvals = list(attrvals)
+            featdata[k] = attrvals
+        f = open(featdata_fn, "w")
+        json.dump(featdata, f)
+        f.close()
+    else:
+        f = open(featdata_fn, "r")
+        featdata = json.load(f)
+        f.close()
+        featurizer.update_using_saved_stats(featdata)
+        print("updated featdata from saved file!!")
+        pdb.set_trace()
+
 
     if args.algs == "mscn":
         feat_type = "set"
     else:
         feat_type = "combined"
-
     # Look at the various keyword arguments to setup() to change the
     # featurization behavior; e.g., include certain features etc.
     # these configuration properties do not influence the basic statistics
@@ -227,6 +243,7 @@ def get_featurizer(trainqs, valqs, testqs):
     featurizer.setup(ynormalization=args.ynormalization,
             featurization_type=feat_type)
     featurizer.update_ystats(trainqs+valqs+testqs)
+
     return featurizer
 
 def main():
@@ -280,7 +297,7 @@ def read_flags():
     parser.add_argument("--pwd", type=str, required=False,
             default="password")
     parser.add_argument("--port", type=int, required=False,
-            default=5431)
+            default=5432)
 
     parser.add_argument("--result_dir", type=str, required=False,
             default="results")

@@ -14,20 +14,22 @@ class FCNN(CardinalityEstimationAlg):
         self.kwargs = kwargs
         for k, val in kwargs.items():
             self.__setattr__(k, val)
-
         # when estimates are log-normalized, then optimizing for mse is
         # basically equivalent to optimizing for q-error
         if self.loss_func_name == "qloss":
             self.loss_func = qloss_torch
+            self.load_query_together = False
         elif self.loss_func_name == "mse":
             self.loss_func = torch.nn.MSELoss(reduction="none")
+            self.load_query_together = False
         else:
             assert False
 
         self.collate_fn = None
 
     def init_dataset(self, samples):
-        ds = QueryDataset(samples, self.featurizer, False)
+        ds = QueryDataset(samples, self.featurizer,
+                False)
         return ds
 
     def init_net(self, sample):
@@ -53,7 +55,8 @@ class FCNN(CardinalityEstimationAlg):
         return net, optimizer
 
     def train_one_epoch(self):
-
+        start = time.time()
+        epoch_losses = []
         for idx, (xbatch, ybatch,info) in enumerate(self.trainloader):
 
             ybatch = ybatch.to(device, non_blocking=True)
@@ -70,6 +73,12 @@ class FCNN(CardinalityEstimationAlg):
             if self.clip_gradient is not None:
                 clip_grad_norm_(self.net.parameters(), self.clip_gradient)
             self.optimizer.step()
+            epoch_losses.append(loss.item())
+
+        print("Epoch {} took {}, Avg Loss: {}".format(self.epoch,
+            round(time.time()-start, 2),
+            round(float(sum(epoch_losses))/len(epoch_losses),6),
+            ))
 
     def train(self, training_samples, **kwargs):
         assert isinstance(training_samples[0], dict)
@@ -93,7 +102,6 @@ class FCNN(CardinalityEstimationAlg):
 
         for self.epoch in range(0,self.max_epochs):
             # TODO: add periodic evaluation here
-            start = time.time()
             self.train_one_epoch()
 
     def num_parameters(self):

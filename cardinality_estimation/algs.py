@@ -10,6 +10,8 @@ import torch
 from collections import defaultdict
 
 from query_representation.utils import *
+
+from evaluation.eval_fns import *
 from .dataset import QueryDataset, pad_sets, to_variable,\
         mscn_collate_fn
 from .nets import *
@@ -104,6 +106,10 @@ class NN(CardinalityEstimationAlg):
         else:
             self.collate_fn = None
 
+        self.eval_fn_handles = []
+        for efn in self.eval_fns.split(","):
+            self.eval_fn_handles.append(get_eval_fn(efn))
+
     def init_net(self, sample):
         net = self._init_net(sample)
         print(net)
@@ -128,6 +134,33 @@ class NN(CardinalityEstimationAlg):
 
         return net, optimizer
 
+    def periodic_eval(self):
+        if not self.use_wandb:
+            return
+
+        for st, ds in self.eval_ds.items():
+            preds = self._eval_ds(ds)
+            samples = self.samples[st]
+            preds = format_model_test_output(preds,
+                    samples, self.featurizer)
+
+            # do evaluations
+            for efunc in self.eval_fn_handles:
+                errors = efunc.eval(samples, preds,
+                        args=None, samples_type=st,
+                        result_dir=None,
+                        user = self.featurizer.user,
+                        db_name = self.featurizer.db_name,
+                        db_host = self.featurizer.db_host,
+                        port = self.featurizer.port,
+                        num_processes = -1,
+                        alg_name = self.__str__(),
+                        save_pdf_plans=False,
+                        use_wandb=False)
+
+                err = np.mean(errors)
+                wandb.log({str(efunc)+"-"+st: err, "epoch":self.epoch})
+
     def train(self, training_samples, **kwargs):
         assert isinstance(training_samples[0], dict)
         self.featurizer = kwargs["featurizer"]
@@ -139,6 +172,20 @@ class NN(CardinalityEstimationAlg):
                 collate_fn=self.collate_fn,
                 num_workers=8)
 
+        self.eval_ds = {}
+        self.samples = {}
+        if self.eval_epoch < self.max_epochs:
+            # create eval loaders
+            self.eval_ds["train"] = self.trainds
+            self.samples["train"] = training_samples
+            if "valqs" in kwargs and len(kwargs["valqs"]) > 0:
+                self.eval_ds["val"] = self.init_dataset(kwargs["valqs"])
+                self.samples["val"] = kwargs["valqs"]
+
+            if "testqs" in kwargs and len(kwargs["testqs"]) > 0:
+                self.eval_ds["test"] = self.init_dataset(kwargs["testqs"])
+                self.samples["test"] = kwargs["testqs"]
+
         # TODO: initialize self.num_features
         self.net, self.optimizer = self.init_net(self.trainds[0])
 
@@ -147,6 +194,9 @@ class NN(CardinalityEstimationAlg):
                 format(len(self.trainds), model_size))
 
         for self.epoch in range(0,self.max_epochs):
+            if self.epoch % self.eval_epoch == 0:
+                self.periodic_eval()
+
             self.train_one_epoch()
 
     def _eval_ds(self, ds):

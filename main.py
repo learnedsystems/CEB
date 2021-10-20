@@ -93,6 +93,7 @@ def get_alg(alg):
                        max_depth=10, lr = 0.01)
     elif alg == "fcnn":
         return FCNN(max_epochs = args.max_epochs, lr=args.lr,
+                eval_fns = args.eval_fns,
                 use_wandb = args.use_wandb,
                 mb_size = args.mb_size,
                 weight_decay = args.weight_decay,
@@ -107,6 +108,7 @@ def get_alg(alg):
     elif alg == "mscn":
         return MSCN(max_epochs = args.max_epochs, lr=args.lr,
                 use_wandb = args.use_wandb,
+                eval_fns = args.eval_fns,
                 load_padded_mscn_feats = args.load_padded_mscn_feats,
                 mb_size = args.mb_size,
                 weight_decay = args.weight_decay,

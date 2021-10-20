@@ -152,6 +152,7 @@ class PostgresPlanCost(EvalFunc):
         result_dir = kwargs["result_dir"]
         if result_dir is None:
             return
+        save_pdf_plans = kwargs["save_pdf_plans"]
 
         sqls = kwargs["sqls"]
         plans = kwargs["plans"]
@@ -192,6 +193,14 @@ class PostgresPlanCost(EvalFunc):
             cur_costs["exec_sql"].append(sqls[i])
             cur_costs["cost"].append(costs[i])
 
+        # Total costs
+        # compute total costs
+        totalcost = np.sum(costs)
+        opttotal = np.sum(opt_costs)
+        print("{}, {}, #samples: {}, total_relative_cost: {}"\
+                .format(samples_type, alg_name, len(costs),
+                    np.round(totalcost/opttotal,3)))
+
         cur_df = pd.DataFrame(cur_costs)
         combined_df = pd.concat([costs_df, cur_df], ignore_index=True)
         combined_df.to_csv(costs_fn, index=False)
@@ -199,23 +208,24 @@ class PostgresPlanCost(EvalFunc):
         # FIXME: hard to append to pdfs, so use samples_type to separate
         # out the different times this function is currently called.
 
-        pdffn = samples_type + "_query_plans.pdf"
-        pdf = PdfPages(os.path.join(result_dir, pdffn))
-        for i, plan in enumerate(plans):
-            if plan is None:
-                continue
-            # we know cost of this; we know best cost;
-            title_fmt = """{}. PostgreSQL Plan Cost w/ True Cardinalities: {}\n; PostgreSQL Plan Cost w/ {} Estimates: {}\n PostgreSQL Plan using {} Estimates"""
+        if save_pdf_plans:
+            pdffn = samples_type + "_query_plans.pdf"
+            pdf = PdfPages(os.path.join(result_dir, pdffn))
+            for i, plan in enumerate(plans):
+                if plan is None:
+                    continue
+                # we know cost of this; we know best cost;
+                title_fmt = """{}. PostgreSQL Plan Cost w/ True Cardinalities: {}\n; PostgreSQL Plan Cost w/ {} Estimates: {}\n PostgreSQL Plan using {} Estimates"""
 
-            title = title_fmt.format(qreps[i]["name"], opt_costs[i],
-                    alg_name, costs[i], alg_name)
+                title = title_fmt.format(qreps[i]["name"], opt_costs[i],
+                        alg_name, costs[i], alg_name)
 
-            # no idea why explains we get from cursor.fetchall() have so
-            # many nested lists[][]
-            plot_explain_join_order(plan[0][0][0], true_cardinalities[i],
-                    est_cardinalities[i], pdf, title)
+                # no idea why explains we get from cursor.fetchall() have so
+                # many nested lists[][]
+                plot_explain_join_order(plan[0][0][0], true_cardinalities[i],
+                        est_cardinalities[i], pdf, title)
 
-        pdf.close()
+            pdf.close()
 
     def eval(self, qreps, preds, user="imdb",pwd="password",
             db_name="imdb", db_host="localhost", port=5432, num_processes=-1,

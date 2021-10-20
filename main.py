@@ -128,6 +128,9 @@ def get_query_fns():
             if template_name not in query_templates:
                 skipped_templates.append(template_name)
                 continue
+        if args.skip7a and template_name == "7a":
+            skipped_templates.append(template_name)
+            continue
 
         # let's first select all the qfns we are going to load
         qfns = list(glob.glob(qdir+"/*.pkl"))
@@ -228,7 +231,6 @@ def get_featurizer(trainqs, valqs, testqs):
         featdata = json.load(f)
         f.close()
         featurizer.update_using_saved_stats(featdata)
-        print("updated featdata from saved file!!")
 
     if args.algs == "mscn":
         feat_type = "set"
@@ -296,9 +298,9 @@ def read_flags():
     parser.add_argument("--db_host", type=str, required=False,
             default="localhost")
     parser.add_argument("--user", type=str, required=False,
-            default="ceb")
+            default="pari")
     parser.add_argument("--pwd", type=str, required=False,
-            default="password")
+            default="")
     parser.add_argument("--port", type=int, required=False,
             default=5432)
 
@@ -308,7 +310,9 @@ def read_flags():
             default="all")
 
     parser.add_argument("--seed", type=int, required=False,
-            default=13)
+            default=123)
+    parser.add_argument("--skip7a", type=int, required=False,
+            default=0, help="""since 7a  is a template with a very large joingraph, we have a flag to skip it to make things run faster""")
     parser.add_argument("--num_eval_processes", type=int, required=False,
             default=-1, help="""Used for computing plan costs in parallel. -1 use all cpus; -2: use no cpus; else use n cpus. """)
 
@@ -326,7 +330,7 @@ def read_flags():
     parser.add_argument("--algs", type=str, required=False,
             default="postgres")
     parser.add_argument("--eval_fns", type=str, required=False,
-            default="qerr,plancost")
+            default="qerr,ppc,plancost")
 
     # featurizer arguments
     parser.add_argument("--regen_featstats", type=int, required=False,
@@ -368,6 +372,9 @@ def read_flags():
 
     parser.add_argument("--max_discrete_featurizing_buckets", type=int, required=False,
             default=10)
+
+    parser.add_argument("--save_pdf_plans", type=int, required=False,
+            default=0)
 
     return parser.parse_args()
 

@@ -164,7 +164,8 @@ class MSCN(CardinalityEstimationAlg):
         self.trainds = self.init_dataset(training_samples)
         self.trainloader = data.DataLoader(self.trainds,
                 batch_size=self.mb_size, shuffle=True,
-                collate_fn=self.collate_fn)
+                collate_fn=self.collate_fn,
+                num_workers=8)
 
         # TODO: initialize self.num_features
         self.net, self.optimizer = self.init_net(self.trainds[0])

@@ -19,6 +19,56 @@ def to_variable(arr, use_cuda=True, requires_grad=False):
         arr = Variable(arr, requires_grad=requires_grad)
     return arr
 
+def mscn_collate_fn(data):
+    '''
+    TODO: faster impl.
+    '''
+    start = time.time()
+    alltabs = []
+    allpreds = []
+    alljoins = []
+
+    flows = []
+    ys = []
+    infos = []
+
+    maxtabs = 0
+    maxpreds = 0
+    maxjoins = 0
+
+    for d in data:
+        alltabs.append(d[0]["table"])
+        if len(alltabs[-1]) > maxtabs:
+            maxtabs = len(alltabs[-1])
+
+        allpreds.append(d[0]["pred"])
+        if len(allpreds[-1]) > maxpreds:
+            maxpreds = len(allpreds[-1])
+
+        alljoins.append(d[0]["join"])
+        if len(alljoins[-1]) > maxjoins:
+            maxjoins = len(alljoins[-1])
+
+        flows.append(d[0]["flow"])
+        ys.append(d[1])
+        infos.append(d[2])
+
+    tf,pf,jf,tm,pm,jm = pad_sets(alltabs, allpreds,
+            alljoins, maxtabs,maxpreds,maxjoins)
+
+    flows = to_variable(flows, requires_grad=False).float()
+    ys = to_variable(ys, requires_grad=False).float()
+    data = {}
+    data["table"] = tf
+    data["pred"] = pf
+    data["join"] = jf
+    data["flow"] = flows
+    data["tmask"] = tm
+    data["pmask"] = pm
+    data["jmask"] = jm
+
+    return data,ys,infos
+
 def _handle_set_padding(features, max_set_vals):
 
     if len(features) == 0:

@@ -17,6 +17,11 @@ from sklearn.model_selection import train_test_split
 import pdb
 import copy
 
+import wandb
+import logging
+logger = logging.getLogger("wandb")
+logger.setLevel(logging.ERROR)
+
 def eval_alg(alg, eval_funcs, qreps, samples_type):
     '''
     '''
@@ -38,7 +43,9 @@ def eval_alg(alg, eval_funcs, qreps, samples_type):
                 result_dir=rdir, user = args.user, db_name = args.db_name,
                 db_host = args.db_host, port = args.port,
                 num_processes = args.num_eval_processes,
-                alg_name = alg_name)
+                alg_name = alg_name,
+                save_pdf_plans=args.save_pdf_plans,
+                use_wandb=args.use_wandb)
 
         print("{}, {}, {}, #samples: {}, {}: mean: {}, median: {}, 99p: {}"\
                 .format(args.db_name, samples_type, alg, len(errors),
@@ -46,6 +53,16 @@ def eval_alg(alg, eval_funcs, qreps, samples_type):
                     np.round(np.mean(errors),3),
                     np.round(np.median(errors),3),
                     np.round(np.percentile(errors,99),3)))
+
+        loss_key = "Final-{}-{}-{}".format(str(efunc),
+                                               samples_type,
+                                               "mean")
+        wandb.run.summary[loss_key] = np.round(np.mean(errors),3)
+
+        loss_key = "Final-{}-{}-{}".format(str(efunc),
+                                               samples_type,
+                                               "99p")
+        wandb.run.summary[loss_key] = np.round(np.percentile(errors,99), 3)
 
     print("all loss computations took: ", time.time()-start)
 
@@ -76,6 +93,7 @@ def get_alg(alg):
                        max_depth=10, lr = 0.01)
     elif alg == "fcnn":
         return FCNN(max_epochs = args.max_epochs, lr=args.lr,
+                use_wandb = args.use_wandb,
                 mb_size = args.mb_size,
                 weight_decay = args.weight_decay,
                 load_query_together = args.load_query_together,
@@ -88,6 +106,7 @@ def get_alg(alg):
                 hidden_layer_size = args.hidden_layer_size)
     elif alg == "mscn":
         return MSCN(max_epochs = args.max_epochs, lr=args.lr,
+                use_wandb = args.use_wandb,
                 load_padded_mscn_feats = args.load_padded_mscn_feats,
                 mb_size = args.mb_size,
                 weight_decay = args.weight_decay,
@@ -253,6 +272,15 @@ def get_featurizer(trainqs, valqs, testqs):
 
 def main():
 
+    # set up wandb logging metrics
+    if args.use_wandb:
+        wandb_tags = ["v1"]
+        if args.wandb_tags is not None:
+            wandb_tags += args.wandb_tags.split(",")
+        wandb.init("ceb", config={},
+                tags=wandb_tags)
+        wandb.config.update(vars(args))
+
     train_qfns, test_qfns, val_qfns = get_query_fns()
 
     trainqs = load_qdata(train_qfns)
@@ -375,6 +403,12 @@ def read_flags():
 
     parser.add_argument("--save_pdf_plans", type=int, required=False,
             default=0)
+
+    # logging arguments
+    parser.add_argument("--wandb_tags", type=str, required=False,
+        default=None, help="additional tags for wandb logs")
+    parser.add_argument("--use_wandb", type=int, required=False,
+        default=1, help="")
 
     return parser.parse_args()
 

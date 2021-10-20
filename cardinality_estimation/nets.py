@@ -33,6 +33,7 @@ class SimpleRegression(torch.nn.Module):
         self.layers.append(final_layer)
 
     def forward(self, x):
+        x = x.to(device, non_blocking=True)
         output = x
         for layer in self.layers:
             output = layer(output)
@@ -43,6 +44,7 @@ class SetConv(nn.Module):
     def __init__(self, sample_feats, predicate_feats, join_feats, flow_feats,
             hid_units, num_hidden_layers=2):
         super(SetConv, self).__init__()
+
         self.sample_feats = sample_feats
         self.predicate_feats = predicate_feats
         self.join_feats = join_feats
@@ -73,11 +75,18 @@ class SetConv(nn.Module):
                 hid_units).to(device)
         self.out_mlp2 = nn.Linear(hid_units, 1).to(device)
 
-    def forward(self, samples, predicates, joins, flows,
-                    sample_mask, predicate_mask, join_mask):
+    def forward(self, xbatch):
         '''
         #TODO: describe shapes
         '''
+        samples = xbatch["table"]
+        predicates = xbatch["pred"]
+        joins = xbatch["join"]
+        flows = xbatch["flow"]
+        sample_mask = xbatch["tmask"]
+        predicate_mask = xbatch["pmask"]
+        join_mask = xbatch["jmask"]
+
         tocat = []
         if self.sample_feats != 0:
             samples = samples.to(device, non_blocking=True)

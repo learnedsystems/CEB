@@ -149,17 +149,17 @@ class PostgresPlanCost(EvalFunc):
         if "result_dir" not in kwargs:
             return
 
+        use_wandb = kwargs["use_wandb"]
         result_dir = kwargs["result_dir"]
-        if result_dir is None:
+        if result_dir is None and not use_wandb:
             return
-        save_pdf_plans = kwargs["save_pdf_plans"]
 
+        save_pdf_plans = kwargs["save_pdf_plans"]
         sqls = kwargs["sqls"]
         plans = kwargs["plans"]
         opt_costs = kwargs["opt_costs"]
         true_cardinalities = kwargs["true_cardinalities"]
         est_cardinalities = kwargs["est_cardinalities"]
-
         costs = errors
 
         if "samples_type" in kwargs:
@@ -171,39 +171,32 @@ class PostgresPlanCost(EvalFunc):
         else:
             alg_name = "Est"
 
-        costs_fn = os.path.join(result_dir, self.__str__() + ".csv")
+        if result_dir is not None:
+            costs_fn = os.path.join(result_dir, self.__str__() + ".csv")
 
-        if os.path.exists(costs_fn):
-            costs_df = pd.read_csv(costs_fn)
-        else:
-            columns = ["qname", "join_order", "exec_sql", "cost"]
-            costs_df = pd.DataFrame(columns=columns)
+            if os.path.exists(costs_fn):
+                costs_df = pd.read_csv(costs_fn)
+            else:
+                columns = ["qname", "join_order", "exec_sql", "cost"]
+                costs_df = pd.DataFrame(columns=columns)
 
-        cur_costs = defaultdict(list)
+            cur_costs = defaultdict(list)
 
-        for i, qrep in enumerate(qreps):
-            # sql_key = str(deterministic_hash(qrep["sql"]))
-            # cur_costs["sql_key"].append(sql_key)
-            qname = os.path.basename(qrep["name"])
-            cur_costs["qname"].append(qname)
+            for i, qrep in enumerate(qreps):
+                # sql_key = str(deterministic_hash(qrep["sql"]))
+                # cur_costs["sql_key"].append(sql_key)
+                qname = os.path.basename(qrep["name"])
+                cur_costs["qname"].append(qname)
 
-            joinorder = get_leading_hint(qrep["join_graph"], plans[i])
-            cur_costs["join_order"].append(joinorder)
+                joinorder = get_leading_hint(qrep["join_graph"], plans[i])
+                cur_costs["join_order"].append(joinorder)
 
-            cur_costs["exec_sql"].append(sqls[i])
-            cur_costs["cost"].append(costs[i])
+                cur_costs["exec_sql"].append(sqls[i])
+                cur_costs["cost"].append(costs[i])
 
-        # Total costs
-        # compute total costs
-        totalcost = np.sum(costs)
-        opttotal = np.sum(opt_costs)
-        print("{}, {}, #samples: {}, total_relative_cost: {}"\
-                .format(samples_type, alg_name, len(costs),
-                    np.round(totalcost/opttotal,3)))
-
-        cur_df = pd.DataFrame(cur_costs)
-        combined_df = pd.concat([costs_df, cur_df], ignore_index=True)
-        combined_df.to_csv(costs_fn, index=False)
+            cur_df = pd.DataFrame(cur_costs)
+            combined_df = pd.concat([costs_df, cur_df], ignore_index=True)
+            combined_df.to_csv(costs_fn, index=False)
 
         # FIXME: hard to append to pdfs, so use samples_type to separate
         # out the different times this function is currently called.
@@ -226,6 +219,21 @@ class PostgresPlanCost(EvalFunc):
                         est_cardinalities[i], pdf, title)
 
             pdf.close()
+
+        # Total costs
+        # compute total costs
+        totalcost = np.sum(costs)
+        opttotal = np.sum(opt_costs)
+        relcost = np.round(float(totalcost)/opttotal, 3)
+
+        print("{}, {}, #samples: {}, total_relative_cost: {}"\
+                .format(samples_type, alg_name, len(costs),
+                    relcost))
+
+        loss_key = "Final-{}-{}-{}".format("RelativeTotalCost",
+                                               samples_type,
+                                               "mean")
+        wandb.run.summary[loss_key] = relcost
 
     def eval(self, qreps, preds, user="imdb",pwd="password",
             db_name="imdb", db_host="localhost", port=5432, num_processes=-1,

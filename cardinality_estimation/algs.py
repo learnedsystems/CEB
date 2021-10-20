@@ -10,12 +10,13 @@ import torch
 from collections import defaultdict
 
 from query_representation.utils import *
-from .dataset import QueryDataset, pad_sets, to_variable
+from .dataset import QueryDataset, pad_sets, to_variable,\
+        mscn_collate_fn
 from .nets import *
 
 from torch.utils import data
-# from torch.nn.utils.clip_grad import clip_grad_norm_
-# from sklearn.ensemble import GradientBoostingRegressor
+from torch.nn.utils.clip_grad import clip_grad_norm_
+import wandb
 
 class CardinalityEstimationAlg():
 
@@ -76,6 +77,159 @@ def format_model_test_output(pred, samples, featurizer):
         all_ests.append(ests)
         query_idx += len(node_keys)
     return all_ests
+
+
+class NN(CardinalityEstimationAlg):
+
+    def __init__(self, *args, **kwargs):
+        self.kwargs = kwargs
+        for k, val in kwargs.items():
+            self.__setattr__(k, val)
+        # when estimates are log-normalized, then optimizing for mse is
+        # basically equivalent to optimizing for q-error
+        if self.loss_func_name == "qloss":
+            self.loss_func = qloss_torch
+            self.load_query_together = False
+        elif self.loss_func_name == "mse":
+            self.loss_func = torch.nn.MSELoss(reduction="none")
+            self.load_query_together = False
+        else:
+            assert False
+
+        if hasattr(self, "load_padded_mscn_feats"):
+            if self.load_padded_mscn_feats:
+                self.collate_fn = None
+            else:
+                self.collate_fn = mscn_collate_fn
+        else:
+            self.collate_fn = None
+
+    def init_net(self, sample):
+        net = self._init_net(sample)
+        print(net)
+
+        if self.optimizer_name == "ams":
+            optimizer = torch.optim.Adam(net.parameters(), lr=self.lr,
+                    amsgrad=True, weight_decay=self.weight_decay)
+        elif self.optimizer_name == "adam":
+            optimizer = torch.optim.Adam(net.parameters(), lr=self.lr,
+                    amsgrad=False, weight_decay=self.weight_decay)
+        elif self.optimizer_name == "adamw":
+            optimizer = torch.optim.Adam(net.parameters(), lr=self.lr,
+                    amsgrad=False, weight_decay=self.weight_decay)
+        elif self.optimizer_name == "sgd":
+            optimizer = torch.optim.SGD(net.parameters(),
+                    lr=self.lr, momentum=0.9, weight_decay=self.weight_decay)
+        else:
+            assert False
+
+        if self.use_wandb:
+            wandb.watch(net)
+
+        return net, optimizer
+
+    def train(self, training_samples, **kwargs):
+        assert isinstance(training_samples[0], dict)
+        self.featurizer = kwargs["featurizer"]
+        self.training_samples = training_samples
+
+        self.trainds = self.init_dataset(training_samples)
+        self.trainloader = data.DataLoader(self.trainds,
+                batch_size=self.mb_size, shuffle=True,
+                collate_fn=self.collate_fn,
+                num_workers=8)
+
+        # TODO: initialize self.num_features
+        self.net, self.optimizer = self.init_net(self.trainds[0])
+
+        model_size = self.num_parameters()
+        print("""Training samples: {}, Model size: {}""".
+                format(len(self.trainds), model_size))
+
+        for self.epoch in range(0,self.max_epochs):
+            self.train_one_epoch()
+
+    def _eval_ds(self, ds):
+        torch.set_grad_enabled(False)
+        # important to not shuffle the data so correct order preserved!
+        loader = data.DataLoader(ds,
+                batch_size=5000, shuffle=False,
+                collate_fn=self.collate_fn)
+
+        allpreds = []
+
+        for (xbatch,ybatch,info) in loader:
+            ybatch = ybatch.to(device, non_blocking=True)
+            pred = self.net(xbatch).squeeze(1)
+            allpreds.append(pred)
+
+        preds = torch.cat(allpreds).detach().cpu().numpy()
+        torch.set_grad_enabled(True)
+
+        return preds
+
+    def train_one_epoch(self):
+        start = time.time()
+        epoch_losses = []
+        for idx, (xbatch, ybatch,info) in enumerate(self.trainloader):
+            ybatch = ybatch.to(device, non_blocking=True)
+            pred = self.net(xbatch).squeeze(1)
+            assert pred.shape == ybatch.shape
+
+            losses = self.loss_func(pred, ybatch)
+            loss = losses.sum() / len(losses)
+
+            self.optimizer.zero_grad()
+            loss.backward()
+            if self.clip_gradient is not None:
+                clip_grad_norm_(self.net.parameters(), self.clip_gradient)
+            self.optimizer.step()
+            epoch_losses.append(loss.item())
+
+        curloss = round(float(sum(epoch_losses))/len(epoch_losses),6)
+        print("Epoch {} took {}, Avg Loss: {}".format(self.epoch,
+            round(time.time()-start, 2), curloss))
+
+        if self.use_wandb:
+            wandb.log({"TrainLoss": curloss, "epoch":self.epoch})
+
+    def test(self, test_samples, **kwargs):
+        '''
+        @test_samples: [sql_rep objects]
+        @ret: [dicts]. Each element is a dictionary with cardinality estimate
+        for each subset graph node (subplan). Each key should be ' ' separated
+        list of aliases / table names
+        '''
+        testds = self.init_dataset(test_samples)
+        preds = self._eval_ds(testds)
+
+        return format_model_test_output(preds, test_samples, self.featurizer)
+
+    def get_exp_name(self):
+        name = self.__str__()
+        if not hasattr(self, "rand_id"):
+            self.rand_id = str(random.getrandbits(32))
+            print("Experiment name will be: ", name + self.rand_id)
+
+        name += self.rand_id
+        return name
+
+    def num_parameters(self):
+        def _calc_size(net):
+            model_parameters = net.parameters()
+            params = sum([np.prod(p.size()) for p in model_parameters])
+            # convert to MB
+            return params*4 / 1e6
+
+        num_params = _calc_size(self.net)
+        return num_params
+
+    def __str__(self):
+        return self.__class__.__name__
+
+    def save_model(self, save_dir="./", suffix_name=""):
+        pass
+
 
 class SavedPreds(CardinalityEstimationAlg):
     def __init__(self, *args, **kwargs):

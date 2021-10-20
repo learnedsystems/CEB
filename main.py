@@ -133,7 +133,8 @@ def get_query_fns():
         qfns = list(glob.glob(qdir+"/*.pkl"))
         qfns.sort()
 
-        if args.num_samples_per_template == -1:
+        if args.num_samples_per_template == -1 \
+                or args.num_samples_per_template > len(qfns):
             qfns = qfns
         elif args.num_samples_per_template < len(qfns):
             qfns = qfns[0:args.num_samples_per_template]
@@ -205,7 +206,7 @@ def get_featurizer(trainqs, valqs, testqs):
 
     featurizer = Featurizer(args.user, args.pwd, args.db_name,
             args.db_host, args.port)
-    featdata_fn = os.path.join(args.query_dir, "featdata.json")
+    featdata_fn = os.path.join(args.query_dir, "dbdata.json")
     if args.regen_featstats or not os.path.exists(featdata_fn):
         featurizer.update_column_stats(trainqs+valqs+testqs)
         ATTRS_TO_SAVE = ['aliases', 'cmp_ops', 'column_stats', 'joins',
@@ -228,8 +229,6 @@ def get_featurizer(trainqs, valqs, testqs):
         f.close()
         featurizer.update_using_saved_stats(featdata)
         print("updated featdata from saved file!!")
-        pdb.set_trace()
-
 
     if args.algs == "mscn":
         feat_type = "set"
@@ -241,7 +240,11 @@ def get_featurizer(trainqs, valqs, testqs):
     # collected in the featurizer.update_column_stats call; Therefore, we don't
     # include this in the cached version
     featurizer.setup(ynormalization=args.ynormalization,
-            featurization_type=feat_type)
+            featurization_type=feat_type,
+            table_features=args.table_features,
+            join_features=args.join_features,
+            max_discrete_featurizing_buckets=args.max_discrete_featurizing_buckets
+            )
     featurizer.update_ystats(trainqs+valqs+testqs)
 
     return featurizer
@@ -323,11 +326,11 @@ def read_flags():
     parser.add_argument("--algs", type=str, required=False,
             default="postgres")
     parser.add_argument("--eval_fns", type=str, required=False,
-            default="qerr,ppc,plancost")
+            default="qerr,plancost")
 
     # featurizer arguments
     parser.add_argument("--regen_featstats", type=int, required=False,
-            default=1)
+            default=0)
     parser.add_argument("--ynormalization", type=str, required=False,
             default="log")
 
@@ -357,6 +360,14 @@ def read_flags():
             required=False, default=0.0001)
     parser.add_argument("--loss_func_name", type=str, required=False,
             default="mse")
+
+    parser.add_argument("--table_features", type=int, required=False,
+            default=1)
+    parser.add_argument("--join_features", type=int, required=False,
+            default=1)
+
+    parser.add_argument("--max_discrete_featurizing_buckets", type=int, required=False,
+            default=10)
 
     return parser.parse_args()
 

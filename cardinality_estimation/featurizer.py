@@ -255,7 +255,10 @@ class Featurizer():
         for cidx, col_name in enumerate(all_cols):
             self.columns_onehot_idx[col_name] = cidx
 
-        self.pred_features_len = 0
+        # each predicate is featurized independently, so no common
+        # pred_features_len
+        # self.pred_features_len = 0
+
         # these comparator operator will be used for each predicate filter
         for i, cmp_op in enumerate(sorted(self.cmp_ops)):
             self.cmp_ops_onehot[cmp_op] = i
@@ -266,14 +269,20 @@ class Featurizer():
         col_keys.sort()
 
         self.max_pred_len = 0
+
         for col in col_keys:
             info = self.column_stats[col]
             pred_len = 0
             # for operator type
             pred_len += len(self.cmp_ops)
 
-            # one-hot vector for which column is predicate on
-            pred_len += self.num_cols
+            if self.set_column_feature == "onehot":
+                # one-hot vector for which column is predicate on
+                pred_len += self.num_cols
+            elif self.set_column_feature == "none":
+                pass
+            else:
+                assert False
 
             # for num_tables present
             if self.num_tables_feature:
@@ -325,6 +334,7 @@ class Featurizer():
             ynormalization="log",
             table_features = True,
             pred_features = True,
+            set_column_feature = "onehot",
             join_features = True,
             flow_features = False,
             num_tables_feature=False,
@@ -665,11 +675,17 @@ class Featurizer():
                     continue
 
                 assert col in self.column_stats
-                # which column does the current feature belong to
-                cidx = self.columns_onehot_idx[col]
-                pfeats[cidx] = 1.0
 
-                feat_idx_start += len(self.columns_onehot_idx)
+                if self.set_column_feature == "onehot":
+                    # which column does the current feature belong to
+                    cidx = self.columns_onehot_idx[col]
+                    pfeats[cidx] = 1.0
+
+                    feat_idx_start += len(self.columns_onehot_idx)
+                elif self.set_column_feature == "none":
+                    pass
+                else:
+                    assert False
 
                 _, _, continuous = self.featurizer[col]
 

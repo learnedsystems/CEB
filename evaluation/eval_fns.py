@@ -13,6 +13,7 @@ from collections import defaultdict
 import pandas as pd
 import networkx as nx
 import os
+import wandb
 
 import pdb
 
@@ -230,10 +231,10 @@ class PostgresPlanCost(EvalFunc):
                 .format(samples_type, alg_name, len(costs),
                     relcost))
 
-        loss_key = "Final-{}-{}-{}".format("RelativeTotalCost",
-                                               samples_type,
-                                               "mean")
-        wandb.run.summary[loss_key] = relcost
+        if use_wandb:
+            loss_key = "Final-{}-{}".format("Relative-TotalPPCost",
+                                                   samples_type)
+            wandb.run.summary[loss_key] = relcost
 
     def eval(self, qreps, preds, user="imdb",pwd="password",
             db_name="imdb", db_host="localhost", port=5432, num_processes=-1,
@@ -312,6 +313,11 @@ class SimplePlanCost(EvalFunc):
         assert isinstance(qreps, list)
         assert isinstance(preds, list)
         assert isinstance(qreps[0], dict)
+        use_wandb = kwargs["use_wandb"]
+        if "samples_type" in kwargs:
+            samples_type = kwargs["samples_type"]
+        else:
+            samples_type = ""
 
         if num_processes == -1:
             pool = mp.Pool(int(mp.cpu_count()))
@@ -321,4 +327,14 @@ class SimplePlanCost(EvalFunc):
         pc = PlanCost(cost_model)
         costs, opt_costs = pc.compute_costs(qreps, preds, pool=pool)
         pool.close()
+
+        totalcost = np.sum(costs)
+        opttotal = np.sum(opt_costs)
+        relcost = np.round(float(totalcost)/opttotal, 3)
+
+        if use_wandb:
+            loss_key = "Final-{}-{}".format("Relative-TotalSimplePlanCost",
+                                                   samples_type)
+            wandb.run.summary[loss_key] = relcost
+
         return costs

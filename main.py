@@ -266,6 +266,7 @@ def get_featurizer(trainqs, valqs, testqs):
             featurization_type=feat_type,
             table_features=args.table_features,
             join_features=args.join_features,
+            set_column_feature=args.set_column_feature,
             max_discrete_featurizing_buckets=args.max_discrete_featurizing_buckets
             )
     featurizer.update_ystats(trainqs+valqs+testqs)
@@ -276,7 +277,7 @@ def main():
 
     # set up wandb logging metrics
     if args.use_wandb:
-        wandb_tags = ["v1"]
+        wandb_tags = ["v2"]
         if args.wandb_tags is not None:
             wandb_tags += args.wandb_tags.split(",")
         wandb.init("ceb", config={},
@@ -399,6 +400,9 @@ def read_flags():
             default=1)
     parser.add_argument("--join_features", type=int, required=False,
             default=1)
+    parser.add_argument("--set_column_feature", type=str, required=False,
+            default="onehot")
+
 
     parser.add_argument("--max_discrete_featurizing_buckets", type=int, required=False,
             default=10)

@@ -470,4 +470,8 @@ class PlanCost():
             # to analyze the common plans; or inject those plans into postgres
             # etc.
 
+        # remove the ndoe we added temporarily
+        for qrep in qreps:
+            qrep["subset_graph"].remove_node(SOURCE_NODE)
+
         return np.array(all_costs), np.array(all_opt_costs)

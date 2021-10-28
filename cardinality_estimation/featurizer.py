@@ -10,6 +10,7 @@ import re
 import pandas as pd
 import numpy as np
 import os
+import pickle
 
 CREATE_TABLE_TEMPLATE = "CREATE TABLE {name} (id SERIAL, {columns})"
 INSERT_TEMPLATE = "INSERT INTO {name} ({columns}) VALUES %s"
@@ -49,6 +50,36 @@ order by
 RANGE_PREDS = ["gt", "gte", "lt", "lte"]
 
 CREATE_INDEX_TMP = '''CREATE INDEX IF NOT EXISTS {INDEX_NAME} ON {TABLE} ({COLUMN});'''
+
+import string
+
+def preprocess_word(word, exclude_nums=False, exclude_the=False,
+        exclude_words=[], min_len=0):
+    word = str(word)
+    # no punctuation
+    exclude = set(string.punctuation)
+    # exclude the as well
+    if exclude_the:
+        exclude.add("the")
+    if exclude_nums:
+        for i in range(10):
+            exclude.add(str(i))
+
+    # exclude.remove("%")
+    word = ''.join(ch for ch in word if ch not in exclude)
+
+    # make it lowercase
+    word = word.lower()
+    final_words = []
+
+    for w in word.split():
+        if w in exclude_words:
+            continue
+        if len(w) < min_len:
+            continue
+        final_words.append(w)
+
+    return " ".join(final_words)
 
 def qrep_to_df(qrep):
     '''
@@ -132,6 +163,73 @@ class Featurizer():
     def update_using_saved_stats(self, featdata):
         for k,v in featdata.items():
             setattr(self, k, v)
+
+        # reset these using workload
+        self.max_tables = 0
+        self.max_joins = 0
+        self.max_preds = 0
+        self.max_pred_vals = 0
+
+        self.cmp_ops = set()
+        self.joins = set()
+        self.tables = set()
+        self.regex_cols = set()
+        self.aliases = {}
+
+    def update_workload_stats(self, qreps):
+        for qrep in qreps:
+            if qrep["template_name"] not in self.templates:
+                self.templates.append(qrep["template_name"])
+
+            node_data = qrep["join_graph"].nodes(data=True)
+
+            num_tables = len(node_data)
+            if num_tables > self.max_tables:
+                self.max_tables = num_tables
+
+            num_preds = 0
+            num_pred_vals = 0
+            for node, info in node_data:
+                num_preds += len(info["pred_cols"])
+                if len(info["pred_vals"]) == 0:
+                    continue
+
+                if isinstance(info["pred_vals"][0], list):
+                    num_pred_vals += len(info["pred_vals"][0])
+                else:
+                    num_pred_vals += len(info["pred_vals"])
+
+            if num_preds > self.max_preds:
+                self.max_preds = num_preds
+
+            if num_pred_vals > self.max_pred_vals:
+                self.max_pred_vals = num_pred_vals
+
+            num_joins = len(qrep["join_graph"].edges())
+            if num_joins > self.max_joins:
+                self.max_joins = num_joins
+
+            cur_columns = []
+            for node, info in qrep["join_graph"].nodes(data=True):
+                for i, cmp_op in enumerate(info["pred_types"]):
+                    self.cmp_ops.add(cmp_op)
+                    if "like" in cmp_op:
+                        self.regex_cols.add(info["pred_cols"][i])
+
+                if node not in self.aliases:
+                    self.aliases[node] = info["real_name"]
+                    self.tables.add(info["real_name"])
+                for col in info["pred_cols"]:
+                    cur_columns.append(col)
+
+            joins = extract_join_clause(qrep["sql"])
+            for join in joins:
+                keys = join.split("=")
+                keys.sort()
+                keys = ",".join(keys)
+                self.joins.add(keys)
+
+        print("max pred vals: {}".format(self.max_pred_vals))
 
     def update_ystats(self, qreps):
         y = np.array(get_all_cardinalities(qreps, self.ckey))
@@ -316,6 +414,9 @@ class Featurizer():
                 pred_len += num_buckets
                 continuous = False
 
+                if self.embedding_fn is not None:
+                    pred_len += self.embedding_size
+
                 if col in self.regex_cols:
                     # give it more space for #num-chars, #number in regex or
                     # not
@@ -337,6 +438,7 @@ class Featurizer():
             set_column_feature = "onehot",
             join_features = True,
             flow_features = False,
+            embedding_fn = None,
             num_tables_feature=False,
             separate_ilike_bins=True,
             separate_cont_bins=True,
@@ -407,6 +509,19 @@ class Featurizer():
             self.__setattr__(k, val)
             arg_key += str(val)
         self.featkey = str(deterministic_hash(arg_key))
+
+        if self.embedding_fn is not None:
+            assert os.path.exists(self.embedding_fn), \
+                    "Embeddings file not found: %s" % self.embedding_fn
+            print(self.embedding_fn)
+            with open(self.embedding_fn, 'rb') as handle:
+                self.embeddings = pickle.load(handle)
+            print("Loaded embeddings, with %d entries" % len(self.embeddings))
+
+            sample_embedding = list(self.embeddings.values())[0]
+            self.embedding_size = len(sample_embedding)
+            print("forcing discrete buckets = 1, because we are using embeddings")
+            self.max_discrete_featurizing_buckets = 1
 
         # let's figure out the feature len based on db.stats
         assert self.featurizer is None
@@ -511,6 +626,13 @@ class Featurizer():
             # pg est for the node
             self.num_flow_features += 1
 
+            # if self.embedding_fn is not None:
+                # # load the embedding file
+                # sample_embedding = list(self.embeddings.values())[0]
+                # self.embedding_size = len(sample_embedding)
+                # print("forcing discrete buckets = 1, because we are using embeddings")
+                # self.max_discrete_featurizing_buckets = 1
+
     def _handle_continuous_feature(self, pfeats, pred_idx_start,
             col, val):
         '''
@@ -537,17 +659,31 @@ class Featurizer():
             norm_val = min(norm_val, 1.00)
             pfeats[pred_idx_start+vi] = norm_val
 
-    def _handle_categorical_feature(self, pfeats, pred_idx_start,
-            col, val):
+    def _handle_categorical_feature(self, pfeats,
+            pred_idx_start, col, val):
         '''
         hashed features;
         '''
         col_info = self.column_stats[col]
         num_buckets = min(self.max_discrete_featurizing_buckets,
                 col_info["num_values"])
-        for v in val:
-            pred_idx = deterministic_hash(str(v)) % num_buckets
-            pfeats[pred_idx_start+pred_idx] = 1.00
+
+        print(col)
+        if self.embedding_fn is not None:
+            for predicate in val:
+                words = preprocess_word(predicate)
+                valkey = str(col) + str(words)
+                if valkey in self.embeddings:
+                    embedding = self.embeddings[valkey]
+                    pfeats[pred_idx_start:\
+        pred_idx_start+self.embedding_size] = embedding
+                else:
+                    print("embedding not found for {}".format(valkey))
+
+        else:
+            for v in val:
+                pred_idx = deterministic_hash(str(v)) % num_buckets
+                pfeats[pred_idx_start+pred_idx] = 1.00
 
     def _get_pg_est(self, subpinfo):
         # subpinfo = subsetgraph.nodes()[node]
@@ -701,14 +837,15 @@ class Featurizer():
                             col, val)
                 else:
                     if self.separate_cont_bins:
-                        pred_idx_start += self.continuous_feature_size
+                        pred_idx_start += \
+                                self.continuous_feature_size
 
                     if "like" in cmp_op:
-                        self._handle_ilike_feature(pfeats, pred_idx_start,
-                                col, val)
+                        self._handle_ilike_feature(pfeats,
+                                pred_idx_start, col, val)
                     else:
-                        self._handle_categorical_feature(pfeats, pred_idx_start,
-                                col, val)
+                        self._handle_categorical_feature(pfeats,
+                                pred_idx_start, col, val)
 
                 # add the appropriate postgresql estimate for this table in the
                 # subplan; Note that the last elements are reserved for the
@@ -1075,36 +1212,38 @@ class Featurizer():
         if num_tables > self.max_tables:
             self.max_tables = num_tables
 
-        num_preds = 0
-        for node, info in node_data:
-            num_preds += len(info["pred_cols"])
+        # num_preds = 0
+        # for node, info in node_data:
+            # num_preds += len(info["pred_cols"])
+            # print(info["pred_cols"])
+            # pdb.set_trace()
 
-        if num_preds > self.max_preds:
-            self.max_preds = num_preds
+        # if num_preds > self.max_preds:
+            # self.max_preds = num_preds
 
-        num_joins = len(qrep["join_graph"].edges())
-        if num_joins > self.max_joins:
-            self.max_joins = num_joins
+        # num_joins = len(qrep["join_graph"].edges())
+        # if num_joins > self.max_joins:
+            # self.max_joins = num_joins
 
         cur_columns = []
         for node, info in qrep["join_graph"].nodes(data=True):
-            for i, cmp_op in enumerate(info["pred_types"]):
-                self.cmp_ops.add(cmp_op)
-                if "like" in cmp_op:
-                    self.regex_cols.add(info["pred_cols"][i])
-
-            if node not in self.aliases:
-                self.aliases[node] = info["real_name"]
-                self.tables.add(info["real_name"])
             for col in info["pred_cols"]:
                 cur_columns.append(col)
+            # for i, cmp_op in enumerate(info["pred_types"]):
+                # self.cmp_ops.add(cmp_op)
+                # if "like" in cmp_op:
+                    # self.regex_cols.add(info["pred_cols"][i])
 
-        joins = extract_join_clause(qrep["sql"])
-        for join in joins:
-            keys = join.split("=")
-            keys.sort()
-            keys = ",".join(keys)
-            self.joins.add(keys)
+            # if node not in self.aliases:
+                # self.aliases[node] = info["real_name"]
+                # self.tables.add(info["real_name"])
+
+        # joins = extract_join_clause(qrep["sql"])
+        # for join in joins:
+            # keys = join.split("=")
+            # keys.sort()
+            # keys = ",".join(keys)
+            # self.joins.add(keys)
 
         ## features required for plan-graph / flow-loss
         flow_start = time.time()
@@ -1163,12 +1302,21 @@ class Featurizer():
 
             # TODO: move to using cached_execute
             column_stats[column] = {}
-            column_stats[column]["min_value"] = self.execute(min_query)[0][0]
-            column_stats[column]["max_value"] = self.execute(max_query)[0][0]
+            minval = self.execute(min_query)[0][0]
+            maxval = self.execute(max_query)[0][0]
+
             column_stats[column]["num_values"] = \
                     self.execute(unique_count_query)[0][0]
             column_stats[column]["total_values"] = \
                     self.execute(total_count_query)[0][0]
+
+            column_stats[column]["max_value"] = maxval
+            if not is_float(minval) and is_float(maxval):
+                minval = 0.0
+                print(column)
+                pdb.set_trace()
+
+            column_stats[column]["min_value"] = minval
 
             # only store all the values for tables with small alphabet
             # sizes (so we can use them for things like the PGM).

@@ -158,7 +158,7 @@ def get_query_fns():
         qfns.sort()
 
         if args.num_samples_per_template == -1 \
-                or args.num_samples_per_template > len(qfns):
+                or args.num_samples_per_template >= len(qfns):
             qfns = qfns
         elif args.num_samples_per_template < len(qfns):
             qfns = qfns[0:args.num_samples_per_template]
@@ -175,6 +175,7 @@ def get_query_fns():
                 cur_test_fns = qfns
             else:
                 assert False
+
         elif args.train_test_split_kind == "query":
             if args.val_size == 0:
                 cur_val_fns = []
@@ -262,12 +263,15 @@ def get_featurizer(trainqs, valqs, testqs):
     # these configuration properties do not influence the basic statistics
     # collected in the featurizer.update_column_stats call; Therefore, we don't
     # include this in the cached version
+
+    featurizer.update_workload_stats(trainqs+valqs+testqs)
     featurizer.setup(ynormalization=args.ynormalization,
             featurization_type=feat_type,
             table_features=args.table_features,
             join_features=args.join_features,
             set_column_feature=args.set_column_feature,
-            max_discrete_featurizing_buckets=args.max_discrete_featurizing_buckets
+            max_discrete_featurizing_buckets=args.max_discrete_featurizing_buckets,
+            embedding_fn = args.embedding_fn,
             )
     featurizer.update_ystats(trainqs+valqs+testqs)
 
@@ -406,6 +410,7 @@ def read_flags():
 
     parser.add_argument("--max_discrete_featurizing_buckets", type=int, required=False,
             default=10)
+    parser.add_argument("--embedding_fn", type=str, required=False, default=None)
 
     parser.add_argument("--save_pdf_plans", type=int, required=False,
             default=0)

@@ -27,6 +27,42 @@ ALIAS_FORMAT = "{TABLE} AS {ALIAS}"
 RANGE_PREDS = ["gt", "gte", "lt", "lte"]
 COUNT_SIZE_TEMPLATE = "SELECT COUNT(*) FROM {FROM_CLAUSE}"
 
+import glob
+from .query import *
+import random
+
+'''
+loading functions
+'''
+def load_qdata(fns):
+    qreps = []
+    for qfn in fns:
+        qrep = load_qrep(qfn)
+        # TODO: can do checks like no queries with zero cardinalities etc.
+        qreps.append(qrep)
+        template_name = os.path.basename(os.path.dirname(qfn))
+        qrep["name"] = os.path.basename(qfn)
+        qrep["template_name"] = template_name
+    return qreps
+
+def get_query_fns(basedir, template_fraction=1.0):
+    fns = []
+    tmpnames = list(glob.glob(os.path.join(basedir, "*")))
+    assert template_fraction <= 1.0
+
+    for qi,qdir in enumerate(tmpnames):
+        if os.path.isfile(qdir):
+            continue
+        template_name = os.path.basename(qdir)
+        # let's first select all the qfns we are going to load
+        qfns = list(glob.glob(os.path.join(qdir, "*.pkl")))
+        qfns.sort()
+        num_samples = max(int(len(qfns)*template_fraction), 1)
+        random.seed(1234)
+        qfns = random.sample(qfns, num_samples)
+        fns += qfns
+    return fns
+
 '''
 functions copied over from ryan's utils files
 '''

@@ -15,9 +15,12 @@ from evaluation.eval_fns import *
 from .dataset import QueryDataset, pad_sets, to_variable,\
         mscn_collate_fn
 from .nets import *
+from evaluation.flow_loss import FlowLoss, \
+        get_optimization_variables, get_subsetg_vectors
 
 from torch.utils import data
 from torch.nn.utils.clip_grad import clip_grad_norm_
+
 import wandb
 
 class CardinalityEstimationAlg():
@@ -95,6 +98,9 @@ class NN(CardinalityEstimationAlg):
         elif self.loss_func_name == "mse":
             self.loss_func = torch.nn.MSELoss(reduction="none")
             self.load_query_together = False
+        elif self.loss_func_name == "flowloss":
+            self.loss = FlowLoss.apply
+            self.load_query_together = True
         else:
             assert False
 
@@ -137,10 +143,10 @@ class NN(CardinalityEstimationAlg):
     def periodic_eval(self):
         if not self.use_wandb:
             return
-
+        start = time.time()
         for st, ds in self.eval_ds.items():
-            preds = self._eval_ds(ds)
             samples = self.samples[st]
+            preds = self._eval_ds(ds, samples)
             preds = format_model_test_output(preds,
                     samples, self.featurizer)
 
@@ -160,6 +166,79 @@ class NN(CardinalityEstimationAlg):
 
                 err = np.mean(errors)
                 wandb.log({str(efunc)+"-"+st: err, "epoch":self.epoch})
+
+        print("periodic_eval took: ", time.time()-start)
+
+    def update_flow_training_info(self):
+        print("precomputing flow loss info")
+        fstart = time.time()
+        # precompute a whole bunch of training things
+        self.flow_training_info = []
+        # farchive = klepto.archives.dir_archive("./flow_info_archive",
+                # cached=True, serialized=True)
+        # farchive.load()
+        new_seen = False
+        for sample in self.training_samples:
+            qkey = deterministic_hash(sample["sql"])
+            # if qkey in farchive:
+            if False:
+                subsetg_vectors = farchive[qkey]
+                assert len(subsetg_vectors) == 10
+            else:
+                new_seen = True
+                subsetg_vectors = list(get_subsetg_vectors(sample,
+                    self.cost_model))
+
+            true_cards = np.zeros(len(subsetg_vectors[0]),
+                    dtype=np.float32)
+            nodes = list(sample["subset_graph"].nodes())
+
+            if SOURCE_NODE in nodes:
+                nodes.remove(SOURCE_NODE)
+
+            nodes.sort()
+            for i, node in enumerate(nodes):
+                true_cards[i] = \
+                    sample["subset_graph"].nodes()[node]["cardinality"]["actual"]
+
+            trueC_vec, dgdxT, G, Q = \
+                get_optimization_variables(true_cards,
+                    subsetg_vectors[0], self.featurizer.min_val,
+                        self.featurizer.max_val,
+                        self.featurizer.ynormalization,
+                        subsetg_vectors[4],
+                        subsetg_vectors[5],
+                        subsetg_vectors[3],
+                        subsetg_vectors[1],
+                        subsetg_vectors[2],
+                        subsetg_vectors[6],
+                        subsetg_vectors[7],
+                        self.cost_model, subsetg_vectors[-1])
+
+            Gv = to_variable(np.zeros(len(subsetg_vectors[0]))).float()
+            Gv[subsetg_vectors[-2]] = 1.0
+            trueC_vec = to_variable(trueC_vec).float()
+            dgdxT = to_variable(dgdxT).float()
+            G = to_variable(G).float()
+            Q = to_variable(Q).float()
+
+            trueC = torch.eye(len(trueC_vec)).float().detach()
+            for i, curC in enumerate(trueC_vec):
+                trueC[i,i] = curC
+
+            invG = torch.inverse(G)
+            v = invG @ Gv
+            left = (Gv @ torch.transpose(invG,0,1)) @ torch.transpose(Q, 0, 1)
+            right = Q @ (v)
+            left = left.detach().cpu()
+            right = right.detach().cpu()
+            opt_flow_loss = left @ trueC @ right
+            del trueC
+
+            self.flow_training_info.append((subsetg_vectors, trueC_vec,
+                    opt_flow_loss))
+
+        print("precomputing flow info took: ", time.time()-fstart)
 
     def train(self, training_samples, **kwargs):
         assert isinstance(training_samples[0], dict)
@@ -193,13 +272,16 @@ class NN(CardinalityEstimationAlg):
         print("""Training samples: {}, Model size: {}""".
                 format(len(self.trainds), model_size))
 
+        if "flow" in self.loss_func_name:
+            self.update_flow_training_info()
+
         for self.epoch in range(0,self.max_epochs):
             if self.epoch % self.eval_epoch == 0:
                 self.periodic_eval()
 
             self.train_one_epoch()
 
-    def _eval_ds(self, ds):
+    def _eval_ds(self, ds, samples=None):
         torch.set_grad_enabled(False)
         # important to not shuffle the data so correct order preserved!
         loader = data.DataLoader(ds,
@@ -215,6 +297,27 @@ class NN(CardinalityEstimationAlg):
 
         preds = torch.cat(allpreds).detach().cpu().numpy()
         torch.set_grad_enabled(True)
+
+        if self.heuristic_unseen_preds == "pg" and samples is not None:
+            newpreds = []
+            query_idx = 0
+            for sample in samples:
+                node_keys = list(sample["subset_graph"].nodes())
+                if SOURCE_NODE in node_keys:
+                    node_keys.remove(SOURCE_NODE)
+                node_keys.sort()
+                for subq_idx, node in enumerate(node_keys):
+                    cards = sample["subset_graph"].nodes()[node]["cardinality"]
+                    idx = query_idx + subq_idx
+                    est_card = preds[idx]
+                    # were all columns in this subplan + constants seen in the
+                    # training set?
+                    print(node)
+
+                    pdb.set_trace()
+
+            preds = np.array(newpreds)
+            pdb.set_trace()
 
         return preds
 
@@ -251,7 +354,7 @@ class NN(CardinalityEstimationAlg):
         list of aliases / table names
         '''
         testds = self.init_dataset(test_samples)
-        preds = self._eval_ds(testds)
+        preds = self._eval_ds(testds, test_samples)
 
         return format_model_test_output(preds, test_samples, self.featurizer)
 

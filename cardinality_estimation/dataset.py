@@ -194,7 +194,8 @@ class QueryDataset(data.Dataset):
                 and self.load_padded_mscn_feats:
                 tf,pf,jf,tm,pm,jm = \
                     pad_sets([x["table"]], [x["pred"]], [x["join"]],
-                            self.featurizer.max_tables, self.featurizer.max_preds,
+                            self.featurizer.max_tables,
+                            self.featurizer.max_preds,
                             self.featurizer.max_joins)
                 x["table"] = tf
                 x["join"] = jf

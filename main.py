@@ -54,15 +54,16 @@ def eval_alg(alg, eval_funcs, qreps, samples_type):
                     np.round(np.median(errors),3),
                     np.round(np.percentile(errors,99),3)))
 
-        loss_key = "Final-{}-{}-{}".format(str(efunc),
-                                               samples_type,
-                                               "mean")
-        wandb.run.summary[loss_key] = np.round(np.mean(errors),3)
+        if args.use_wandb:
+            loss_key = "Final-{}-{}-{}".format(str(efunc),
+                                                   samples_type,
+                                                   "mean")
+            wandb.run.summary[loss_key] = np.round(np.mean(errors),3)
 
-        loss_key = "Final-{}-{}-{}".format(str(efunc),
-                                               samples_type,
-                                               "99p")
-        wandb.run.summary[loss_key] = np.round(np.percentile(errors,99), 3)
+            loss_key = "Final-{}-{}-{}".format(str(efunc),
+                                                   samples_type,
+                                                   "99p")
+            wandb.run.summary[loss_key] = np.round(np.percentile(errors,99), 3)
 
     print("all loss computations took: ", time.time()-start)
 
@@ -93,6 +94,7 @@ def get_alg(alg):
                        max_depth=10, lr = 0.01)
     elif alg == "fcnn":
         return FCNN(max_epochs = args.max_epochs, lr=args.lr,
+                cost_model = args.cost_model,
                 eval_fns = args.eval_fns,
                 use_wandb = args.use_wandb,
                 mb_size = args.mb_size,
@@ -107,6 +109,8 @@ def get_alg(alg):
                 hidden_layer_size = args.hidden_layer_size)
     elif alg == "mscn":
         return MSCN(max_epochs = args.max_epochs, lr=args.lr,
+                heuristic_unseen_preds = args.heuristic_unseen_preds,
+                cost_model = args.cost_model,
                 use_wandb = args.use_wandb,
                 eval_fns = args.eval_fns,
                 load_padded_mscn_feats = args.load_padded_mscn_feats,
@@ -124,12 +128,27 @@ def get_alg(alg):
     else:
         assert False
 
+REGEX_TEMPLATES = ['10a', '11a', '11b', '3b', '9b', '9a']
 def get_query_fns():
     fns = list(glob.glob(args.query_dir + "/*"))
+    fns = [fn for fn in fns if os.path.isdir(fn)]
     skipped_templates = []
     train_qfns = []
     test_qfns = []
     val_qfns = []
+
+    if args.no_regex_templates:
+        new_templates = []
+        for template_dir in fns:
+            isregex = False
+            for regtmp in REGEX_TEMPLATES:
+                if regtmp in template_dir:
+                    isregex = True
+            if isregex:
+                skipped_templates.append(template_dir)
+            else:
+                new_templates.append(template_dir)
+        fns = new_templates
 
     if args.train_test_split_kind == "template":
         # the train/test split will be on the template names
@@ -138,6 +157,22 @@ def get_query_fns():
         train_tmps, test_tmps = train_test_split(sorted_fns,
                 test_size=args.test_size,
                 random_state=args.diff_templates_seed)
+
+    elif args.train_test_split_kind == "custom":
+        train_tmp_names = args.train_tmps.split(",")
+        test_tmp_names = args.test_tmps.split(",")
+        train_tmps = []
+        test_tmps = []
+        for fn in fns:
+            for ctmp in train_tmp_names:
+                if ctmp in fn:
+                    train_tmps.append(fn)
+                    break
+
+            for ctmp in test_tmp_names:
+                if ctmp in fn:
+                    test_tmps.append(fn)
+                    break
 
     for qi,qdir in enumerate(fns):
         if ".json" in qdir:
@@ -174,7 +209,24 @@ def get_query_fns():
                 cur_train_fns = []
                 cur_test_fns = qfns
             else:
-                assert False
+                continue
+                # assert False
+        elif args.train_test_split_kind == "custom":
+            # cur_val_fns = []
+            if qdir in train_tmps:
+                # cur_train_fns = qfns
+                # cur_test_fns = []
+                cur_val_fns, cur_train_fns = train_test_split(qfns,
+                        test_size=1-args.val_size,
+                        random_state=args.seed)
+                cur_test_fns = []
+            elif qdir in test_tmps:
+                # no validation set from here
+                cur_val_fns = []
+                cur_train_fns = []
+                cur_test_fns = qfns
+            else:
+                continue
 
         elif args.train_test_split_kind == "query":
             if args.val_size == 0:
@@ -197,9 +249,12 @@ def get_query_fns():
     if args.train_test_split_kind == "query":
         print("""Selected {} train queries, {} test queries, and {} val queries"""\
                 .format(len(train_qfns), len(test_qfns), len(val_qfns)))
-    elif args.train_test_split_kind == "template":
+    # elif args.train_test_split_kind == "template":
+    else:
         train_tmp_names = [os.path.basename(tfn) for tfn in train_tmps]
         test_tmp_names = [os.path.basename(tfn) for tfn in test_tmps]
+        print("""Selected {} train queries, {} test queries, and {} val queries"""\
+                .format(len(train_qfns), len(test_qfns), len(val_qfns)))
         print("""Selected {} train templates, {} test templates"""\
                 .format(len(train_tmp_names), len(test_tmp_names)))
         print("""Training templates: {}\nEvaluation templates: {}""".\
@@ -234,6 +289,7 @@ def get_featurizer(trainqs, valqs, testqs):
     featdata_fn = os.path.join(args.query_dir, "dbdata.json")
     if args.regen_featstats or not os.path.exists(featdata_fn):
         featurizer.update_column_stats(trainqs+valqs+testqs)
+
         ATTRS_TO_SAVE = ['aliases', 'cmp_ops', 'column_stats', 'joins',
                 'max_in_degree', 'max_joins', 'max_out_degree', 'max_preds',
                 'max_tables', 'regex_cols', 'tables']
@@ -266,14 +322,23 @@ def get_featurizer(trainqs, valqs, testqs):
 
     featurizer.update_workload_stats(trainqs+valqs+testqs)
     featurizer.setup(ynormalization=args.ynormalization,
+            heuristic_features = args.heuristic_features,
             featurization_type=feat_type,
             table_features=args.table_features,
             join_features=args.join_features,
             set_column_feature=args.set_column_feature,
             max_discrete_featurizing_buckets=args.max_discrete_featurizing_buckets,
+            max_like_featurizing_buckets=args.max_like_featurizing_buckets,
             embedding_fn = args.embedding_fn,
+            embedding_pooling = args.embedding_pooling,
+            feat_onlyseen_preds = args.feat_onlyseen_preds
             )
+
     featurizer.update_ystats(trainqs+valqs+testqs)
+
+    # if args.feat_onlyseen_preds:
+    # just do it always
+    featurizer.update_seen_preds(trainqs)
 
     return featurizer
 
@@ -281,7 +346,7 @@ def main():
 
     # set up wandb logging metrics
     if args.use_wandb:
-        wandb_tags = ["v2"]
+        wandb_tags = ["v4"]
         if args.wandb_tags is not None:
             wandb_tags += args.wandb_tags.split(",")
         wandb.init("ceb", config={},
@@ -346,6 +411,9 @@ def read_flags():
 
     parser.add_argument("--seed", type=int, required=False,
             default=123)
+    parser.add_argument("--no_regex_templates", type=int,
+            required=False, default=0, help="""=1, will skip templates having regex queries""")
+
     parser.add_argument("--skip7a", type=int, required=False,
             default=0, help="""since 7a  is a template with a very large joingraph, we have a flag to skip it to make things run faster""")
     parser.add_argument("--num_eval_processes", type=int, required=False,
@@ -356,6 +424,11 @@ def read_flags():
     parser.add_argument("--diff_templates_seed", type=int, required=False,
             default=1, help="""Seed used when train_test_split_kind == template""")
 
+    parser.add_argument("--train_tmps", type=str, required=False,
+            default=None)
+    parser.add_argument("--test_tmps", type=str, required=False,
+            default=None)
+
     parser.add_argument("-n", "--num_samples_per_template", type=int,
             required=False, default=-1)
     parser.add_argument("--test_size", type=float, required=False,
@@ -365,13 +438,22 @@ def read_flags():
     parser.add_argument("--algs", type=str, required=False,
             default="postgres")
     parser.add_argument("--eval_fns", type=str, required=False,
-            default="qerr,ppc,plancost")
+            default="qerr,ppc")
+
+    parser.add_argument("--cost_model", type=str, required=False,
+            default="C")
 
     # featurizer arguments
     parser.add_argument("--regen_featstats", type=int, required=False,
             default=0)
+    parser.add_argument("--heuristic_features", type=int, required=False,
+            default=1)
     parser.add_argument("--ynormalization", type=str, required=False,
             default="log")
+    parser.add_argument("--feat_onlyseen_preds", type=int, required=False,
+            default=1)
+    parser.add_argument("--heuristic_unseen_preds", type=str, required=False,
+            default=None)
 
     ## NN training features
     parser.add_argument("--load_padded_mscn_feats", type=int, required=False, default=0, help="""==1 loads all the mscn features with padded zeros in memory -- speeds up training, but can take too much RAM.""")
@@ -381,7 +463,7 @@ def read_flags():
     parser.add_argument("--max_epochs", type=int,
             required=False, default=10)
     parser.add_argument("--eval_epoch", type=int,
-            required=False, default=1)
+            required=False, default=100)
     parser.add_argument("--mb_size", type=int, required=False,
             default=1024)
 
@@ -410,7 +492,11 @@ def read_flags():
 
     parser.add_argument("--max_discrete_featurizing_buckets", type=int, required=False,
             default=10)
+    parser.add_argument("--max_like_featurizing_buckets", type=int, required=False,
+            default=10)
+
     parser.add_argument("--embedding_fn", type=str, required=False, default=None)
+    parser.add_argument("--embedding_pooling", type=str, required=False, default=None)
 
     parser.add_argument("--save_pdf_plans", type=int, required=False,
             default=0)

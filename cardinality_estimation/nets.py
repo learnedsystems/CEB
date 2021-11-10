@@ -71,9 +71,10 @@ class SetConv(nn.Module):
             self.flow_mlp2 = nn.Linear(hid_units, hid_units).to(device)
             num_layer1_blocks += 1
 
+        combined_hid_size = hid_units
         self.out_mlp1 = nn.Linear(hid_units * num_layer1_blocks,
-                hid_units).to(device)
-        self.out_mlp2 = nn.Linear(hid_units, 1).to(device)
+                combined_hid_size).to(device)
+        self.out_mlp2 = nn.Linear(combined_hid_size, 1).to(device)
 
     def forward(self, xbatch):
         '''

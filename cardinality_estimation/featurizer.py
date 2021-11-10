@@ -15,11 +15,13 @@ import copy
 
 JOIN_KEY_MAX_TMP = """SELECT COUNT(*), {COL} FROM {TABLE} as {ALIAS} GROUP BY {COL} ORDER BY COUNT(*) DESC LIMIT 1"""
 
-JOIN_KEY_MIN_TMP = """SELECT COUNT(*), {COL} FROM {TABLE} as {ALIAS} GROUP BY {COL} ORDER BY COUNT(*) DESC LIMIT 1"""
+JOIN_KEY_MIN_TMP = """SELECT COUNT(*), {COL} FROM {TABLE} as {ALIAS} GROUP BY {COL} ORDER BY COUNT(*) ASC LIMIT 1"""
 
 JOIN_KEY_AVG_TMP = """SELECT AVG(count) FROM (SELECT COUNT(*) AS count, {COL} FROM {TABLE} as {ALIAS} GROUP BY {COL} ORDER BY COUNT(*)) AS tmp"""
 
 JOIN_KEY_VAR_TMP = """SELECT VARIANCE(count) FROM (SELECT COUNT(*) AS count, {COL} FROM {TABLE} as {ALIAS} GROUP BY {COL} ORDER BY COUNT(*)) AS tmp"""
+
+JOIN_KEY_DISTINCT_TMP = """SELECT COUNT(DISTINCT {COL}) FROM {TABLE} as {ALIAS}"""
 
 
 CREATE_TABLE_TEMPLATE = "CREATE TABLE {name} (id SERIAL, {columns})"
@@ -128,6 +130,11 @@ class Featurizer():
         #         stats["title"]["id"]["num_values"] = x
         self.column_stats = {}
         self.join_key_stats = {}
+        self.join_key_normalizers = {}
+        self.join_key_stat_names = ["distinct", "avg_key", "var_key", "max_key",
+                "min_key"]
+        self.join_key_stat_tmps = [JOIN_KEY_DISTINCT_TMP, JOIN_KEY_AVG_TMP,
+                JOIN_KEY_VAR_TMP, JOIN_KEY_MAX_TMP, JOIN_KEY_MIN_TMP]
 
         # will be set in setup()
         self.max_discrete_featurizing_buckets = None
@@ -1323,16 +1330,29 @@ class Featurizer():
                 jkey = jkey.strip()
                 if jkey in self.join_key_stats:
                     continue
+                self.join_key_stats[jkey] = {}
                 curalias = jkey[0:jkey.find(".")]
                 curtab = self.aliases[curalias]
-                print(curalias)
-                print(curtab)
-                min_exec = JOIN_KEY_MIN_TMP.format(TABLE=curtab,
-                                                   ALIAS=curalias,
-                                                   COL = jkey)
-                print(min_exec)
+                print(jkey)
+                for si,tmp in enumerate(self.join_key_stat_tmps):
+                    sname = self.join_key_stat_names[si]
+                    execcmd = tmp.format(TABLE=curtab,
+                                         ALIAS=curalias,
+                                         COL=jkey)
+                    val = int(self.execute(execcmd)[0][0])
+                    self.join_key_stats[jkey][sname] = val
+                    if sname not in self.join_key_normalizers:
+                        self.join_key_normalizers[sname] = (val, val)
+                    else:
+                        oldmin,oldmax = self.join_key_normalizers[sname]
+                        if val < oldmin:
+                            oldmin = val
+                        if val > oldmax:
+                            oldmax = val
+                        self.join_key_normalizers[sname] = (oldmin, oldmax)
 
-                pdb.set_trace()
+        print(self.join_key_normalizers)
+        pdb.set_trace()
 
         ## features required for plan-graph / flow-loss
         flow_start = time.time()

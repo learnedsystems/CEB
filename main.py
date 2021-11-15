@@ -292,7 +292,8 @@ def get_featurizer(trainqs, valqs, testqs):
 
         ATTRS_TO_SAVE = ['aliases', 'cmp_ops', 'column_stats', 'joins',
                 'max_in_degree', 'max_joins', 'max_out_degree', 'max_preds',
-                'max_tables', 'regex_cols', 'tables']
+                'max_tables', 'regex_cols', 'tables',
+                'mcvs']
         featdata = {}
         for k in dir(featurizer):
             if k not in ATTRS_TO_SAVE:
@@ -322,6 +323,7 @@ def get_featurizer(trainqs, valqs, testqs):
 
     featurizer.update_workload_stats(trainqs+valqs+testqs)
     featurizer.setup(ynormalization=args.ynormalization,
+            feat_mcvs = args.feat_mcvs,
             heuristic_features = args.heuristic_features,
             featurization_type=feat_type,
             table_features=args.table_features,
@@ -398,9 +400,9 @@ def read_flags():
     parser.add_argument("--db_host", type=str, required=False,
             default="localhost")
     parser.add_argument("--user", type=str, required=False,
-            default="pari")
+            default="ceb")
     parser.add_argument("--pwd", type=str, required=False,
-            default="")
+            default="password")
     parser.add_argument("--port", type=int, required=False,
             default=5432)
 
@@ -453,6 +455,8 @@ def read_flags():
     parser.add_argument("--feat_onlyseen_preds", type=int, required=False,
             default=1)
     parser.add_argument("--heuristic_unseen_preds", type=str, required=False,
+            default=None)
+    parser.add_argument("--feat_mcvs", type=str, required=False,
             default=None)
 
     ## NN training features

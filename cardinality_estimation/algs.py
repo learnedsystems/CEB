@@ -15,8 +15,8 @@ from evaluation.eval_fns import *
 from .dataset import QueryDataset, pad_sets, to_variable,\
         mscn_collate_fn
 from .nets import *
-from evaluation.flow_loss import FlowLoss, \
-        get_optimization_variables, get_subsetg_vectors
+# from evaluation.flow_loss import FlowLoss, \
+        # get_optimization_variables, get_subsetg_vectors
 
 from torch.utils import data
 from torch.nn.utils.clip_grad import clip_grad_norm_

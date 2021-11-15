@@ -110,6 +110,18 @@ def pad_sets(all_table_features, all_pred_features,
         join_features, join_mask = _handle_set_padding(join_features,
                 maxjoins)
 
+        # print(table_features.shape, table_mask.shape)
+        # print(join_features.shape, join_mask.shape)
+        # print("Tables: ")
+        # print(table_features)
+        # print(table_mask)
+
+        # pdb.set_trace()
+        # print("Joins: ")
+        # print(join_features)
+        # print(join_mask)
+        # pdb.set_trace()
+
         if table_features is not None:
             tf.append(table_features)
             tm.append(table_mask)

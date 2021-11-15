@@ -13,16 +13,19 @@ import os
 import pickle
 import copy
 
-JOIN_KEY_MAX_TMP = """SELECT COUNT(*), {COL} FROM {TABLE} as {ALIAS} GROUP BY {COL} ORDER BY COUNT(*) DESC LIMIT 1"""
+JOIN_KEY_MAX_TMP = """SELECT COUNT(*), {COL} FROM {TABLE} GROUP BY {COL} ORDER BY COUNT(*) DESC LIMIT 1"""
 
-JOIN_KEY_MIN_TMP = """SELECT COUNT(*), {COL} FROM {TABLE} as {ALIAS} GROUP BY {COL} ORDER BY COUNT(*) ASC LIMIT 1"""
+JOIN_KEY_MIN_TMP = """SELECT COUNT(*), {COL} FROM {TABLE} GROUP BY {COL} ORDER BY COUNT(*) ASC LIMIT 1"""
 
-JOIN_KEY_AVG_TMP = """SELECT AVG(count) FROM (SELECT COUNT(*) AS count, {COL} FROM {TABLE} as {ALIAS} GROUP BY {COL} ORDER BY COUNT(*)) AS tmp"""
+JOIN_KEY_AVG_TMP = """SELECT AVG(count) FROM (SELECT COUNT(*) AS count, {COL} FROM {TABLE} GROUP BY {COL} ORDER BY COUNT(*)) AS tmp"""
 
-JOIN_KEY_VAR_TMP = """SELECT VARIANCE(count) FROM (SELECT COUNT(*) AS count, {COL} FROM {TABLE} as {ALIAS} GROUP BY {COL} ORDER BY COUNT(*)) AS tmp"""
+JOIN_KEY_VAR_TMP = """SELECT VARIANCE(count) FROM (SELECT COUNT(*) AS count, {COL} FROM {TABLE} GROUP BY {COL} ORDER BY COUNT(*)) AS tmp"""
 
-JOIN_KEY_DISTINCT_TMP = """SELECT COUNT(DISTINCT {COL}) FROM {TABLE} as {ALIAS}"""
+JOIN_KEY_COUNT_TMP = """SELECT COUNT({COL}) FROM {TABLE}"""
+JOIN_KEY_DISTINCT_TMP = """SELECT COUNT(DISTINCT {COL}) FROM {TABLE}"""
 
+# TODO:
+NULL_FRAC_TMP = """SELECT null_frac FROM pg_stats WHERE tablename='{TABLE}' AND attname = '{COL}'"""
 
 CREATE_TABLE_TEMPLATE = "CREATE TABLE {name} (id SERIAL, {columns})"
 INSERT_TEMPLATE = "INSERT INTO {name} ({columns}) VALUES %s"
@@ -123,18 +126,31 @@ class Featurizer():
         self.db_name = db_name
         self.ckey = "cardinality"
 
+        self.regex_templates = set()
         # stats on the used columns
         #   table_name : column_name : attribute : value
         #   e.g., stats["title"]["id"]["max_value"] = 1010112
         #         stats["title"]["id"]["type"] = int
         #         stats["title"]["id"]["num_values"] = x
         self.column_stats = {}
+
         self.join_key_stats = {}
+        self.primary_join_keys = set()
         self.join_key_normalizers = {}
-        self.join_key_stat_names = ["distinct", "avg_key", "var_key", "max_key",
-                "min_key"]
-        self.join_key_stat_tmps = [JOIN_KEY_DISTINCT_TMP, JOIN_KEY_AVG_TMP,
-                JOIN_KEY_VAR_TMP, JOIN_KEY_MAX_TMP, JOIN_KEY_MIN_TMP]
+        self.join_key_stat_names = ["null_frac", "count", "distinct",
+                "avg_key", "var_key", "max_key", "min_key"]
+        self.join_key_stat_tmps = [NULL_FRAC_TMP, JOIN_KEY_COUNT_TMP,
+                JOIN_KEY_DISTINCT_TMP, JOIN_KEY_AVG_TMP, JOIN_KEY_VAR_TMP,
+                JOIN_KEY_MAX_TMP, JOIN_KEY_MIN_TMP]
+
+        # debug version
+        # self.join_key_stat_names = ["max_key"]
+        # self.join_key_stat_tmps = [JOIN_KEY_MAX_TMP]
+
+        # self.column_key_stats = {}
+        # self.column_stat_names = ["count", "distinct", "avg_key", "var_key", "max_key", "min_key"]
+        # self.column_stat_tmps = [JOIN_KEY_COUNT_TMP, JOIN_KEY_DISTINCT_TMP, JOIN_KEY_AVG_TMP, JOIN_KEY_VAR_TMP, JOIN_KEY_MAX_TMP, JOIN_KEY_MIN_TMP]
+        # self.column_key_normalizers = {}
 
         # will be set in setup()
         self.max_discrete_featurizing_buckets = None
@@ -178,6 +194,13 @@ class Featurizer():
     def update_column_stats(self, qreps):
         for qrep in qreps:
             self._update_stats(qrep)
+
+        for si,statname in enumerate(self.join_key_stat_names):
+            allvals = []
+            for col,kvs in self.join_key_stats.items():
+                allvals.append(kvs[statname])
+            self.join_key_normalizers[statname] = (np.mean(allvals),
+                    np.std(allvals))
 
     def update_seen_preds(self, qreps):
         # key: column name, val: set() of seen values
@@ -257,8 +280,13 @@ class Featurizer():
                     cur_columns.append(col)
 
             joins = extract_join_clause(qrep["sql"])
-            for join in joins:
-                keys = join.split("=")
+            for joinstr in joins:
+                # get rid of whitespace
+                joinstr = joinstr.replace(" ", "")
+                if not self.feat_separate_alias:
+                    joinstr = ''.join([ck for ck in joinstr if not ck.isdigit()])
+
+                keys = joinstr.split("=")
                 keys.sort()
                 keys = ",".join(keys)
                 self.joins.add(keys)
@@ -401,8 +429,36 @@ class Featurizer():
         col_keys = list(self.column_stats.keys())
         col_keys.sort()
 
-        self.max_pred_len = 0
+        if self.join_features == "onehot" \
+                or self.join_features == "1":
+            self.join_features_len = len(self.joins)
+        elif self.join_features == "onehot_tables":
+            self.join_features_len = len(self.tables)
+        elif self.join_features == "onehot_debug":
+            self.join_features_len = len(self.tables)
+        elif self.join_features == "stats":
+            self.join_features_len = 0
+            # primary key : foreign key OR fk : fk (onehot)
+            self.join_features_len += 2
+            # is self-join or not (boolean)
+            self.join_features_len += 1
+            # dv(tab1) / dv(tab2)
+            self.join_features_len += 1
 
+            # for both side of joins; pk first OR just sort;
+            self.join_features_len += len(self.join_key_stat_names)*2
+
+        if self.set_column_feature == "onehot" or \
+                self.set_column_feature == "1":
+            self.set_column_features_len = len(self.column_stats)
+        elif self.set_column_feature == "stats":
+            self.set_column_features_len = 0
+            # is pk (or functionally dependent on it)
+            self.set_column_features_len += 1
+            # for both side of joins; pk first OR just sort;
+            self.set_column_features_len += len(self.column_stat_names)
+
+        self.max_pred_len = 0
         for col in col_keys:
             info = self.column_stats[col]
             pred_len = 0
@@ -412,12 +468,10 @@ class Featurizer():
             if self.set_column_feature == "onehot":
                 # one-hot vector for which column is predicate on
                 pred_len += self.num_cols
+            elif self.set_column_feature == "stats":
+                pred_len += self.set_column_features_len
             else:
                 pass
-            # elif self.set_column_feature == "none":
-                # pass
-            # else:
-                # assert False
 
             # for num_tables present
             if self.num_tables_feature:
@@ -470,13 +524,14 @@ class Featurizer():
 
     def setup(self,
             heuristic_features=True,
+            feat_separate_alias=True,
             ynormalization="log",
             table_features = True,
             pred_features = True,
             feat_onlyseen_preds = True,
             seen_preds = False,
             set_column_feature = "onehot",
-            join_features = True,
+            join_features = "onehot",
             flow_features = False,
             embedding_fn = None,
             embedding_pooling = None,
@@ -555,6 +610,7 @@ class Featurizer():
         if self.embedding_fn == "none":
             self.embedding_fn = None
 
+    def init_feature_mapping(self):
         if self.embedding_fn is not None:
             assert os.path.exists(self.embedding_fn), \
                     "Embeddings file not found: %s" % self.embedding_fn
@@ -579,7 +635,6 @@ class Featurizer():
 
         # let's figure out the feature len based on db.stats
         assert self.featurizer is None
-
         # only need to know the number of tables for table features
         self.table_featurizer = {}
         # sort the tables so the features are reproducible
@@ -620,10 +675,21 @@ class Featurizer():
             self.table_features_len = len(self.tables)
             self.max_table_feature_len = len(self.tables)
 
-        self.join_featurizer = {}
+        if self.join_features == "1":
+            # or table one
+            self.join_features = "onehot"
+        elif self.join_features == "0":
+            self.join_features = False
 
-        for i, join in enumerate(sorted(self.joins)):
-            self.join_featurizer[join] = i
+        if self.join_features == "onehot":
+            self.join_featurizer = {}
+            for i, join in enumerate(sorted(self.joins)):
+                self.join_featurizer[join] = i
+        elif self.join_features == "onehot_tables" \
+                or self.join_features == "onehot_debug":
+            pass
+        elif self.join_features == "stats":
+            pass
 
         if self.featurization_type == "combined":
             self._init_pred_featurizer_combined()
@@ -787,6 +853,162 @@ class Featurizer():
         if bool(re.search(r'\d', regex_val)):
             pfeats[pred_idx_start + num_buckets + 1] = 1
 
+    def _handle_join_features(self, join_str):
+        join_str = join_str.replace(" ", "")
+        if self.join_features == "onehot_tables":
+            jfeats  = np.zeros(self.join_features_len)
+            keys = join_str.split("=")
+            for key in keys:
+                curalias = key[0:key.find(".")]
+                curtab = self.aliases[curalias]
+                tidx = self.table_featurizer[curtab]
+                jfeats[tidx] = 1.0
+            return jfeats
+
+        elif self.join_features == "onehot":
+            jfeats  = np.zeros(self.join_features_len)
+            if not self.feat_separate_alias:
+                join_str = ''.join([ck for ck in join_str if not ck.isdigit()])
+
+            keys = join_str.split("=")
+            keys.sort()
+            keys = ",".join(keys)
+            if keys not in self.join_featurizer:
+                print("join_str: {} not found in featurizer".format(join_str))
+                return jfeats
+            jfeats[self.join_featurizer[keys]] = 1.00
+            return jfeats
+
+        elif self.join_features == "stats":
+            jfeats = np.zeros(self.join_features_len)
+            join_keys = join_str.split("=")
+            ordered_join_keys = [None]*2
+
+            found_primary_key = False
+            join_keys.sort()
+            for ji, joinkey in enumerate(join_keys):
+                if joinkey in self.primary_join_keys:
+                    ordered_join_keys[0] = joinkey
+                    found_primary_key = True
+                    other_key = None
+                    for joinkey2 in join_keys:
+                        # joinkey2 = joinkey2.strip()
+                        if joinkey2 != joinkey:
+                            other_key = joinkey2
+                    assert other_key is not None
+                    ordered_join_keys[1] = other_key
+                    break
+
+                ordered_join_keys[ji] = joinkey
+
+            if found_primary_key:
+                jfeats[0] = 1.0
+            else:
+                jfeats[1] = 1.0
+
+            key1 = ordered_join_keys[0]
+            key2 = ordered_join_keys[1]
+            jk1 = ''.join([ck for ck in key1 if not ck.isdigit()])
+            jk2 = ''.join([ck for ck in key2 if not ck.isdigit()])
+
+            if jk1 == jk2:
+                jfeats[2] = 1.0
+            else:
+                jfeats[2] = 0.0
+
+            jfeats[3] = float(self.join_key_stats[key1]["distinct"]) \
+                    / self.join_key_stats[key2]["distinct"]
+
+            for ji, joinkey in enumerate(ordered_join_keys):
+                sidx = 3 + ji*len(self.join_key_stat_names)
+                statdata = self.join_key_stats[joinkey]
+                for si, statname in enumerate(self.join_key_stat_names):
+                    val = statdata[statname]
+                    statmean, statstd = self.join_key_normalizers[statname]
+                    jfeats[sidx+si] = (val-statmean) / statstd
+
+            return jfeats
+        else:
+            assert False
+
+    def _handle_single_col(self, col, val,
+            alias_est, subp_est,
+            cmp_op,
+            continuous):
+
+        ret_feats = []
+        feat_idx_start = 0
+        pfeats = np.zeros(self.max_pred_len)
+        assert col in self.column_stats
+        if self.set_column_feature == "onehot":
+            # which column does the current feature belong to
+            cidx = self.columns_onehot_idx[col]
+            pfeats[cidx] = 1.0
+            feat_idx_start += len(self.columns_onehot_idx)
+
+        # # set comparison operator 1-hot value, same for all types
+        cmp_idx = self.cmp_ops_onehot[cmp_op]
+        pfeats[feat_idx_start + cmp_idx] = 1.00
+
+        pred_idx_start = feat_idx_start + len(self.cmp_ops)
+        col_info = self.column_stats[col]
+
+        toaddpfeats = True
+        if continuous:
+            self._handle_continuous_feature(pfeats, pred_idx_start, col, val)
+            ret_feats.append(pfeats)
+        else:
+            if self.separate_cont_bins:
+                pred_idx_start += \
+                        self.continuous_feature_size
+
+            if "like" in cmp_op:
+                self._handle_ilike_feature(pfeats,
+                        pred_idx_start, col, val)
+            else:
+                if self.embedding_fn is None \
+                        or cmp_op == "eq":
+                    self._handle_categorical_feature(pfeats,
+                            pred_idx_start, col, val)
+                else:
+                    toaddpfeats = False
+                    # now do embeddings for each value
+                    assert isinstance(val, list)
+                    # node_key = tuple([alias])
+                    # alias_est = self._get_pg_est(subsetgraph.nodes()[node_key])
+                    curfeats = []
+                    for word in val:
+                        pf2 = copy.deepcopy(pfeats)
+                        self._handle_categorical_feature(pf2,
+                                pred_idx_start, col, [word])
+                        curfeats.append(pf2)
+                        assert pf2[-1] == 0.0
+                        assert pf2[-2] == 0.0
+                        pf2[-2] = alias_est
+                        pf2[-1] = subp_est
+
+                    if self.embedding_pooling == "sum":
+                        pooled_feats = np.sum(np.array(curfeats), axis=0)
+                        ret_feats.append(pooled_feats)
+                    else:
+                        ret_feats += curfeats
+
+        # add the appropriate postgresql estimate for this table in the
+        # subplan; Note that the last elements are reserved for the
+        # heuristic estimates for both continuous / categorical
+        # features
+        if self.heuristic_features \
+                and toaddpfeats:
+            assert pfeats[-1] == 0.0
+            assert pfeats[-2] == 0.0
+            pfeats[-2] = alias_est
+            pfeats[-1] = subp_est
+
+        if toaddpfeats:
+            ret_feats.append(pfeats)
+
+        return ret_feats
+
     def get_subplan_features_set(self, qrep, subplan):
         '''
         @ret: {}
@@ -809,7 +1031,8 @@ class Featurizer():
                 # need to find its real table name from the join_graph
                 table = joingraph.nodes()[alias]["real_name"]
                 if table not in self.table_featurizer:
-                    # print("table: {} not found in featurizer".format(table))
+                    print("table: {} not found in featurizer".format(table))
+                    # assert False
                     continue
                 # Note: same table might be set to 1.0 twice, in case of aliases
                 tfeats[self.table_featurizer[table]] = 1.00
@@ -819,7 +1042,6 @@ class Featurizer():
 
         alljoinfeats = []
         if self.join_features:
-            ## join features
             seenjoins = set()
             for alias1 in subplan:
                 for alias2 in subplan:
@@ -829,121 +1051,49 @@ class Featurizer():
                         if join_str in seenjoins:
                             continue
                         seenjoins.add(join_str)
-                        jfeats  = np.zeros(len(self.joins))
-                        keys = join_str.split("=")
-                        keys.sort()
-                        keys = ",".join(keys)
-                        if keys not in self.join_featurizer:
-                            # print("join_str: {} not found in featurizer".format(join_str))
-                            continue
-                        jfeats[self.join_featurizer[keys]] = 1.00
+                        jfeats = self._handle_join_features(join_str)
                         alljoinfeats.append(jfeats)
 
             if len(alljoinfeats) == 0:
-                alljoinfeats.append(np.zeros(len(self.joins)))
+                alljoinfeats.append(np.zeros(self.join_features_len))
 
         featdict["join"] = alljoinfeats
 
         allpredfeats = []
-        if self.pred_features:
-            for alias in subplan:
-                aliasinfo = joingraph.nodes()[alias]
-                if len(aliasinfo["pred_cols"]) == 0:
-                    continue
-                col = aliasinfo["pred_cols"][0]
-                val = aliasinfo["pred_vals"][0]
-                # FIXME: should handle this at the level of parsing
-                if isinstance(val, dict):
-                    val = val["literal"]
 
+        for alias in subplan:
+            if not self.pred_features:
+                continue
+            aliasinfo = joingraph.nodes()[alias]
+            if len(aliasinfo["pred_cols"]) == 0:
+                continue
+
+            node_key = tuple([alias])
+            alias_est = self._get_pg_est(subsetgraph.nodes()[node_key])
+            subp_est = self._get_pg_est(subsetgraph.nodes()[subplan])
+
+            for ci, col in enumerate(aliasinfo["pred_cols"]):
                 if col not in self.featurizer:
-                    # print("col: {} not found in featurizer".format(col))
+                    print("col: {} not found in featurizer".format(col))
                     continue
+                allvals = aliasinfo["pred_vals"][ci]
+                if isinstance(allvals, dict):
+                    allvals = allvals["literal"]
+                cmp_op = aliasinfo["pred_types"][ci]
                 _, _, continuous = self.featurizer[col]
+                pfeats = self._handle_single_col(col,allvals,
+                        alias_est, subp_est,
+                        cmp_op,
+                        continuous)
+                allpredfeats += pfeats
 
-                cmp_op = aliasinfo["pred_types"][0]
-                feat_idx_start = 0
-                pfeats = np.zeros(self.max_pred_len)
-                assert col in self.column_stats
-                if self.set_column_feature == "onehot":
-                    # which column does the current feature belong to
-                    cidx = self.columns_onehot_idx[col]
-                    pfeats[cidx] = 1.0
-                    feat_idx_start += len(self.columns_onehot_idx)
-                else:
-                    pass
-
-                # set comparison operator 1-hot value, same for all types
-                cmp_idx = self.cmp_ops_onehot[cmp_op]
-                pfeats[feat_idx_start + cmp_idx] = 1.00
-
-                pred_idx_start = feat_idx_start + len(self.cmp_ops)
-                col_info = self.column_stats[col]
-
-                toaddpfeats = True
                 if continuous:
-                    self._handle_continuous_feature(pfeats, pred_idx_start, col, val)
-                else:
-                    if self.separate_cont_bins:
-                        pred_idx_start += \
-                                self.continuous_feature_size
+                    # have repeated the same values in the parsing;
+                    break
 
-                    if "like" in cmp_op:
-                        self._handle_ilike_feature(pfeats,
-                                pred_idx_start, col, val)
-                    else:
-                        if self.embedding_fn is None \
-                                or cmp_op == "eq":
-                            self._handle_categorical_feature(pfeats,
-                                    pred_idx_start, col, val)
-                        else:
-                            toaddpfeats = False
-                            # now do embeddings for each value
-                            assert isinstance(val, list)
-                            # if not isinstance(val, list):
-                                # print(val)
-                                # pdb.set_trace()
-                            node_key = tuple([alias])
-                            alias_est = self._get_pg_est(subsetgraph.nodes()[node_key])
-                            curfeats = []
-                            for word in val:
-                                pf2 = copy.deepcopy(pfeats)
-                                self._handle_categorical_feature(pf2,
-                                        pred_idx_start, col, [word])
-                                curfeats.append(pf2)
-                                assert pf2[-1] == 0.0
-                                assert pf2[-2] == 0.0
-                                pf2[-2] = alias_est
-                                subp_est = self._get_pg_est(subsetgraph.nodes()[subplan])
-                                pf2[-1] = subp_est
-
-                            if self.embedding_pooling == "sum":
-                                pooled_feats = np.sum(np.array(curfeats), axis=0)
-                                allpredfeats.append(pooled_feats)
-                            else:
-                                allpredfeats += curfeats
-
-                # add the appropriate postgresql estimate for this table in the
-                # subplan; Note that the last elements are reserved for the
-                # heuristic estimates for both continuous / categorical
-                # features
-                if self.heuristic_features \
-                        and toaddpfeats:
-                    node_key = tuple([alias])
-                    alias_est = self._get_pg_est(subsetgraph.nodes()[node_key])
-                    assert pfeats[-1] == 0.0
-                    assert pfeats[-2] == 0.0
-                    pfeats[-2] = alias_est
-                    subp_est = self._get_pg_est(subsetgraph.nodes()[subplan])
-                    pfeats[-1] = subp_est
-
-                if toaddpfeats:
-                    allpredfeats.append(pfeats)
-
-            if len(allpredfeats) == 0:
-                allpredfeats.append(np.zeros(self.max_pred_len))
-
-            assert len(allpredfeats) <= self.max_pred_vals
+        if len(allpredfeats) == 0:
+            allpredfeats.append(np.zeros(self.max_pred_len))
+        assert len(allpredfeats) <= self.max_pred_vals
 
         featdict["pred"] = allpredfeats
         flow_features = []
@@ -1011,6 +1161,7 @@ class Featurizer():
                 # flatten into a 1d array; Presumably, this assumes a known
                 # workload, and so we could `reserve` additional spaces for each
                 # known predicate on a column
+
                 col = aliasinfo["pred_cols"][0]
                 val = aliasinfo["pred_vals"][0]
                 # FIXME: should handle this at the level of parsing
@@ -1262,12 +1413,12 @@ class Featurizer():
 
         return flow_features
 
-    def unnormalize(self, y):
+    def unnormalize(self, y, total):
         if self.ynormalization == "log":
             est_card = np.exp((y + \
                 self.min_val)*(self.max_val-self.min_val))
         elif self.ynormalization == "selectivity":
-            est_card = y*cards["total"]
+            est_card = y*total
         else:
             assert False
         return est_card
@@ -1292,19 +1443,6 @@ class Featurizer():
         if num_tables > self.max_tables:
             self.max_tables = num_tables
 
-        # num_preds = 0
-        # for node, info in node_data:
-            # num_preds += len(info["pred_cols"])
-            # print(info["pred_cols"])
-            # pdb.set_trace()
-
-        # if num_preds > self.max_preds:
-            # self.max_preds = num_preds
-
-        # num_joins = len(qrep["join_graph"].edges())
-        # if num_joins > self.max_joins:
-            # self.max_joins = num_joins
-
         cur_columns = []
         for node, info in qrep["join_graph"].nodes(data=True):
             for col in info["pred_cols"]:
@@ -1321,38 +1459,30 @@ class Featurizer():
         joins = extract_join_clause(qrep["sql"])
 
         for join in joins:
+            join = join.replace(" ", "")
             keys = join.split("=")
             keys.sort()
             keystr = ",".join(keys)
-            self.joins.add(keystr)
-
             for jkey in keys:
-                jkey = jkey.strip()
                 if jkey in self.join_key_stats:
                     continue
+                print("collecting join stats for: {}".format(jkey))
                 self.join_key_stats[jkey] = {}
                 curalias = jkey[0:jkey.find(".")]
+                curcol = jkey[jkey.find(".")+1:]
+                if curcol == "id":
+                    self.primary_join_keys.add(jkey)
+
                 curtab = self.aliases[curalias]
-                print(jkey)
                 for si,tmp in enumerate(self.join_key_stat_tmps):
                     sname = self.join_key_stat_names[si]
                     execcmd = tmp.format(TABLE=curtab,
-                                         ALIAS=curalias,
-                                         COL=jkey)
-                    val = int(self.execute(execcmd)[0][0])
+                                         COL=curcol)
+                    try:
+                        val = float(self.execute(execcmd)[0][0])
+                    except:
+                        val = 0.0
                     self.join_key_stats[jkey][sname] = val
-                    if sname not in self.join_key_normalizers:
-                        self.join_key_normalizers[sname] = (val, val)
-                    else:
-                        oldmin,oldmax = self.join_key_normalizers[sname]
-                        if val < oldmin:
-                            oldmin = val
-                        if val > oldmax:
-                            oldmax = val
-                        self.join_key_normalizers[sname] = (oldmin, oldmax)
-
-        print(self.join_key_normalizers)
-        pdb.set_trace()
 
         ## features required for plan-graph / flow-loss
         flow_start = time.time()
@@ -1393,6 +1523,23 @@ class Featurizer():
         for column in cur_columns:
             if column in self.column_stats:
                 continue
+
+            # FIXME: reusing join key code here
+            jkey = column
+            self.join_key_stats[jkey] = {}
+            curalias = jkey[0:jkey.find(".")]
+            curcol = jkey[jkey.find(".")+1:]
+            curtab = self.aliases[curalias]
+            for si,tmp in enumerate(self.join_key_stat_tmps):
+                sname = self.join_key_stat_names[si]
+                execcmd = tmp.format(TABLE=curtab,
+                                     COL=curcol)
+                try:
+                    val = float(self.execute(execcmd)[0][0])
+                except:
+                    val = 0.0
+                self.join_key_stats[jkey][sname] = val
+
             updated_cols.append(column)
             column_stats = {}
             table = column[0:column.find(".")]
@@ -1422,10 +1569,6 @@ class Featurizer():
 
             column_stats[column]["max_value"] = maxval
             column_stats[column]["min_value"] = minval
-            # if not is_float(minval) and is_float(maxval):
-                # minval = 0.0
-                # print(column)
-                # pdb.set_trace()
 
             # only store all the values for tables with small alphabet
             # sizes (so we can use them for things like the PGM).

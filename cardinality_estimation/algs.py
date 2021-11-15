@@ -23,6 +23,19 @@ from torch.nn.utils.clip_grad import clip_grad_norm_
 
 import wandb
 
+QERR_MIN_EPS=0.0
+def qloss_torch(yhat, ytrue):
+    assert yhat.shape == ytrue.shape
+
+    epsilons = to_variable([QERR_MIN_EPS]*len(yhat)).float()
+
+    ytrue = torch.max(ytrue, epsilons)
+    yhat = torch.max(yhat, epsilons)
+
+    errors = torch.max( (ytrue / yhat), (yhat / ytrue))
+    return errors
+
+
 class CardinalityEstimationAlg():
 
     def __init__(self, *args, **kwargs):
@@ -75,7 +88,7 @@ def format_model_test_output(pred, samples, featurizer):
             cards = sample["subset_graph"].nodes()[node]["cardinality"]
             alias_key = node
             idx = query_idx + subq_idx
-            est_card = featurizer.unnormalize(pred[idx])
+            est_card = featurizer.unnormalize(pred[idx], cards["total"])
             assert est_card > 0
             ests[alias_key] = est_card
 

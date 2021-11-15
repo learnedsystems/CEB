@@ -84,6 +84,7 @@ class SetConv(nn.Module):
         predicates = xbatch["pred"]
         joins = xbatch["join"]
         flows = xbatch["flow"]
+
         sample_mask = xbatch["tmask"]
         predicate_mask = xbatch["pmask"]
         join_mask = xbatch["jmask"]
@@ -124,6 +125,7 @@ class SetConv(nn.Module):
             hid_join = hid_join / join_norm
             hid_join = hid_join.squeeze()
             tocat.append(hid_join)
+
 
         if self.flow_feats:
             flows = flows.to(device, non_blocking=True)

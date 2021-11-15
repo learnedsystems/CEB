@@ -292,7 +292,10 @@ def get_featurizer(trainqs, valqs, testqs):
 
         ATTRS_TO_SAVE = ['aliases', 'cmp_ops', 'column_stats', 'joins',
                 'max_in_degree', 'max_joins', 'max_out_degree', 'max_preds',
-                'max_tables', 'regex_cols', 'tables']
+                'max_tables', 'regex_cols', 'tables', 'join_key_stats',
+                'primary_join_keys', 'join_key_normalizers',
+                'join_key_stat_names', 'join_key_stat_tmps'
+                ]
         featdata = {}
         for k in dir(featurizer):
             if k not in ATTRS_TO_SAVE:
@@ -320,8 +323,8 @@ def get_featurizer(trainqs, valqs, testqs):
     # collected in the featurizer.update_column_stats call; Therefore, we don't
     # include this in the cached version
 
-    featurizer.update_workload_stats(trainqs+valqs+testqs)
     featurizer.setup(ynormalization=args.ynormalization,
+            feat_separate_alias = args.feat_separate_alias,
             heuristic_features = args.heuristic_features,
             featurization_type=feat_type,
             table_features=args.table_features,
@@ -333,7 +336,8 @@ def get_featurizer(trainqs, valqs, testqs):
             embedding_pooling = args.embedding_pooling,
             feat_onlyseen_preds = args.feat_onlyseen_preds
             )
-
+    featurizer.update_workload_stats(trainqs+valqs+testqs)
+    featurizer.init_feature_mapping()
     featurizer.update_ystats(trainqs+valqs+testqs)
 
     # if args.feat_onlyseen_preds:
@@ -452,6 +456,8 @@ def read_flags():
             default="log")
     parser.add_argument("--feat_onlyseen_preds", type=int, required=False,
             default=1)
+    parser.add_argument("--feat_separate_alias", type=int, required=False,
+            default=1)
     parser.add_argument("--heuristic_unseen_preds", type=str, required=False,
             default=None)
 
@@ -484,11 +490,10 @@ def read_flags():
 
     parser.add_argument("--table_features", type=int, required=False,
             default=1)
-    parser.add_argument("--join_features", type=int, required=False,
-            default=1)
+    parser.add_argument("--join_features", type=str, required=False,
+            default="onehot")
     parser.add_argument("--set_column_feature", type=str, required=False,
             default="onehot")
-
 
     parser.add_argument("--max_discrete_featurizing_buckets", type=int, required=False,
             default=10)

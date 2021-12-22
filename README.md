@@ -90,7 +90,9 @@ constructing the database from the StackExchange dump, and restore the database
 from a PostgreSQL snapshot (see stack_setup.sh for its download link).
 The StackExchange database holds a lot of potential to develop more challenging query templates as well, although we have not explored it as much as IMDb. Refer to the [workload](#workload) section for a comparison between IMDb and StackExchange workloads.
 
-Here are a few useful commands to check / debug your setup:
+Here are a few useful commands to check / debug your setup. Note that the
+<b> password </b> for the psql connection will be `password`.
+
 ```bash
 # if your instance gets restarted / docker image gets shutdown
 sudo docker restart card-db
@@ -143,6 +145,14 @@ cardinalities map to the same query plan. This has about 3k queries; We have not
 ```bash
 bash scripts/download_imdb_uniqueplans.sh
 ```
+
+If you only care about the SQL queries (and not the cardinalities of all
+    sub-plans etc.), then you can just run:
+
+```bash
+bash scripts/download_all_sqls.sh
+```
+
 
 #### JOB
 

@@ -332,6 +332,10 @@ class SimplePlanCost(EvalFunc):
         opttotal = np.sum(opt_costs)
         relcost = np.round(float(totalcost)/opttotal, 3)
 
+        print("{}, #samples: {}, plancost relative: {}"\
+                .format(samples_type, len(costs),
+                    relcost))
+
         if use_wandb:
             loss_key = "Final-{}-{}".format("Relative-TotalSimplePlanCost",
                                                    samples_type)

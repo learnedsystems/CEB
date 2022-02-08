@@ -97,9 +97,14 @@ class SetConv(nn.Module):
             hid_sample = F.relu(self.sample_mlp2(hid_sample))
             hid_sample = hid_sample * sample_mask
             hid_sample = torch.sum(hid_sample, dim=1, keepdim=False)
-            sample_norm = sample_mask.sum(1, keepdim=False)
-            hid_sample = hid_sample / sample_norm
-            hid_sample = hid_sample.squeeze()
+
+            if torch.sum(sample_mask) == 0:
+                hid_sample = torch.zeros(hid_sample.shape).squeeze()
+            else:
+                sample_norm = sample_mask.sum(1, keepdim=False)
+                hid_sample = hid_sample / sample_norm
+                hid_sample = hid_sample.squeeze()
+
             tocat.append(hid_sample)
 
         if self.predicate_feats != 0:
@@ -121,9 +126,14 @@ class SetConv(nn.Module):
             hid_join = F.relu(self.join_mlp2(hid_join))
             hid_join = hid_join * join_mask
             hid_join = torch.sum(hid_join, dim=1, keepdim=False)
-            join_norm = join_mask.sum(1, keepdim=False)
-            hid_join = hid_join / join_norm
-            hid_join = hid_join.squeeze()
+
+            if torch.sum(join_mask) == 0:
+                hid_join = torch.zeros(hid_join.shape).squeeze()
+            else:
+                join_norm = join_mask.sum(1, keepdim=False)
+                hid_join = hid_join / join_norm
+                hid_join = hid_join.squeeze()
+
             tocat.append(hid_join)
 
 

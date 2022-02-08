@@ -19,6 +19,69 @@ def to_variable(arr, use_cuda=True, requires_grad=False):
         arr = Variable(arr, requires_grad=requires_grad)
     return arr
 
+def mscn_collate_fn_together(data):
+    start = time.time()
+    alldata = defaultdict(list)
+    for feats in data[0][0]:
+        for k,v in feats.items():
+            alldata[k].append(v)
+    xdata = {}
+    for k,v in alldata.items():
+        if k == "flow":
+            xdata[k] = v
+        else:
+            xdata[k] = torch.stack(v)
+
+    ys = data[0][1]
+    infos = [data[0][2]]
+    return xdata,ys,infos
+
+    # pdb.set_trace()
+    # alltabs = []
+    # allpreds = []
+    # alljoins = []
+
+    # flows = []
+    # ys = []
+    # infos = []
+
+    # maxtabs = 0
+    # maxpreds = 0
+    # maxjoins = 0
+
+    # for d in data:
+        # alltabs.append(d[0]["table"])
+        # if len(alltabs[-1]) > maxtabs:
+            # maxtabs = len(alltabs[-1])
+
+        # allpreds.append(d[0]["pred"])
+        # if len(allpreds[-1]) > maxpreds:
+            # maxpreds = len(allpreds[-1])
+
+        # alljoins.append(d[0]["join"])
+        # if len(alljoins[-1]) > maxjoins:
+            # maxjoins = len(alljoins[-1])
+
+        # flows.append(d[0]["flow"])
+        # ys.append(d[1])
+        # infos.append(d[2])
+
+    # tf,pf,jf,tm,pm,jm = pad_sets(alltabs, allpreds,
+            # alljoins, maxtabs,maxpreds,maxjoins)
+
+    # flows = to_variable(flows, requires_grad=False).float()
+    # ys = to_variable(ys, requires_grad=False).float()
+    # data = {}
+    # data["table"] = tf
+    # data["pred"] = pf
+    # data["join"] = jf
+    # data["flow"] = flows
+    # data["tmask"] = tm
+    # data["pmask"] = pm
+    # data["jmask"] = jm
+
+    # return data
+
 def mscn_collate_fn(data):
     '''
     TODO: faster impl.
@@ -100,6 +163,7 @@ def pad_sets(all_table_features, all_pred_features,
 
     for i in range(len(all_table_features)):
         table_features = all_table_features[i]
+        # print(len(table_features))
         pred_features = all_pred_features[i]
         join_features = all_join_features[i]
 
@@ -165,6 +229,9 @@ class QueryDataset(data.Dataset):
         vectors belonging to all the subplans of a query.
         '''
         self.load_query_together = load_query_together
+        if self.load_query_together:
+            self.start_idxs, self.idx_lens = self._update_idxs(samples)
+
         self.load_padded_mscn_feats = load_padded_mscn_feats
 
         self.featurizer = featurizer
@@ -179,7 +246,26 @@ class QueryDataset(data.Dataset):
         # keep some indexing information around.
 
         self.X, self.Y, self.info = self._get_feature_vectors(samples)
-        self.num_samples = len(self.X)
+
+        if self.load_query_together:
+            self.num_samples = len(samples)
+        else:
+            self.num_samples = len(self.X)
+
+    def _update_idxs(self, samples):
+        qidx = 0
+        idx_starts = []
+        idx_lens = []
+        for i, qrep in enumerate(samples):
+            # TODO: can also save these values and generate features when
+            # needed, without wasting memory
+            idx_starts.append(qidx)
+            nodes = list(qrep["subset_graph"].nodes())
+            if SOURCE_NODE in nodes:
+                nodes.remove(SOURCE_NODE)
+            idx_lens.append(len(nodes))
+            qidx += len(nodes)
+        return idx_starts, idx_lens
 
     def _get_query_features(self, qrep, dataset_qidx,
             query_idx):
@@ -267,11 +353,22 @@ class QueryDataset(data.Dataset):
         '''
         '''
         if self.load_query_together:
-            assert False, "needs to be implemented"
+            # assert False, "needs to be implemented"
             start_idx = self.start_idxs[index]
             end_idx = start_idx + self.idx_lens[index]
-            if self.feattype == "combined":
-                return self.X[start_idx:end_idx], self.Y[start_idx:end_idx], \
-                        self.info[start_idx:end_idx]
+            # end_idx = start_idx + 2
+            # print(start_idx, end_idx)
+            # return self.X[start_idx], self.Y[start_idx], \
+                    # self.info[start_idx]
+
+            return self.X[start_idx:end_idx], self.Y[start_idx:end_idx], \
+                    self.info[start_idx:end_idx]
+
+            # if self.feattype == "combined":
+                # return self.X[start_idx:end_idx], self.Y[start_idx:end_idx], \
+                        # self.info[start_idx:end_idx]
+            # elif self.feattype == "set":
+                # print(start_idx, end_idx)
+                # pdb.set_trace()
         else:
             return self.X[index], self.Y[index], self.info[index]

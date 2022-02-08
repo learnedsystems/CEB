@@ -12,12 +12,16 @@ import wandb
 
 class MSCN(NN):
 
-    def init_dataset(self, samples):
-        ds = QueryDataset(samples, self.featurizer, False,
+    def init_dataset(self, samples, load_query_together):
+        ds = QueryDataset(samples, self.featurizer,
+                load_query_together,
                 load_padded_mscn_feats=self.load_padded_mscn_feats)
+
         return ds
 
     def _init_net(self, sample):
+        if self.load_query_together:
+            sample = sample[0]
 
         if len(sample[0]["table"]) == 0:
             sfeats = 0

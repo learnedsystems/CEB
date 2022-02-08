@@ -41,6 +41,8 @@ MAX_TEMPLATE = "SELECT {COL} FROM {TABLE} WHERE {COL} IS NOT NULL ORDER BY {COL}
 UNIQUE_VALS_TEMPLATE = "SELECT DISTINCT {COL} FROM {FROM_CLAUSE}"
 UNIQUE_COUNT_TEMPLATE = "SELECT COUNT(*) FROM (SELECT DISTINCT {COL} from {FROM_CLAUSE}) AS t"
 
+MCV_TEMPLATE= """SELECT most_common_vals,most_common_freqs FROM pg_stats WHERE tablename = '{TABLE}' and attname = '{COL}'"""
+
 INDEX_LIST_CMD = """
 select
     t.relname as table_name,
@@ -134,6 +136,8 @@ class Featurizer():
         #         stats["title"]["id"]["num_values"] = x
         self.column_stats = {}
 
+        self.mcvs = {}
+
         self.join_key_stats = {}
         self.primary_join_keys = set()
         self.join_key_normalizers = {}
@@ -197,8 +201,13 @@ class Featurizer():
 
         for si,statname in enumerate(self.join_key_stat_names):
             allvals = []
+
             for col,kvs in self.join_key_stats.items():
+                if statname not in kvs:
+                    continue
                 allvals.append(kvs[statname])
+            if len(allvals) == 0:
+                continue
             self.join_key_normalizers[statname] = (np.mean(allvals),
                     np.std(allvals))
 
@@ -304,8 +313,12 @@ class Featurizer():
     def execute(self, sql):
         '''
         '''
-        con = pg.connect(user=self.user, host=self.db_host, port=self.port,
-                password=self.pwd, database=self.db_name)
+        try:
+            con = pg.connect(user=self.user, host=self.db_host, port=self.port,             password=self.pwd, dbname=self.db_name)
+        except:
+            con = pg.connect(user=self.user, port=self.port, password=self.pwd, dbname=self.db_name)
+
+
         cursor = con.cursor()
 
         try:
@@ -365,6 +378,9 @@ class Featurizer():
 
             # for pg_est of current table
             if self.heuristic_features:
+                pred_len += 1
+
+            if self.feat_mcvs:
                 pred_len += 1
 
             # FIXME: special casing "id" not in col to avoid columns like
@@ -448,15 +464,18 @@ class Featurizer():
             # for both side of joins; pk first OR just sort;
             self.join_features_len += len(self.join_key_stat_names)*2
 
-        if self.set_column_feature == "onehot" or \
-                self.set_column_feature == "1":
+        if self.set_column_feature == "onehot":
             self.set_column_features_len = len(self.column_stats)
         elif self.set_column_feature == "stats":
             self.set_column_features_len = 0
-            # is pk (or functionally dependent on it)
-            self.set_column_features_len += 1
-            # for both side of joins; pk first OR just sort;
-            self.set_column_features_len += len(self.column_stat_names)
+            # number of filters in the column
+            # self.set_column_features_len += 1
+            # TODO: think of other ways
+            self.set_column_features_len += len(self.join_key_stat_names)
+        else:
+            self.set_column_features_len = 0
+        # else:
+            # assert False
 
         self.max_pred_len = 0
         for col in col_keys:
@@ -547,6 +566,8 @@ class Featurizer():
             feat_rel_pg_ests=True, feat_join_graph_neighbors=True,
             feat_rel_pg_ests_onehot=True,
             feat_pg_est_one_hot=True,
+            feat_mcvs = False,
+            implied_pred_features=False,
             cost_model=None, sample_bitmap=False, sample_bitmap_num=1000,
             sample_bitmap_buckets=1000,
             featkey=None):
@@ -609,6 +630,9 @@ class Featurizer():
 
         if self.embedding_fn == "none":
             self.embedding_fn = None
+
+        if self.set_column_feature == "1":
+            self.set_column_feature = "onehot"
 
     def init_feature_mapping(self):
         if self.embedding_fn is not None:
@@ -746,6 +770,101 @@ class Featurizer():
             # pg est for the node
             self.num_flow_features += 1
 
+    def _handle_predicate_feature(self, joingraph, subsetgraph,
+            alias, subplan):
+        allcurpfeats = []
+
+        aliasinfo = joingraph.nodes()[alias]
+        if len(aliasinfo["pred_cols"]) == 0:
+            return allcurpfeats
+
+        col = aliasinfo["pred_cols"][0]
+        val = aliasinfo["pred_vals"][0]
+        if isinstance(val, dict):
+            val = val["literal"]
+
+        if col not in self.featurizer:
+            # print("col: {} not found in featurizer".format(col))
+            return allcurpfeats
+
+        _, _, continuous = self.featurizer[col]
+        cmp_op = aliasinfo["pred_types"][0]
+        feat_idx_start = 0
+        pfeats = np.zeros(self.max_pred_len)
+        assert col in self.column_stats
+
+        if self.set_column_feature == "onehot":
+            # which column does the current feature belong to
+            cidx = self.columns_onehot_idx[col]
+            pfeats[cidx] = 1.0
+            feat_idx_start += len(self.columns_onehot_idx)
+
+        # set comparison operator 1-hot value, same for all types
+        cmp_idx = self.cmp_ops_onehot[cmp_op]
+        pfeats[feat_idx_start + cmp_idx] = 1.00
+
+        pred_idx_start = feat_idx_start + len(self.cmp_ops)
+        col_info = self.column_stats[col]
+
+        toaddpfeats = True
+        if continuous:
+            self._handle_continuous_feature(pfeats, pred_idx_start, col, val)
+        else:
+            if self.separate_cont_bins:
+                pred_idx_start += \
+                        self.continuous_feature_size
+
+            if "like" in cmp_op:
+                self._handle_ilike_feature(pfeats,
+                        pred_idx_start, col, val)
+            else:
+                if self.embedding_fn is None \
+                        or cmp_op == "eq":
+                    self._handle_categorical_feature(pfeats,
+                            pred_idx_start, col, val)
+                else:
+                    toaddpfeats = False
+                    # now do embeddings for each value
+                    assert isinstance(val, list)
+                    node_key = tuple([alias])
+                    alias_est = self._get_pg_est(subsetgraph.nodes()[node_key])
+                    curfeats = []
+                    for word in val:
+                        pf2 = copy.deepcopy(pfeats)
+                        self._handle_categorical_feature(pf2,
+                                pred_idx_start, col, [word])
+                        curfeats.append(pf2)
+                        assert pf2[-1] == 0.0
+                        assert pf2[-2] == 0.0
+                        pf2[-2] = alias_est
+                        subp_est = self._get_pg_est(subsetgraph.nodes()[subplan])
+                        pf2[-1] = subp_est
+
+                    if self.embedding_pooling == "sum":
+                        pooled_feats = np.sum(np.array(curfeats), axis=0)
+                        allcurpfeats.append(pooled_feats)
+                    else:
+                        allcurpfeats += curfeats
+
+        # add the appropriate postgresql estimate for this table in the
+        # subplan; Note that the last elements are reserved for the
+        # heuristic estimates for both continuous / categorical
+        # features
+        if self.heuristic_features \
+                and toaddpfeats:
+            node_key = tuple([alias])
+            alias_est = self._get_pg_est(subsetgraph.nodes()[node_key])
+            assert pfeats[-1] == 0.0
+            assert pfeats[-2] == 0.0
+            pfeats[-2] = alias_est
+            subp_est = self._get_pg_est(subsetgraph.nodes()[subplan])
+            pfeats[-1] = subp_est
+
+        if toaddpfeats:
+            allcurpfeats.append(pfeats)
+
+        return allcurpfeats
+
     def _handle_continuous_feature(self, pfeats, pred_idx_start,
             col, val):
         '''
@@ -780,6 +899,18 @@ class Featurizer():
         col_info = self.column_stats[col]
         num_buckets = min(self.max_discrete_featurizing_buckets,
                 col_info["num_values"])
+
+        if self.feat_mcvs and col in self.mcvs:
+            mcvs = self.mcvs[col]
+            total_count = 0
+            for predicate in val:
+                if predicate in mcvs:
+                    total_count += mcvs[predicate]
+
+            assert pfeats[-3] == 0.0
+            if total_count != 0:
+                norm_count = self.normalize_val(total_count, None)
+                pfeats[-3] = norm_count
 
         if self.embedding_fn is not None:
             for predicate in val:
@@ -920,7 +1051,7 @@ class Featurizer():
                     / self.join_key_stats[key2]["distinct"]
 
             for ji, joinkey in enumerate(ordered_join_keys):
-                sidx = 3 + ji*len(self.join_key_stat_names)
+                sidx = 4 + ji*len(self.join_key_stat_names)
                 statdata = self.join_key_stats[joinkey]
                 for si, statname in enumerate(self.join_key_stat_names):
                     val = statdata[statname]
@@ -931,24 +1062,50 @@ class Featurizer():
         else:
             assert False
 
-    def _handle_single_col(self, col, val,
-            alias_est, subp_est,
-            cmp_op,
-            continuous):
-
-        ret_feats = []
-        feat_idx_start = 0
-        pfeats = np.zeros(self.max_pred_len)
+    def _update_set_column_features(self, col, pfeats):
         assert col in self.column_stats
         if self.set_column_feature == "onehot":
             # which column does the current feature belong to
             cidx = self.columns_onehot_idx[col]
             pfeats[cidx] = 1.0
-            feat_idx_start += len(self.columns_onehot_idx)
+            # feat_idx_start += len(self.columns_onehot_idx)
+        elif self.set_column_feature == "stats":
+            # for ji, joinkey in enumerate(ordered_join_keys):
+            sidx = 0
+            statdata = self.join_key_stats[col]
+            for si, statname in enumerate(self.join_key_stat_names):
+                val = statdata[statname]
+                statmean, statstd = self.join_key_normalizers[statname]
+                pfeats[sidx+si] = (val-statmean) / statstd
+
+    def _handle_single_col(self, col, val,
+            alias_est, subp_est,
+            cmp_op, continuous):
+
+        ret_feats = []
+        feat_idx_start = 0
+        pfeats = np.zeros(self.max_pred_len)
+
+        # assert col in self.column_stats
+        # if self.set_column_feature == "onehot":
+            # # which column does the current feature belong to
+            # cidx = self.columns_onehot_idx[col]
+            # pfeats[cidx] = 1.0
+            # feat_idx_start += len(self.columns_onehot_idx)
+        # elif self.set_column_feature == "stats":
+            # print("handle stats featurizing for columns")
+            # pdb.set_trace()
+
+        self._update_set_column_features(col, pfeats)
+        feat_idx_start += self.set_column_features_len
 
         # # set comparison operator 1-hot value, same for all types
         cmp_idx = self.cmp_ops_onehot[cmp_op]
-        pfeats[feat_idx_start + cmp_idx] = 1.00
+        try:
+            pfeats[feat_idx_start + cmp_idx] = 1.00
+        except:
+            print(feat_idx_start)
+            pdb.set_trace()
 
         pred_idx_start = feat_idx_start + len(self.cmp_ops)
         col_info = self.column_stats[col]
@@ -1009,6 +1166,16 @@ class Featurizer():
 
         return ret_feats
 
+    # def _handle_heuristic_ests(self, pfeats, alias, sub)
+        # node_key = tuple([alias])
+        # alias_est = self._get_pg_est(subsetgraph.nodes()[node_key])
+        # assert pfeats[-1] == 0.0
+        # assert pfeats[-2] == 0.0
+        # pfeats[-2] = alias_est
+        # subp_est = self._get_pg_est(subsetgraph.nodes()[subplan])
+        # pfeats[-1] = subp_est
+# >>>>>>> 158fe92710bfb695337d14e15682231824086eaf
+
     def get_subplan_features_set(self, qrep, subplan):
         '''
         @ret: {}
@@ -1060,11 +1227,15 @@ class Featurizer():
         featdict["join"] = alljoinfeats
 
         allpredfeats = []
-
         for alias in subplan:
             if not self.pred_features:
                 continue
             aliasinfo = joingraph.nodes()[alias]
+            # if "implied_pred_cols" in aliasinfo and \
+                # len(aliasinfo["implied_pred_cols"]) > 0:
+                # print(aliasinfo)
+                # pdb.set_trace()
+
             if len(aliasinfo["pred_cols"]) == 0:
                 continue
 
@@ -1090,6 +1261,41 @@ class Featurizer():
                 if continuous:
                     # have repeated the same values in the parsing;
                     break
+
+        # using mcvs for implied preds
+        for alias in subplan:
+            if not self.implied_pred_features:
+                continue
+
+            aliasinfo = joingraph.nodes()[alias]
+            if not ("implied_pred_cols" in aliasinfo and \
+                    len(aliasinfo["implied_pred_cols"]) > 0):
+                continue
+
+            node_key = tuple([alias])
+
+            alias_est = 0.0
+            subp_est = self._get_pg_est(subsetgraph.nodes()[subplan])
+
+            for ci, col in enumerate(aliasinfo["implied_pred_cols"]):
+                implied_pred_from = aliasinfo["implied_pred_from"][ci]
+                implied_pred_alias = implied_pred_from[0:implied_pred_from.find(".")]
+
+                # implied_pred only matters if this table also in the join
+                if implied_pred_alias not in subplan:
+                    continue
+
+                cmp_op = "in"
+                continuous = False
+
+                allvals = aliasinfo["implied_pred_vals"][ci]
+                if isinstance(allvals, dict):
+                    allvals = allvals["literal"]
+                pfeats = self._handle_single_col(col,allvals,
+                        alias_est, subp_est,
+                        cmp_op,
+                        continuous)
+                allpredfeats += pfeats
 
         if len(allpredfeats) == 0:
             allpredfeats.append(np.zeros(self.max_pred_len))
@@ -1431,6 +1637,62 @@ class Featurizer():
         else:
             assert False
 
+    def _update_mcvs(self, column):
+        # TODO: just need table+column w/o alias here
+        if column in self.mcvs:
+            return
+
+        table = column[0:column.find(".")]
+        attr_name = column[column.find(".")+1:]
+        if table in self.aliases:
+            table_real_name = self.aliases[table]
+
+        mcv_cmd = MCV_TEMPLATE.format(TABLE = table_real_name,
+                                      COL = attr_name)
+        mcvres = self.execute(mcv_cmd)
+        if len(mcvres) == 0:
+            return
+        if len(mcvres[0]) == 0:
+            return
+        if mcvres[0][0] is None:
+            return
+
+        mcvs = mcvres[0][0].replace("{","")
+        mcvs = mcvs.replace("}","")
+        mcvs = mcvs.split(",")
+        mcvfreqs = mcvres[0][1]
+
+        if not len(mcvs) == len(mcvfreqs):
+            newmcvs = []
+            cur_discont_idx = 0
+            for mi, mval in enumerate(mcvs):
+                if '"' == mval[0] and not '"' == mval[-1]:
+                    newval = ""
+                    for mi2,mval2 in enumerate(mcvs):
+                        if mi2 < mi:
+                            continue
+                        newval += mval2
+                        if '"' == mval2[-1]:
+                            cur_discont_idx = mi2
+                            break
+                        newval += ","
+                else:
+                    if mi < cur_discont_idx:
+                        continue
+                    newmcvs.append(mval)
+            mcvs = newmcvs
+            assert len(mcvs) == len(mcvfreqs)
+
+        total_count_query = COUNT_SIZE_TEMPLATE.format(FROM_CLAUSE =
+                table_real_name)
+        count = int(self.execute(total_count_query)[0][0])
+
+        mcvdict = {}
+        for mi, mcv in enumerate(mcvs):
+            mcvdict[mcv] = count*mcvfreqs[mi]
+
+        self.mcvs[column] = mcvdict
+
     def _update_stats(self, qrep):
         '''
         '''
@@ -1445,16 +1707,16 @@ class Featurizer():
 
         cur_columns = []
         for node, info in qrep["join_graph"].nodes(data=True):
-            for col in info["pred_cols"]:
-                cur_columns.append(col)
-            # for i, cmp_op in enumerate(info["pred_types"]):
-                # self.cmp_ops.add(cmp_op)
-                # if "like" in cmp_op:
-                    # self.regex_cols.add(info["pred_cols"][i])
-
             if node not in self.aliases:
                 self.aliases[node] = info["real_name"]
                 self.tables.add(info["real_name"])
+
+            for col in info["pred_cols"]:
+                cur_columns.append(col)
+
+            if "implied_pred_cols" in info:
+                for col in info["implied_pred_cols"]:
+                    cur_columns.append(col)
 
         joins = extract_join_clause(qrep["sql"])
 
@@ -1474,6 +1736,8 @@ class Featurizer():
                     self.primary_join_keys.add(jkey)
 
                 curtab = self.aliases[curalias]
+                # print("skipping join stats for: ", jkey)
+                # continue
                 for si,tmp in enumerate(self.join_key_stat_tmps):
                     sname = self.join_key_stat_names[si]
                     execcmd = tmp.format(TABLE=curtab,
@@ -1541,8 +1805,10 @@ class Featurizer():
                 self.join_key_stats[jkey][sname] = val
 
             updated_cols.append(column)
-            column_stats = {}
+            self._update_mcvs(column)
+
             table = column[0:column.find(".")]
+            column_stats = {}
             if table in self.aliases:
                 table = ALIAS_FORMAT.format(TABLE = self.aliases[table],
                                     ALIAS = table)

@@ -5,15 +5,16 @@ import math
 import pandas as pd
 import json
 import sys
-import random
 import torch
 from collections import defaultdict
+import random
 
 from query_representation.utils import *
 
 from evaluation.eval_fns import *
 from .dataset import QueryDataset, pad_sets, to_variable,\
-        mscn_collate_fn
+        mscn_collate_fn,mscn_collate_fn_together
+
 from .nets import *
 from evaluation.flow_loss import FlowLoss, \
         get_optimization_variables, get_subsetg_vectors
@@ -22,6 +23,7 @@ from torch.utils import data
 from torch.nn.utils.clip_grad import clip_grad_norm_
 
 import wandb
+import random
 
 QERR_MIN_EPS=0.0
 def qloss_torch(yhat, ytrue):
@@ -96,15 +98,16 @@ def format_model_test_output(pred, samples, featurizer):
         query_idx += len(node_keys)
     return all_ests
 
-
 class NN(CardinalityEstimationAlg):
 
     def __init__(self, *args, **kwargs):
         self.kwargs = kwargs
         for k, val in kwargs.items():
             self.__setattr__(k, val)
+
         # when estimates are log-normalized, then optimizing for mse is
         # basically equivalent to optimizing for q-error
+        self.num_workers = 8
         if self.loss_func_name == "qloss":
             self.loss_func = qloss_torch
             self.load_query_together = False
@@ -112,18 +115,24 @@ class NN(CardinalityEstimationAlg):
             self.loss_func = torch.nn.MSELoss(reduction="none")
             self.load_query_together = False
         elif self.loss_func_name == "flowloss":
-            self.loss = FlowLoss.apply
+            self.loss_func = FlowLoss.apply
             self.load_query_together = True
+            self.mb_size = 1
+            self.num_workers = 1
+            # self.collate_fn = None
         else:
             assert False
 
-        if hasattr(self, "load_padded_mscn_feats"):
-            if self.load_padded_mscn_feats:
-                self.collate_fn = None
-            else:
-                self.collate_fn = mscn_collate_fn
+        if self.load_query_together:
+            self.collate_fn = mscn_collate_fn_together
         else:
-            self.collate_fn = None
+            if hasattr(self, "load_padded_mscn_feats"):
+                if self.load_padded_mscn_feats:
+                    self.collate_fn = None
+                else:
+                    self.collate_fn = mscn_collate_fn
+            else:
+                self.collate_fn = None
 
         self.eval_fn_handles = []
         for efn in self.eval_fns.split(","):
@@ -148,8 +157,8 @@ class NN(CardinalityEstimationAlg):
         else:
             assert False
 
-        if self.use_wandb:
-            wandb.watch(net)
+        # if self.use_wandb:
+            # wandb.watch(net)
 
         return net, optimizer
 
@@ -157,6 +166,7 @@ class NN(CardinalityEstimationAlg):
         if not self.use_wandb:
             return
         start = time.time()
+        curerrs = {}
         for st, ds in self.eval_ds.items():
             samples = self.samples[st]
             preds = self._eval_ds(ds, samples)
@@ -179,11 +189,12 @@ class NN(CardinalityEstimationAlg):
 
                 err = np.mean(errors)
                 wandb.log({str(efunc)+"-"+st: err, "epoch":self.epoch})
+                curerrs[str(efunc)+"-"+st] = round(err,4)
 
+        print("Epoch ", self.epoch, curerrs)
         print("periodic_eval took: ", time.time()-start)
 
     def update_flow_training_info(self):
-        print("precomputing flow loss info")
         fstart = time.time()
         # precompute a whole bunch of training things
         self.flow_training_info = []
@@ -258,24 +269,28 @@ class NN(CardinalityEstimationAlg):
         self.featurizer = kwargs["featurizer"]
         self.training_samples = training_samples
 
-        self.trainds = self.init_dataset(training_samples)
+        self.trainds = self.init_dataset(training_samples,
+                self.load_query_together)
         self.trainloader = data.DataLoader(self.trainds,
                 batch_size=self.mb_size, shuffle=True,
                 collate_fn=self.collate_fn,
-                num_workers=8)
+                # num_workers=self.num_workers
+                )
 
         self.eval_ds = {}
         self.samples = {}
         if self.eval_epoch < self.max_epochs:
             # create eval loaders
-            self.eval_ds["train"] = self.trainds
-            self.samples["train"] = training_samples
+            # self.eval_ds["train"] = self.trainds
+            # self.samples["train"] = training_samples
+
             if "valqs" in kwargs and len(kwargs["valqs"]) > 0:
-                self.eval_ds["val"] = self.init_dataset(kwargs["valqs"])
+                self.eval_ds["val"] = self.init_dataset(kwargs["valqs"], False)
                 self.samples["val"] = kwargs["valqs"]
 
             if "testqs" in kwargs and len(kwargs["testqs"]) > 0:
-                self.eval_ds["test"] = self.init_dataset(kwargs["testqs"])
+                self.eval_ds["test"] = self.init_dataset(kwargs["testqs"],
+                        False)
                 self.samples["test"] = kwargs["testqs"]
 
         # TODO: initialize self.num_features
@@ -289,9 +304,9 @@ class NN(CardinalityEstimationAlg):
             self.update_flow_training_info()
 
         for self.epoch in range(0,self.max_epochs):
-            if self.epoch % self.eval_epoch == 0:
+            if self.epoch % self.eval_epoch == 0 \
+                    and self.epoch != 0:
                 self.periodic_eval()
-
             self.train_one_epoch()
 
     def _eval_ds(self, ds, samples=None):
@@ -299,7 +314,9 @@ class NN(CardinalityEstimationAlg):
         # important to not shuffle the data so correct order preserved!
         loader = data.DataLoader(ds,
                 batch_size=5000, shuffle=False,
-                collate_fn=self.collate_fn)
+                collate_fn = None
+                # collate_fn=self.collate_fn
+                )
 
         allpreds = []
 
@@ -335,18 +352,83 @@ class NN(CardinalityEstimationAlg):
         return preds
 
     def train_one_epoch(self):
+        # if self.loss_func_name == "flowloss":
+            # torch.set_num_threads(1)
+
         start = time.time()
+        backtimes = []
+        ftimes = []
+
         epoch_losses = []
         for idx, (xbatch, ybatch,info) in enumerate(self.trainloader):
+            # TODO: load_query_together things
             ybatch = ybatch.to(device, non_blocking=True)
+
+            if self.onehot_dropout:
+                if random.random() < 0.5:
+                    tmsh = xbatch["tmask"].shape
+                    jmsh = xbatch["jmask"].shape
+                    xbatch["tmask"] = torch.zeros(tmsh)
+                    xbatch["jmask"] = torch.zeros(jmsh)
+
+            if self.onehot_dropout == 2:
+                if random.random() < 0.5:
+                    print("onehot drop!")
+                    xbatch["table"] = torch.zeros(xbatch["table"].shape)
+                    print(torch.sum(xbatch["table"]))
+                else:
+                    print("not onehotdrop!")
+                    print(torch.sum(xbatch["table"]))
+                    preds = xbatch["pred"]
+                    pdb.set_trace()
+
             pred = self.net(xbatch).squeeze(1)
             assert pred.shape == ybatch.shape
 
-            losses = self.loss_func(pred, ybatch)
-            loss = losses.sum() / len(losses)
+            if self.loss_func_name == "flowloss":
+                assert self.load_query_together
+                qstart = 0
+                losses = []
+                for cur_info in info:
+                    if "query_idx" not in cur_info[0]:
+                        print(cur_info)
+                        pdb.set_trace()
+                    qidx = cur_info[0]["query_idx"]
+                    assert qidx == cur_info[1]["query_idx"]
+                    subsetg_vectors, trueC_vec, opt_loss = \
+                            self.flow_training_info[qidx]
 
+                    assert len(subsetg_vectors) == 10
+
+                    fstart = time.time()
+                    cur_loss = self.loss_func(
+                            pred[qstart:qstart+len(cur_info)],
+                            ybatch[qstart:qstart+len(cur_info)],
+                            self.featurizer.ynormalization,
+                            self.featurizer.min_val,
+                            self.featurizer.max_val,
+                            [(subsetg_vectors, trueC_vec, opt_loss)],
+                            self.normalize_flow_loss,
+                            None,
+                            self.cost_model)
+                    ftimes.append(time.time()-fstart)
+                    losses.append(cur_loss)
+                    qstart += len(cur_info)
+
+                assert len(losses) == 1
+                losses = torch.stack(losses)
+                loss = losses.sum() / len(losses)
+                # print("flowloss computations...")
+                # pdb.set_trace()
+            else:
+                losses = self.loss_func(pred, ybatch)
+                loss = losses.sum() / len(losses)
+
+            bstart = time.time()
             self.optimizer.zero_grad()
             loss.backward()
+            backtimes.append(time.time()-bstart)
+
             if self.clip_gradient is not None:
                 clip_grad_norm_(self.net.parameters(), self.clip_gradient)
             self.optimizer.step()
@@ -355,6 +437,8 @@ class NN(CardinalityEstimationAlg):
         curloss = round(float(sum(epoch_losses))/len(epoch_losses),6)
         print("Epoch {} took {}, Avg Loss: {}".format(self.epoch,
             round(time.time()-start, 2), curloss))
+        # print("Backward avg time: {}, Forward avg time: {}".format(\
+                # np.mean(backtimes), np.mean(ftimes)))
 
         if self.use_wandb:
             wandb.log({"TrainLoss": curloss, "epoch":self.epoch})
@@ -366,7 +450,11 @@ class NN(CardinalityEstimationAlg):
         for each subset graph node (subplan). Each key should be ' ' separated
         list of aliases / table names
         '''
-        testds = self.init_dataset(test_samples)
+        testds = self.init_dataset(test_samples, False)
+        # testds = QueryDataset(test_samples, self.featurizer,
+                # False,
+                # load_padded_mscn_feats=self.load_padded_mscn_feats)
+
         preds = self._eval_ds(testds, test_samples)
 
         return format_model_test_output(preds, test_samples, self.featurizer)

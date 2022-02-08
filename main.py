@@ -109,6 +109,7 @@ def get_alg(alg):
                 hidden_layer_size = args.hidden_layer_size)
     elif alg == "mscn":
         return MSCN(max_epochs = args.max_epochs, lr=args.lr,
+                normalize_flow_loss = args.normalize_flow_loss,
                 heuristic_unseen_preds = args.heuristic_unseen_preds,
                 cost_model = args.cost_model,
                 use_wandb = args.use_wandb,
@@ -118,6 +119,7 @@ def get_alg(alg):
                 weight_decay = args.weight_decay,
                 load_query_together = args.load_query_together,
                 result_dir = args.result_dir,
+                onehot_dropout=args.onehot_dropout,
                 # num_hidden_layers=args.num_hidden_layers,
                 eval_epoch = args.eval_epoch,
                 optimizer_name=args.optimizer_name,
@@ -295,7 +297,9 @@ def get_featurizer(trainqs, valqs, testqs):
                 'max_tables', 'regex_cols', 'tables', 'join_key_stats',
                 'primary_join_keys', 'join_key_normalizers',
                 'join_key_stat_names', 'join_key_stat_tmps'
-                ]
+                'max_tables', 'regex_cols', 'tables',
+                'mcvs']
+
         featdata = {}
         for k in dir(featurizer):
             if k not in ATTRS_TO_SAVE:
@@ -325,6 +329,7 @@ def get_featurizer(trainqs, valqs, testqs):
 
     featurizer.setup(ynormalization=args.ynormalization,
             feat_separate_alias = args.feat_separate_alias,
+            feat_mcvs = args.feat_mcvs,
             heuristic_features = args.heuristic_features,
             featurization_type=feat_type,
             table_features=args.table_features,
@@ -334,6 +339,7 @@ def get_featurizer(trainqs, valqs, testqs):
             max_like_featurizing_buckets=args.max_like_featurizing_buckets,
             embedding_fn = args.embedding_fn,
             embedding_pooling = args.embedding_pooling,
+            implied_pred_features = args.implied_pred_features,
             feat_onlyseen_preds = args.feat_onlyseen_preds
             )
     featurizer.update_workload_stats(trainqs+valqs+testqs)
@@ -350,7 +356,7 @@ def main():
 
     # set up wandb logging metrics
     if args.use_wandb:
-        wandb_tags = ["v4"]
+        wandb_tags = ["v6"]
         if args.wandb_tags is not None:
             wandb_tags += args.wandb_tags.split(",")
         wandb.init("ceb", config={},
@@ -401,6 +407,8 @@ def read_flags():
             default="imdb")
     parser.add_argument("--db_host", type=str, required=False,
             default="localhost")
+    # parser.add_argument("--user", type=str, required=False,
+            # default="ceb")
     parser.add_argument("--user", type=str, required=False,
             default="pari")
     parser.add_argument("--pwd", type=str, required=False,
@@ -416,7 +424,7 @@ def read_flags():
     parser.add_argument("--seed", type=int, required=False,
             default=123)
     parser.add_argument("--no_regex_templates", type=int,
-            required=False, default=0, help="""=1, will skip templates having regex queries""")
+            required=False, default=1, help="""=1, will skip templates having regex queries""")
 
     parser.add_argument("--skip7a", type=int, required=False,
             default=0, help="""since 7a  is a template with a very large joingraph, we have a flag to skip it to make things run faster""")
@@ -446,6 +454,11 @@ def read_flags():
 
     parser.add_argument("--cost_model", type=str, required=False,
             default="C")
+    parser.add_argument("--normalize_flow_loss", type=int, required=False,
+            default=1)
+
+    parser.add_argument("--onehot_dropout", type=int, required=False,
+            default=0)
 
     # featurizer arguments
     parser.add_argument("--regen_featstats", type=int, required=False,
@@ -457,12 +470,17 @@ def read_flags():
     parser.add_argument("--feat_onlyseen_preds", type=int, required=False,
             default=1)
     parser.add_argument("--feat_separate_alias", type=int, required=False,
-            default=1)
+            default=0)
     parser.add_argument("--heuristic_unseen_preds", type=str, required=False,
             default=None)
+    parser.add_argument("--feat_mcvs", type=int, required=False,
+            default=0)
+    parser.add_argument("--implied_pred_features", type=int, required=False,
+            default=0)
 
     ## NN training features
-    parser.add_argument("--load_padded_mscn_feats", type=int, required=False, default=0, help="""==1 loads all the mscn features with padded zeros in memory -- speeds up training, but can take too much RAM.""")
+    parser.add_argument("--load_padded_mscn_feats", type=int, required=False,
+            default=1, help="""==1 loads all the mscn features with padded zeros in memory -- speeds up training, but can take too much RAM.""")
 
     parser.add_argument("--weight_decay", type=float, required=False,
             default=0.0)

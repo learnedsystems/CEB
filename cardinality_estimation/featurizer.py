@@ -1166,16 +1166,6 @@ class Featurizer():
 
         return ret_feats
 
-    # def _handle_heuristic_ests(self, pfeats, alias, sub)
-        # node_key = tuple([alias])
-        # alias_est = self._get_pg_est(subsetgraph.nodes()[node_key])
-        # assert pfeats[-1] == 0.0
-        # assert pfeats[-2] == 0.0
-        # pfeats[-2] = alias_est
-        # subp_est = self._get_pg_est(subsetgraph.nodes()[subplan])
-        # pfeats[-1] = subp_est
-# >>>>>>> 158fe92710bfb695337d14e15682231824086eaf
-
     def get_subplan_features_set(self, qrep, subplan):
         '''
         @ret: {}

@@ -322,7 +322,18 @@ class NN(CardinalityEstimationAlg):
 
         for (xbatch,ybatch,info) in loader:
             ybatch = ybatch.to(device, non_blocking=True)
-            pred = self.net(xbatch).squeeze(1)
+
+            if self.subplan_level_outputs:
+                pred = self.net(xbatch).squeeze(1)
+                idxs = torch.zeros(pred.shape,dtype=torch.bool)
+                for i, nt in enumerate(info["num_tables"]):
+                    if nt >= 10:
+                        nt = 10
+                    idxs[i,nt] = True
+                pred = pred[idxs]
+            else:
+                pred = self.net(xbatch).squeeze(1)
+
             allpreds.append(pred)
 
         preds = torch.cat(allpreds).detach().cpu().numpy()
@@ -371,18 +382,29 @@ class NN(CardinalityEstimationAlg):
                     xbatch["tmask"] = torch.zeros(tmsh)
                     xbatch["jmask"] = torch.zeros(jmsh)
 
-            if self.onehot_dropout == 2:
-                if random.random() < 0.5:
-                    print("onehot drop!")
-                    xbatch["table"] = torch.zeros(xbatch["table"].shape)
-                    print(torch.sum(xbatch["table"]))
-                else:
-                    print("not onehotdrop!")
-                    print(torch.sum(xbatch["table"]))
-                    preds = xbatch["pred"]
-                    pdb.set_trace()
+            ## debugging code
+            # if self.onehot_dropout == 2:
+                # if random.random() < 0.5:
+                    # print("onehot drop!")
+                    # xbatch["table"] = torch.zeros(xbatch["table"].shape)
+                    # print(torch.sum(xbatch["table"]))
+                # else:
+                    # print("not onehotdrop!")
+                    # print(torch.sum(xbatch["table"]))
+                    # preds = xbatch["pred"]
+                    # pdb.set_trace()
 
-            pred = self.net(xbatch).squeeze(1)
+            if self.subplan_level_outputs:
+                pred = self.net(xbatch).squeeze(1)
+                idxs = torch.zeros(pred.shape,dtype=torch.bool)
+                for i, nt in enumerate(info["num_tables"]):
+                    if nt >= 10:
+                        nt = 10
+                    idxs[i,nt] = True
+                pred = pred[idxs]
+            else:
+                pred = self.net(xbatch).squeeze(1)
+
             assert pred.shape == ybatch.shape
 
             if self.loss_func_name == "flowloss":

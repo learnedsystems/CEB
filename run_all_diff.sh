@@ -1,34 +1,39 @@
-#ONEHOT_FEATURES=$1
+ALG=$1
+DECAY=$2
+BUCKETS=$3
+
+LR=0.0001
+SEP=1
+MAX_EPOCHS=10
+
 TABLE_FEATURES=1
 JOIN_FEATURES=onehot
-#COLUMN_FEATURES=stats
 COLUMN_FEATURES=onehot
+
+#COLUMN_FEATURES=stats
+
 FEAT_MCV=0
-DECAY=0.0
 ONEHOT_DROPOUT=0
 LOAD_PADDED=1
 WANDB_TAGS=default
 FEAT_ONLYSEEN=1
 LOSS_FUNC=mse
-LR=0.0001
-ALG=mscn
+#ALG=mscn
 
-MAX_EPOCHS=20
-
-SEP=0
-BUCKETS=10
-
+## keep fixed
 EMBEDDING_FN=none
-
 QDIR=queries/imdb-unique-plans
 #QDIR=queries/imdb
-NO_REGEX=1
+NO_REGEX=0
 N=-1
-
 
 FLOW_FEATS=0
 
-SEEDS=(1 2 3 4 5 6 7 8 9 10)
+#SEEDS=(1 2 3 4 5 6 7 8 9 10)
+#SEEDS=(7 6 1 2 3 4 5 8 9 10)
+#SEEDS=(7 6 2 11 12 13 14 15 16 17 18 19 20)
+SEEDS=(11 12 13 14 15 16 17 18 19 20 7 6 2)
+
 #SEEDS=(4 5 6 7 8 9 10)
 EVAL_EPOCH=100
 
@@ -46,6 +51,7 @@ for i in "${!SEEDS[@]}";
    --onehot_dropout $ONEHOT_DROPOUT \
    --no_regex_templates $NO_REGEX \
    --feat_onlyseen_preds $FEAT_ONLYSEEN \
+   --wandb_tags $WANDB_TAGS \
    --feat_separate_alias $SEP \
    --query_dir $QDIR \
    --hidden_layer_size $HLS \

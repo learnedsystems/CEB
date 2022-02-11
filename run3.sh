@@ -6,8 +6,11 @@ BINS=$1
 FLNORM=1
 EPOCHS=20
 QDIR=queries/imdb
-TRAIN_TMPS=1a
-TEST_TMPS=2a,2b
+#TRAIN_TMPS=1a
+#TEST_TMPS=2a,2b
+TRAIN_TMPS=2b
+TEST_TMPS=2a
+
 #TRAIN_TMPS=2b
 #TEST_TMPS=2a
 #EMBS=(none embeddings/sampled_data_new30.pkl)

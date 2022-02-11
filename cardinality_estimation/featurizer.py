@@ -269,6 +269,8 @@ class Featurizer():
 
             if num_pred_vals > self.max_pred_vals:
                 self.max_pred_vals = num_pred_vals
+                # print(num_pred_vals)
+                # pdb.set_trace()
 
             num_joins = len(qrep["join_graph"].edges())
             if num_joins > self.max_joins:
@@ -402,10 +404,10 @@ class Featurizer():
                     # give it more space for #num-chars, #number in regex or
                     # not
                     pred_len += 2
-                    if self.separate_ilike_bins:
+                    # if self.separate_ilike_bins:
                         # extra space for regex buckets
                         # pred_len += num_buckets
-                        pred_len += self.max_like_featurizing_buckets
+                    pred_len += self.max_like_featurizing_buckets
 
             self.featurizer[col] = (self.pred_features_len, pred_len, continuous)
             self.pred_features_len += pred_len
@@ -515,35 +517,48 @@ class Featurizer():
             else:
                 # so the idxs used for continous features v/s categorical
                 # features don't clash with each other
-                if self.separate_cont_bins:
-                    pred_len += self.continuous_feature_size
+                pred_len += self.continuous_feature_size
+                pred_len += 2
+                pred_len += self.max_like_featurizing_buckets
+                pred_len += self.max_discrete_featurizing_buckets
+
+                # always add separate bins for like cols so features don't
+                # clash
+                # if col in self.regex_cols:
+                    # give it more space for #num-chars, #number in regex or
+                    # not
+                    # if self.separate_ilike_bins:
 
                 # use 1-hot encoding
-                num_buckets = min(self.max_discrete_featurizing_buckets,
-                        info["num_values"])
-                pred_len += num_buckets
+                # num_buckets = min(self.max_discrete_featurizing_buckets,
+                        # info["num_values"])
+                # pred_len += num_buckets
                 continuous = False
 
                 if self.embedding_fn is not None:
                     pred_len += self.embedding_size
 
-                if col in self.regex_cols:
+                # if col in self.regex_cols:
                     # give it more space for #num-chars, #number in regex or
                     # not
-                    pred_len += 2
-                    if self.separate_ilike_bins:
+                    # pred_len += 2
+                    # if self.separate_ilike_bins:
                         # extra space for regex buckets
                         # pred_len += num_buckets
-                        pred_len += self.max_like_featurizing_buckets
+                    # pred_len += self.max_like_featurizing_buckets
 
             self.featurizer[col] = (None, None, continuous)
 
             if self.max_pred_len < pred_len:
                 self.max_pred_len = pred_len
+                print("self.max_pred_len updated to: ", pred_len)
 
     def setup(self,
             heuristic_features=True,
             feat_separate_alias=True,
+            separate_ilike_bins=False,
+            separate_cont_bins=False,
+            onehot_dropout=False,
             ynormalization="log",
             table_features = True,
             pred_features = True,
@@ -555,8 +570,6 @@ class Featurizer():
             embedding_fn = None,
             embedding_pooling = None,
             num_tables_feature=False,
-            separate_ilike_bins=True,
-            separate_cont_bins=True,
             featurization_type="combined",
             max_discrete_featurizing_buckets=10,
             max_like_featurizing_buckets=10,
@@ -810,9 +823,8 @@ class Featurizer():
         if continuous:
             self._handle_continuous_feature(pfeats, pred_idx_start, col, val)
         else:
-            if self.separate_cont_bins:
-                pred_idx_start += \
-                        self.continuous_feature_size
+            pred_idx_start += \
+                    self.continuous_feature_size
 
             if "like" in cmp_op:
                 self._handle_ilike_feature(pfeats,
@@ -954,9 +966,9 @@ class Featurizer():
         num_buckets = min(self.max_like_featurizing_buckets,
                 col_info["num_values"])
 
-        if self.separate_ilike_bins:
+        # if self.separate_ilike_bins:
             # first half of spaces reserved for "IN" predicates
-            pred_idx_start += num_buckets
+        pred_idx_start += num_buckets
 
         regex_val = val[0].replace("%","")
         pred_idx = deterministic_hash(regex_val) % num_buckets
@@ -1115,9 +1127,9 @@ class Featurizer():
             self._handle_continuous_feature(pfeats, pred_idx_start, col, val)
             ret_feats.append(pfeats)
         else:
-            if self.separate_cont_bins:
-                pred_idx_start += \
-                        self.continuous_feature_size
+            # if self.separate_cont_bins:
+            pred_idx_start += \
+                    self.continuous_feature_size
 
             if "like" in cmp_op:
                 self._handle_ilike_feature(pfeats,
@@ -1289,6 +1301,7 @@ class Featurizer():
 
         if len(allpredfeats) == 0:
             allpredfeats.append(np.zeros(self.max_pred_len))
+
         assert len(allpredfeats) <= self.max_pred_vals
 
         featdict["pred"] = allpredfeats

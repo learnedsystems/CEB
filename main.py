@@ -94,6 +94,10 @@ def get_alg(alg):
                        max_depth=10, lr = 0.01)
     elif alg == "fcnn":
         return FCNN(max_epochs = args.max_epochs, lr=args.lr,
+                subplan_level_outputs=args.subplan_level_outputs,
+                normalize_flow_loss = args.normalize_flow_loss,
+                heuristic_unseen_preds = args.heuristic_unseen_preds,
+                onehot_dropout=args.onehot_dropout,
                 cost_model = args.cost_model,
                 eval_fns = args.eval_fns,
                 use_wandb = args.use_wandb,
@@ -109,6 +113,7 @@ def get_alg(alg):
                 hidden_layer_size = args.hidden_layer_size)
     elif alg == "mscn":
         return MSCN(max_epochs = args.max_epochs, lr=args.lr,
+                subplan_level_outputs=args.subplan_level_outputs,
                 normalize_flow_loss = args.normalize_flow_loss,
                 heuristic_unseen_preds = args.heuristic_unseen_preds,
                 cost_model = args.cost_model,
@@ -289,6 +294,7 @@ def get_featurizer(trainqs, valqs, testqs):
     featurizer = Featurizer(args.user, args.pwd, args.db_name,
             args.db_host, args.port)
     featdata_fn = os.path.join(args.query_dir, "dbdata.json")
+
     if args.regen_featstats or not os.path.exists(featdata_fn):
         featurizer.update_column_stats(trainqs+valqs+testqs)
 
@@ -329,6 +335,7 @@ def get_featurizer(trainqs, valqs, testqs):
 
     featurizer.setup(ynormalization=args.ynormalization,
             feat_separate_alias = args.feat_separate_alias,
+            onehot_dropout = args.onehot_dropout,
             feat_mcvs = args.feat_mcvs,
             heuristic_features = args.heuristic_features,
             featurization_type=feat_type,
@@ -356,7 +363,7 @@ def main():
 
     # set up wandb logging metrics
     if args.use_wandb:
-        wandb_tags = ["v6"]
+        wandb_tags = ["v7"]
         if args.wandb_tags is not None:
             wandb_tags += args.wandb_tags.split(",")
         wandb.init("ceb", config={},
@@ -407,14 +414,14 @@ def read_flags():
             default="imdb")
     parser.add_argument("--db_host", type=str, required=False,
             default="localhost")
-    # parser.add_argument("--user", type=str, required=False,
-            # default="ceb")
     parser.add_argument("--user", type=str, required=False,
-            default="pari")
+            default="ceb")
+    # parser.add_argument("--user", type=str, required=False,
+            # default="pari")
     parser.add_argument("--pwd", type=str, required=False,
-            default="")
+            default="password")
     parser.add_argument("--port", type=int, required=False,
-            default=5432)
+            default=5431)
 
     parser.add_argument("--result_dir", type=str, required=False,
             default="results")
@@ -429,7 +436,7 @@ def read_flags():
     parser.add_argument("--skip7a", type=int, required=False,
             default=0, help="""since 7a  is a template with a very large joingraph, we have a flag to skip it to make things run faster""")
     parser.add_argument("--num_eval_processes", type=int, required=False,
-            default=-1, help="""Used for computing plan costs in parallel. -1 use all cpus; -2: use no cpus; else use n cpus. """)
+            default=16, help="""Used for computing plan costs in parallel. -1 use all cpus; -2: use no cpus; else use n cpus. """)
 
     parser.add_argument("--train_test_split_kind", type=str, required=False,
             default="query", help="""query OR template.""")
@@ -458,6 +465,8 @@ def read_flags():
             default=1)
 
     parser.add_argument("--onehot_dropout", type=int, required=False,
+            default=0)
+    parser.add_argument("--subplan_level_outputs", type=int, required=False,
             default=0)
 
     # featurizer arguments

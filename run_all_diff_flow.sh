@@ -23,21 +23,21 @@ EMBEDDING_FN=none
 
 QDIR=queries/imdb-unique-plans
 #QDIR=queries/imdb
-NO_REGEX=1
+NO_REGEX=0
 N=-1
 
 FLOW_FEATS=0
 
 SEEDS=(1 2 3 4 5 6 7 8 9 10)
 #SEEDS=(4 5 6 7 8 9 10)
-EVAL_EPOCH=2
+EVAL_EPOCH=200
 
 EVAL_FNS=qerr,ppc,plancost
 
 RES_DIR=results/
 
 HLS=256
-LOAD_QUERY_TOGTHER=0
+LOAD_QUERY_TOGTHER=1
 
 for i in "${!SEEDS[@]}";
   do

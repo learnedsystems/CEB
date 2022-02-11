@@ -11,14 +11,19 @@ import wandb
 
 class FCNN(NN):
 
-    def init_dataset(self, samples):
+    def init_dataset(self, samples, load_query_together):
         ds = QueryDataset(samples, self.featurizer,
-                False)
+                load_query_together)
+
         return ds
 
     def _init_net(self, sample):
         num_features = len(sample[0])
-        net = SimpleRegression(num_features, 1,
+        if self.subplan_level_outputs:
+            n_output = 10
+        else:
+            n_output = 1
+        net = SimpleRegression(num_features, n_output,
                 self.num_hidden_layers, self.hidden_layer_size)
         return net
 

@@ -227,6 +227,8 @@ class PostgresPlanCost(EvalFunc):
         opttotal = np.sum(opt_costs)
         relcost = np.round(float(totalcost)/opttotal, 3)
 
+        ppes = costs - opt_costs
+
         print("{}, {}, #samples: {}, total_relative_cost: {}"\
                 .format(samples_type, alg_name, len(costs),
                     relcost))
@@ -235,6 +237,15 @@ class PostgresPlanCost(EvalFunc):
             loss_key = "Final-{}-{}".format("Relative-TotalPPCost",
                                                    samples_type)
             wandb.run.summary[loss_key] = relcost
+
+            loss_key = "Final-{}-{}-mean".format("PPError",
+                                                samples_type)
+            wandb.run.summary[loss_key] = np.mean(ppes)
+
+            loss_key = "Final-{}-{}-99p".format("PPError",
+                                                samples_type)
+            wandb.run.summary[loss_key] = np.percentile(ppes, 99)
+
 
     def eval(self, qreps, preds, user="imdb",pwd="password",
             db_name="imdb", db_host="localhost", port=5432, num_processes=-1,

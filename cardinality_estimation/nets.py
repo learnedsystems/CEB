@@ -42,7 +42,7 @@ class SimpleRegression(torch.nn.Module):
 # minor modifications on the MSCN model in Kipf et al.
 class SetConv(nn.Module):
     def __init__(self, sample_feats, predicate_feats, join_feats, flow_feats,
-            hid_units, num_hidden_layers=2):
+            hid_units, num_hidden_layers=2, n_out=1):
         super(SetConv, self).__init__()
 
         self.sample_feats = sample_feats
@@ -74,7 +74,7 @@ class SetConv(nn.Module):
         combined_hid_size = hid_units
         self.out_mlp1 = nn.Linear(hid_units * num_layer1_blocks,
                 combined_hid_size).to(device)
-        self.out_mlp2 = nn.Linear(combined_hid_size, 1).to(device)
+        self.out_mlp2 = nn.Linear(combined_hid_size, n_out).to(device)
 
     def forward(self, xbatch):
         '''

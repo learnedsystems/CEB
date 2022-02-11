@@ -5,6 +5,9 @@ from collections import defaultdict
 import numpy as np
 import time
 import copy
+import multiprocessing as mp
+import math
+import pickle
 
 from query_representation.utils import *
 
@@ -18,6 +21,71 @@ def to_variable(arr, use_cuda=True, requires_grad=False):
     else:
         arr = Variable(arr, requires_grad=requires_grad)
     return arr
+
+def get_query_features(qrep, dataset_qidx,
+        query_idx, featurizer, load_padded_mscn_feats):
+    '''
+    Parallelizable function.
+    @qrep: qrep dict.
+    '''
+    X = []
+    Y = []
+    sample_info = []
+    # now, we will generate the actual feature vectors over all the
+    # subplans. Order matters --- dataset idx will be specified based on
+    # order.
+    node_names = list(qrep["subset_graph"].nodes())
+    if SOURCE_NODE in node_names:
+        node_names.remove(SOURCE_NODE)
+    node_names.sort()
+
+    for node_idx, node in enumerate(node_names):
+        x,y = featurizer.get_subplan_features(qrep,
+                node)
+
+        if featurizer.featurization_type == "set" \
+            and load_padded_mscn_feats:
+            start = time.time()
+            tf,pf,jf,tm,pm,jm = \
+                pad_sets([x["table"]], [x["pred"]], [x["join"]],
+                        featurizer.max_tables,
+                        featurizer.max_preds,
+                        featurizer.max_joins)
+            x["table"] = tf
+            x["join"] = jf
+            x["pred"] = pf
+            # relevant masks
+            x["tmask"] = tm
+            x["pmask"] = pm
+            x["jmask"] = jm
+
+        X.append(x)
+        Y.append(y)
+
+        cur_info = {}
+        cur_info["num_tables"] = len(node)
+        cur_info["dataset_idx"] = dataset_qidx + node_idx
+        cur_info["query_idx"] = query_idx
+        sample_info.append(cur_info)
+
+    return X,Y,sample_info
+
+def get_queries_features(samples, dataset_qidx,
+        start_query_idx, featurizer, load_padded_mscn_feats):
+    X = []
+    Y = []
+    sample_info = []
+
+    qidx = dataset_qidx
+    for i, qrep in enumerate(samples):
+        x,y,cur_info = get_query_features(qrep, qidx, start_query_idx+i,
+                featurizer, load_padded_mscn_feats)
+        qidx += len(y)
+        X += x
+        Y += y
+        sample_info += cur_info
+
+    return X,Y,sample_info
 
 def mscn_collate_fn_together(data):
     start = time.time()
@@ -233,8 +301,27 @@ class QueryDataset(data.Dataset):
             self.start_idxs, self.idx_lens = self._update_idxs(samples)
 
         self.load_padded_mscn_feats = load_padded_mscn_feats
-
         self.featurizer = featurizer
+
+        self.save_mscn_feats = False
+
+        if self.load_padded_mscn_feats:
+            self.save_mscn_feats = True
+            fkeys = list(dir(self.featurizer))
+            fkeys.sort()
+            attrs = ""
+            for k in fkeys:
+                attrvals = getattr(featurizer, k)
+                if not hasattr(attrvals, "__len__") and \
+                    "method" not in str(attrvals):
+                    attrs += str(k) + str(attrvals) + ";"
+            attrs += "padded"+str(self.load_padded_mscn_feats)
+            self.feathash = deterministic_hash(attrs)
+            self.featdir = "./mscn_features/" + str(self.feathash)
+
+            make_dir("./mscn_features")
+            make_dir(self.featdir)
+
 
         # shorthands
         self.ckey = self.featurizer.ckey
@@ -244,8 +331,8 @@ class QueryDataset(data.Dataset):
 
         # TODO: we may want to avoid this, and convert them on the fly. Just
         # keep some indexing information around.
-
         self.X, self.Y, self.info = self._get_feature_vectors(samples)
+        # self.X, self.Y, self.info = self._get_feature_vectors_par(samples)
 
         if self.load_query_together:
             self.num_samples = len(samples)
@@ -267,6 +354,31 @@ class QueryDataset(data.Dataset):
             qidx += len(nodes)
         return idx_starts, idx_lens
 
+    def _load_mscn_features(self, qfeat_fn):
+        with open(qfeat_fn, "rb") as f:
+            data = pickle.load(f)
+        return data["x"], data["y"]
+
+    def _save_mscn_features(self, x,y,qfeat_fn):
+        data = {"x":x, "y":y}
+        with open(qfeat_fn, "wb") as f:
+            pickle.dump(data, f)
+
+    def _get_sample_info(self, qrep, dataset_qidx, query_idx):
+        sample_info = []
+        node_names = list(qrep["subset_graph"].nodes())
+        if SOURCE_NODE in node_names:
+            node_names.remove(SOURCE_NODE)
+        node_names.sort()
+
+        for node_idx, node in enumerate(node_names):
+            cur_info = {}
+            cur_info["num_tables"] = len(node)
+            cur_info["dataset_idx"] = dataset_qidx + node_idx
+            cur_info["query_idx"] = query_idx
+            sample_info.append(cur_info)
+        return sample_info
+
     def _get_query_features(self, qrep, dataset_qidx,
             query_idx):
         '''
@@ -275,7 +387,6 @@ class QueryDataset(data.Dataset):
         X = []
         Y = []
         sample_info = []
-
         # now, we will generate the actual feature vectors over all the
         # subplans. Order matters --- dataset idx will be specified based on
         # order.
@@ -290,6 +401,7 @@ class QueryDataset(data.Dataset):
 
             if self.featurizer.featurization_type == "set" \
                 and self.load_padded_mscn_feats:
+                start = time.time()
                 tf,pf,jf,tm,pm,jm = \
                     pad_sets([x["table"]], [x["pred"]], [x["join"]],
                             self.featurizer.max_tables,
@@ -303,8 +415,6 @@ class QueryDataset(data.Dataset):
                 x["pmask"] = pm
                 x["jmask"] = jm
 
-                # x["flow"] remains the correct vector
-
             X.append(x)
             Y.append(y)
 
@@ -313,6 +423,89 @@ class QueryDataset(data.Dataset):
             cur_info["dataset_idx"] = dataset_qidx + node_idx
             cur_info["query_idx"] = query_idx
             sample_info.append(cur_info)
+
+        return X,Y,sample_info
+
+    def _get_feature_vectors_par(self, samples):
+
+        start = time.time()
+        X = []
+        Y = []
+        sample_info = []
+
+
+        nump = 16
+
+        batchsize = 200
+        outbatch = math.ceil(len(samples) / batchsize)
+
+        dsqidx = 0
+        print("outbatch: ", outbatch)
+        print(len(samples))
+        pool = mp.Pool(nump)
+        for i in range(outbatch):
+            startidx = i*batchsize
+            endidx = startidx+batchsize
+            endidx = min(endidx, len(samples))
+            print(startidx, endidx)
+            qreps = samples[startidx:endidx]
+
+            par_args = []
+            for qi, qrep in enumerate(qreps):
+                par_args.append((qrep, dsqidx, startidx+qi,
+                                self.featurizer, self.load_padded_mscn_feats))
+                dsqidx += len(qrep["subset_graph"].nodes())
+
+            print("par args: ", len(par_args))
+
+            # with mp.Pool(nump) as p:
+            res = pool.starmap(get_query_features, par_args)
+            for r in res:
+                X += r[0]
+                Y += r[1]
+                sample_info += r[2]
+
+        pool.close()
+        pdb.set_trace()
+
+        # par_args = []
+        # batchsize = math.ceil(len(samples) / nump)
+
+        # qidxstart = 0
+        # for i in range(nump):
+            # startidx = i*nump
+            # end = startidx+batchsize
+            # end = min(len(samples), end)
+            # qreps = samples[startidx:end]
+
+            # par_args.append((qreps, qidxstart, startidx, self.featurizer,
+                # self.load_padded_mscn_feats))
+            # for qr in qreps:
+                # qidxstart += len(qr["subset_graph"].nodes())
+
+        # # pool = mp.Pool(nump)
+        # # res = pool.starmap(get_queries_features, par_args)
+        # with mp.Pool(nump) as p:
+            # res = p.starmap(get_queries_features, par_args)
+
+            # # len(res) == 16; len(res[0]) == 3 # Xs,Ys,infos
+            # for r in res:
+                # X += r[0]
+                # Y += r[1]
+                # sample_info += r[2]
+
+        # # pdb.set_trace()
+        # pool.close()
+
+        print("Extracting features took: ", time.time() - start)
+        # TODO: handle this somehow
+        if self.featurizer.featurization_type == "combined":
+            X = to_variable(X, requires_grad=False).float()
+        elif self.featurizer.featurization_type == "set":
+            # don't need to do anything, since padding+masks is handled later
+            pass
+
+        Y = to_variable(Y, requires_grad=False).float()
 
         return X,Y,sample_info
 
@@ -325,10 +518,22 @@ class QueryDataset(data.Dataset):
         X = []
         Y = []
         sample_info = []
-        qidx = 0
 
+        qidx = 0
         for i, qrep in enumerate(samples):
-            x,y,cur_info = self._get_query_features(qrep, qidx, i)
+            qhash = str(deterministic_hash(qrep["sql"]))
+
+            if self.save_mscn_feats:
+                featfn = os.path.join(self.featdir, qhash) + ".pkl"
+                if os.path.exists(featfn):
+                    x,y = self._load_mscn_features(featfn)
+                    cur_info = self._get_sample_info(qrep, qidx, i)
+                else:
+                    x,y,cur_info = self._get_query_features(qrep, qidx, i)
+                    self._save_mscn_features(x,y,featfn)
+            else:
+                x,y,cur_info = self._get_query_features(qrep, qidx, i)
+
             qidx += len(y)
             X += x
             Y += y

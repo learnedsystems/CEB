@@ -38,8 +38,15 @@ class MSCN(NN):
         else:
             jfeats = len(sample[0]["join"][0])
 
+        if self.subplan_level_outputs:
+            n_out = 10
+        else:
+            n_out = 1
+
         net = SetConv(sfeats,
                 pfeats, jfeats,
                 len(sample[0]["flow"]),
-                self.hidden_layer_size)
+                self.hidden_layer_size,
+                n_out=n_out)
+
         return net

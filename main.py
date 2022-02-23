@@ -22,7 +22,7 @@ import logging
 logger = logging.getLogger("wandb")
 logger.setLevel(logging.ERROR)
 
-def eval_alg(alg, eval_funcs, qreps, samples_type):
+def eval_alg(alg, eval_funcs, qreps, samples_type, featurizer=None):
     '''
     '''
     np.set_printoptions(formatter={'float': lambda x: "{0:0.3f}".format(x)})
@@ -45,7 +45,8 @@ def eval_alg(alg, eval_funcs, qreps, samples_type):
                 num_processes = args.num_eval_processes,
                 alg_name = alg_name,
                 save_pdf_plans=args.save_pdf_plans,
-                use_wandb=args.use_wandb)
+                use_wandb=args.use_wandb, featurizer=featurizer,
+                alg=alg)
 
         print("{}, {}, {}, #samples: {}, {}: mean: {}, median: {}, 99p: {}"\
                 .format(args.db_name, samples_type, alg, len(errors),
@@ -94,10 +95,16 @@ def get_alg(alg):
                        max_depth=10, lr = 0.01)
     elif alg == "fcnn":
         return FCNN(max_epochs = args.max_epochs, lr=args.lr,
+                training_opt = args.training_opt,
+                opt_lr = args.opt_lr,
+                swa_start = args.swa_start,
+                mask_unseen_subplans = args.mask_unseen_subplans,
                 subplan_level_outputs=args.subplan_level_outputs,
                 normalize_flow_loss = args.normalize_flow_loss,
                 heuristic_unseen_preds = args.heuristic_unseen_preds,
                 onehot_dropout=args.onehot_dropout,
+                onehot_reg=args.onehot_reg,
+                onehot_reg_decay=args.onehot_reg_decay,
                 cost_model = args.cost_model,
                 eval_fns = args.eval_fns,
                 use_wandb = args.use_wandb,
@@ -113,6 +120,10 @@ def get_alg(alg):
                 hidden_layer_size = args.hidden_layer_size)
     elif alg == "mscn":
         return MSCN(max_epochs = args.max_epochs, lr=args.lr,
+                training_opt = args.training_opt,
+                opt_lr = args.opt_lr,
+                swa_start = args.swa_start,
+                mask_unseen_subplans = args.mask_unseen_subplans,
                 subplan_level_outputs=args.subplan_level_outputs,
                 normalize_flow_loss = args.normalize_flow_loss,
                 heuristic_unseen_preds = args.heuristic_unseen_preds,
@@ -125,6 +136,8 @@ def get_alg(alg):
                 load_query_together = args.load_query_together,
                 result_dir = args.result_dir,
                 onehot_dropout=args.onehot_dropout,
+                onehot_reg=args.onehot_reg,
+                onehot_reg_decay=args.onehot_reg_decay,
                 # num_hidden_layers=args.num_hidden_layers,
                 eval_epoch = args.eval_epoch,
                 optimizer_name=args.optimizer_name,
@@ -363,7 +376,7 @@ def main():
 
     # set up wandb logging metrics
     if args.use_wandb:
-        wandb_tags = ["v7"]
+        wandb_tags = ["v9"]
         if args.wandb_tags is not None:
             wandb_tags += args.wandb_tags.split(",")
         wandb.init("ceb", config={},
@@ -396,13 +409,19 @@ def main():
     for alg in algs:
         alg.train(trainqs, valqs=valqs, testqs=testqs,
                 featurizer=featurizer, result_dir=args.result_dir)
-        eval_alg(alg, eval_fns, trainqs, "train")
+
+        eval_alg(alg, eval_fns, trainqs, "train", featurizer=featurizer)
 
         if len(valqs) > 0:
-            eval_alg(alg, eval_fns, valqs, "val")
+            eval_alg(alg, eval_fns, valqs, "val", featurizer=featurizer)
 
         if len(testqs) > 0:
-            eval_alg(alg, eval_fns, testqs, "test")
+            eval_alg(alg, eval_fns, testqs, "test", featurizer=featurizer)
+
+# def check_logical_constraints(alg, qreps):
+    # for qrep in qreps:
+        # for node in qrep["subset_graph"].nodes():
+            # pdb.set_trace()
 
 def read_flags():
     parser = argparse.ArgumentParser()
@@ -431,7 +450,7 @@ def read_flags():
     parser.add_argument("--seed", type=int, required=False,
             default=123)
     parser.add_argument("--no_regex_templates", type=int,
-            required=False, default=1, help="""=1, will skip templates having regex queries""")
+            required=False, default=0, help="""=1, will skip templates having regex queries""")
 
     parser.add_argument("--skip7a", type=int, required=False,
             default=0, help="""since 7a  is a template with a very large joingraph, we have a flag to skip it to make things run faster""")
@@ -466,7 +485,13 @@ def read_flags():
 
     parser.add_argument("--onehot_dropout", type=int, required=False,
             default=0)
+    parser.add_argument("--onehot_reg", type=int, required=False,
+            default=0)
+    parser.add_argument("--onehot_reg_decay", type=float, required=False,
+            default=0.1)
     parser.add_argument("--subplan_level_outputs", type=int, required=False,
+            default=0)
+    parser.add_argument("--mask_unseen_subplans", type=int, required=False,
             default=0)
 
     # featurizer arguments
@@ -490,6 +515,12 @@ def read_flags():
     ## NN training features
     parser.add_argument("--load_padded_mscn_feats", type=int, required=False,
             default=1, help="""==1 loads all the mscn features with padded zeros in memory -- speeds up training, but can take too much RAM.""")
+    parser.add_argument("--training_opt", type=str, required=False,
+            default="")
+    parser.add_argument("--opt_lr", type=float, required=False,
+            default=0.005)
+    parser.add_argument("--swa_start", type=int, required=False,
+            default=5)
 
     parser.add_argument("--weight_decay", type=float, required=False,
             default=0.0)

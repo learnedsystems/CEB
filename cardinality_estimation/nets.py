@@ -110,6 +110,7 @@ class SetConv(nn.Module):
         if self.predicate_feats != 0:
             predicates = predicates.to(device, non_blocking=True)
             predicate_mask = predicate_mask.to(device, non_blocking=True)
+
             hid_predicate = F.relu(self.predicate_mlp1(predicates))
             hid_predicate = F.relu(self.predicate_mlp2(hid_predicate))
             hid_predicate = hid_predicate * predicate_mask

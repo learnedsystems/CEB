@@ -30,6 +30,8 @@ def get_eval_fn(loss_name):
         return SimplePlanCost()
     elif loss_name == "flowloss":
         return FlowLoss()
+    elif loss_name == "constraints":
+        return LogicalConstraints()
     else:
         assert False
 
@@ -101,6 +103,118 @@ def _get_all_cardinalities(qreps, preds):
             ytrue.append(float(actual))
             yhat.append(float(pred))
     return np.array(ytrue), np.array(yhat)
+
+class LogicalConstraints(EvalFunc):
+    def __init__(self, **kwargs):
+        pass
+
+    def save_logs(self, qreps, errors, **kwargs):
+        pass
+        # result_dir = kwargs["result_dir"]
+        # if result_dir is None:
+            # return
+
+        # if "samples_type" in kwargs:
+            # samples_type = kwargs["samples_type"]
+        # else:
+            # samples_type = ""
+
+        # resfn = os.path.join(result_dir, self.__str__() + ".csv")
+        # res = pd.DataFrame(data=errors, columns=["errors"])
+        # res["samples_type"] = samples_type
+        # # TODO: add other data?
+        # if os.path.exists(resfn):
+            # res.to_csv(resfn, mode="a",header=False)
+        # else:
+            # res.to_csv(resfn, header=True)
+
+    def eval(self, qreps, preds, **kwargs):
+        '''
+        @qreps: [qrep_1, ...qrep_N]
+        @preds: [{},...,{}]
+
+        @ret: [qerror_1, ..., qerror_{num_subplans}]
+        Each query has multiple subplans; the returned list flattens it into a
+        single array. The subplans of a query are sorted alphabetically (see
+        _get_all_cardinalities)
+        '''
+        errors = []
+        id_errs = []
+        fkey_errs = []
+
+        featurizer = kwargs["featurizer"]
+
+        for qi, qrep in enumerate(qreps):
+            cur_errs = []
+
+            cur_preds = preds[qi]
+            sg = qrep["subset_graph"]
+            jg = qrep["join_graph"]
+            for node in sg.nodes():
+                edges = sg.out_edges(node)
+                nodepred = cur_preds[node]
+                # calculating error per node instead of per edge
+                error = 0
+
+                for edge in edges:
+                    prev_node = edge[1]
+                    newt = list(set(edge[0]) - set(edge[1]))[0]
+                    tab_pred = cur_preds[(newt,)]
+                    for alias in edge[1]:
+                        if (alias,newt) in jg.edges():
+                            jdata = jg.edges[(alias,newt)]
+                        elif (newt,alias) in jg.edges():
+                            jdata = jg.edges[(newt,alias)]
+                        else:
+                            continue
+                        if newt not in jdata or alias not in jdata:
+                            continue
+
+                        newjkey = jdata[newt]
+                        otherjkey = jdata[alias]
+
+                        stats1 = featurizer.join_key_stats[newjkey]
+                        stats2 = featurizer.join_key_stats[otherjkey]
+
+                        newjcol = newjkey[newjkey.find(".")+1:]
+                        if newjcol == "id":
+                            card1 = cur_preds[(newt,)]
+                            maxfkey = stats2["max_key"]
+                            maxcard1 = maxfkey*card1
+
+                            ## FIXME: not fully accurate
+                            if cur_preds[node] > maxcard1:
+                                fkey_errs.append(1.0)
+                            else:
+                                fkey_errs.append(0.0)
+
+                            # could not have got bigger
+                            if cur_preds[prev_node] < cur_preds[node]:
+                                error = 1
+                                id_errs.append(1)
+                            else:
+                                id_errs.append(0)
+
+                        # else:
+                            # # new table was a foreign key
+                            # maxfkey = stats1["max_key"]
+                            # card_prev = cur_preds[prev_node]
+                            # maxcurcard = card_prev * maxfkey
+                            # if maxcurcard < cur_preds[node]:
+                                # print("BAD")
+                                # pdb.set_trace()
+
+                cur_errs.append(error)
+            errors.append(np.mean(cur_errs))
+
+        print("pkey x fkey errors: ", np.mean(fkey_errs), np.sum(fkey_errs))
+        print("primary key id errors: ", np.mean(id_errs))
+        return errors
+
+    def __str__(self):
+        return self.__class__.__name__
+
+    # TODO: stuff for saving logs
 
 class QError(EvalFunc):
     def eval(self, qreps, preds, **kwargs):
@@ -316,6 +430,7 @@ class PostgresPlanCost(EvalFunc):
 
         if pool is not None:
             pool.close()
+
         return costs
 
 class SimplePlanCost(EvalFunc):

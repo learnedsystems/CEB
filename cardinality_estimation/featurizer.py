@@ -404,9 +404,6 @@ class Featurizer():
                     # give it more space for #num-chars, #number in regex or
                     # not
                     pred_len += 2
-                    # if self.separate_ilike_bins:
-                        # extra space for regex buckets
-                        # pred_len += num_buckets
                     pred_len += self.max_like_featurizing_buckets
 
             self.featurizer[col] = (self.pred_features_len, pred_len, continuous)
@@ -425,7 +422,9 @@ class Featurizer():
 
     def _init_pred_featurizer_set(self):
         assert self.featurization_type == "set"
-        self.featurizer = {}
+        # self.featurizer = {}
+        # self.featurizer_type_idxs = {}
+
         self.num_cols = len(self.column_stats)
         all_cols = list(self.column_stats.keys())
         all_cols.sort()
@@ -434,124 +433,147 @@ class Featurizer():
         for cidx, col_name in enumerate(all_cols):
             self.columns_onehot_idx[col_name] = cidx
 
-        # each predicate is featurized independently, so no common
-        # pred_features_len
-        # self.pred_features_len = 0
-
         # these comparator operator will be used for each predicate filter
         for i, cmp_op in enumerate(sorted(self.cmp_ops)):
             self.cmp_ops_onehot[cmp_op] = i
 
+        ## TODO: separate these out in a different function.
         # to find the number of features, need to go over every column, and
         # choose how many spots to keep for them
         col_keys = list(self.column_stats.keys())
         col_keys.sort()
 
-        if self.join_features == "onehot" \
-                or self.join_features == "1":
-            self.join_features_len = len(self.joins)
-        elif self.join_features == "onehot_tables":
-            self.join_features_len = len(self.tables)
-        elif self.join_features == "onehot_debug":
-            self.join_features_len = len(self.tables)
-        elif self.join_features == "stats":
-            self.join_features_len = 0
-            # primary key : foreign key OR fk : fk (onehot)
-            self.join_features_len += 2
-            # is self-join or not (boolean)
-            self.join_features_len += 1
-            # dv(tab1) / dv(tab2)
-            self.join_features_len += 1
+        pred_len = 0
+        self.featurizer_type_idxs["cmp_op"] = (pred_len, len(self.cmp_ops))
+        pred_len += len(self.cmp_ops)
 
-            # for both side of joins; pk first OR just sort;
-            self.join_features_len += len(self.join_key_stat_names)*2
+        use_onehot = "onehot" in self.set_column_feature
+        use_stats = "stats" in self.set_column_feature
 
-        if self.set_column_feature == "onehot":
+        if use_onehot:
             self.set_column_features_len = len(self.column_stats)
-        elif self.set_column_feature == "stats":
+            self.featurizer_type_idxs["col_onehot"] = (pred_len,
+                    len(self.column_stats))
+            pred_len += len(self.column_stats)
+
+        if use_stats:
             self.set_column_features_len = 0
             # number of filters in the column
             # self.set_column_features_len += 1
             # TODO: think of other ways
             self.set_column_features_len += len(self.join_key_stat_names)
+            self.featurizer_type_idxs["col_stats"] = (pred_len,
+                    len(self.join_key_stat_names))
+            pred_len += len(self.join_key_stat_names)
+
         else:
             self.set_column_features_len = 0
-        # else:
-            # assert False
 
-        self.max_pred_len = 0
+        if self.num_tables_feature:
+            self.featurizer_type_idxs["num_tables"] = (pred_len, 1)
+            pred_len += 1
+
+        self.featurizer_type_idxs["constant_continuous"] = (pred_len,
+                self.continuous_feature_size)
+        pred_len += self.continuous_feature_size
+
+        ilike_feat_size = 2 + self.max_like_featurizing_buckets
+        self.featurizer_type_idxs["constant_like"] = (pred_len,
+                ilike_feat_size)
+        pred_len += ilike_feat_size
+
+        # for discrete features
+        self.featurizer_type_idxs["constant_discrete"] = (pred_len,
+                self.max_discrete_featurizing_buckets)
+        pred_len += self.max_discrete_featurizing_buckets
+
+        if self.embedding_fn is not None:
+            self.featurizer_type_idxs["constant_embedding"] = (pred_len,
+                    self.embedding_size)
+            pred_len += self.embedding_size
+
+        if self.heuristic_features:
+            self.featurizer_type_idxs["heuristic_ests"] = (pred_len, 2)
+            # for pg_est of current table in subplan
+            # and for pg est of full subplan/query; repeated in each predicate
+            # feature
+            pred_len += 2
+
+        self.max_pred_len = pred_len
+        self.pred_onehot_mask = np.ones(self.max_pred_len)
+        a,b = self.featurizer_type_idxs["constant_discrete"]
+        self.pred_onehot_mask[a:a+b] = 0.0
+
+        a,b = self.featurizer_type_idxs["constant_like"]
+        self.pred_onehot_mask[a:a+b] = 0.0
+
+        if "col_onehot" in self.featurizer_type_idxs:
+            a,b = self.featurizer_type_idxs["col_onehot"]
+            self.pred_onehot_mask[a:a+b] = 0.0
+
+        ## mapping columns to continuous or not
         for col in col_keys:
             info = self.column_stats[col]
-            pred_len = 0
-            # for operator type
-            pred_len += len(self.cmp_ops)
-
-            if self.set_column_feature == "onehot":
-                # one-hot vector for which column is predicate on
-                pred_len += self.num_cols
-            elif self.set_column_feature == "stats":
-                pred_len += self.set_column_features_len
-            else:
-                pass
-
-            # for num_tables present
-            if self.num_tables_feature:
-                pred_len += 1
-
-            if self.heuristic_features:
-                # for pg_est of current table in subplan
-                pred_len += 1
-
-                # for pg est of full subplan/query; repeated in each predicate
-                # feature
-                pred_len += 1
-
-            # FIXME: special casing "id" not in col to avoid columns like
-            # it.id; very specific to CEB workloads.
             if is_float(info["min_value"]) and is_float(info["max_value"]) \
                     and "id" not in col:
                 # then use min-max normalization, no matter what
                 # only support range-queries, so lower / and upper predicate
-                pred_len += self.continuous_feature_size
-                continuous = True
+                # continuous = True
+                self.column_stats[col]["continuous"] = True
             else:
-                # so the idxs used for continous features v/s categorical
-                # features don't clash with each other
-                pred_len += self.continuous_feature_size
-                pred_len += 2
-                pred_len += self.max_like_featurizing_buckets
-                pred_len += self.max_discrete_featurizing_buckets
+                self.column_stats[col]["continuous"] = False
 
-                # always add separate bins for like cols so features don't
-                # clash
-                # if col in self.regex_cols:
-                    # give it more space for #num-chars, #number in regex or
-                    # not
-                    # if self.separate_ilike_bins:
+        # for col in col_keys:
+            # info = self.column_stats[col]
+            # pred_len = 0
+            # # for operator type
+            # pred_len += len(self.cmp_ops)
 
-                # use 1-hot encoding
-                # num_buckets = min(self.max_discrete_featurizing_buckets,
-                        # info["num_values"])
-                # pred_len += num_buckets
-                continuous = False
+            # if self.set_column_feature == "onehot":
+                # # one-hot vector for which column is predicate on
+                # pred_len += self.num_cols
+            # elif self.set_column_feature == "stats":
+                # pred_len += self.set_column_features_len
+            # else:
+                # pass
 
-                if self.embedding_fn is not None:
-                    pred_len += self.embedding_size
+            # # for num_tables present
+            # if self.num_tables_feature:
+                # pred_len += 1
 
-                # if col in self.regex_cols:
-                    # give it more space for #num-chars, #number in regex or
-                    # not
-                    # pred_len += 2
-                    # if self.separate_ilike_bins:
-                        # extra space for regex buckets
-                        # pred_len += num_buckets
-                    # pred_len += self.max_like_featurizing_buckets
+            # # these are stored at the very end;
+            # if self.heuristic_features:
+                # # for pg_est of current table in subplan
+                # pred_len += 1
+                # # for pg est of full subplan/query; repeated in each predicate
+                # # feature
+                # pred_len += 1
 
-            self.featurizer[col] = (None, None, continuous)
+            # # FIXME: special casing "id" not in col to avoid columns like
+            # # it.id; very specific to CEB workloads.
+            # if is_float(info["min_value"]) and is_float(info["max_value"]) \
+                    # and "id" not in col:
+                # # then use min-max normalization, no matter what
+                # # only support range-queries, so lower / and upper predicate
+                # pred_len += self.continuous_feature_size
+                # continuous = True
+            # else:
+                # # so the idxs used for continous features v/s categorical
+                # # features don't clash with each other
+                # pred_len += self.continuous_feature_size
+                # pred_len += 2
+                # pred_len += self.max_like_featurizing_buckets
 
-            if self.max_pred_len < pred_len:
-                self.max_pred_len = pred_len
-                print("self.max_pred_len updated to: ", pred_len)
+                # # for discrete features
+                # pred_len += self.max_discrete_featurizing_buckets
+                # continuous = False
+
+                # if self.embedding_fn is not None:
+                    # pred_len += self.embedding_size
+
+            # if self.max_pred_len < pred_len:
+                # self.max_pred_len = pred_len
+                # print("self.max_pred_len updated to: ", pred_len)
 
     def setup(self,
             heuristic_features=True,
@@ -648,6 +670,7 @@ class Featurizer():
             self.set_column_feature = "onehot"
 
     def init_feature_mapping(self):
+
         if self.embedding_fn is not None:
             assert os.path.exists(self.embedding_fn), \
                     "Embeddings file not found: %s" % self.embedding_fn
@@ -669,6 +692,8 @@ class Featurizer():
                 pass
             else:
                 self.max_preds = self.max_pred_vals
+
+        self.featurizer_type_idxs = {}
 
         # let's figure out the feature len based on db.stats
         assert self.featurizer is None
@@ -712,22 +737,76 @@ class Featurizer():
             self.table_features_len = len(self.tables)
             self.max_table_feature_len = len(self.tables)
 
+        # only have onehot encoding for tables
+        self.table_onehot_mask = np.zeros(self.table_features_len)
+
+        ## join features
         if self.join_features == "1":
             # or table one
             self.join_features = "onehot"
         elif self.join_features == "0":
             self.join_features = False
 
-        if self.join_features == "onehot":
+        use_onehot = "onehot" in self.join_features
+        use_stats = "stats" in self.join_features
+
+        self.join_features_len = 0
+        if use_onehot:
             self.join_featurizer = {}
             for i, join in enumerate(sorted(self.joins)):
                 self.join_featurizer[join] = i
-        elif self.join_features == "onehot_tables" \
-                or self.join_features == "onehot_debug":
-            pass
-        elif self.join_features == "stats":
-            pass
+            self.join_features_len += len(self.joins)
+            self.featurizer_type_idxs["join_onehot"] = (0, len(self.joins))
 
+        if use_stats:
+            joinstats_len = 0
+            # self.join_features_len = 0
+            # primary key : foreign key OR fk : fk (onehot)
+            joinstats_len += 2
+            # is self-join or not (boolean)
+            joinstats_len  += 1
+            # dv(tab1) / dv(tab2)
+            joinstats_len += 1
+            # for both side of joins; pk first OR just sort;
+            joinstats_len += len(self.join_key_stat_names)*2
+
+            self.featurizer_type_idxs["join_stats"] = (self.join_features_len,
+                                                    joinstats_len)
+
+            self.join_features_len += joinstats_len
+
+        self.join_onehot_mask = np.ones(self.join_features_len)
+        if "join_onehot" in self.featurizer_type_idxs:
+            a,b = self.featurizer_type_idxs["join_onehot"]
+            self.join_onehot_mask[a:b] = 0.0
+
+        # if self.join_features == "onehot":
+            # self.join_featurizer = {}
+            # for i, join in enumerate(sorted(self.joins)):
+                # self.join_featurizer[join] = i
+
+        # if self.join_features == "onehot" \
+                # or self.join_features == "1":
+            # self.join_features_len = len(self.joins)
+        # elif self.join_features == "onehot_tables":
+            # self.join_features_len = len(self.tables)
+        # elif self.join_features == "onehot_debug":
+            # self.join_features_len = len(self.tables)
+
+        # elif self.join_features == "stats":
+            # self.join_features_len = 0
+            # # primary key : foreign key OR fk : fk (onehot)
+            # self.join_features_len += 2
+            # # is self-join or not (boolean)
+            # self.join_features_len += 1
+            # # dv(tab1) / dv(tab2)
+            # self.join_features_len += 1
+
+            # # for both side of joins; pk first OR just sort;
+            # self.join_features_len += len(self.join_key_stat_names)*2
+
+
+        ## predicate filter features
         if self.featurization_type == "combined":
             self._init_pred_featurizer_combined()
         elif self.featurization_type == "set":
@@ -783,100 +862,6 @@ class Featurizer():
             # pg est for the node
             self.num_flow_features += 1
 
-    def _handle_predicate_feature(self, joingraph, subsetgraph,
-            alias, subplan):
-        allcurpfeats = []
-
-        aliasinfo = joingraph.nodes()[alias]
-        if len(aliasinfo["pred_cols"]) == 0:
-            return allcurpfeats
-
-        col = aliasinfo["pred_cols"][0]
-        val = aliasinfo["pred_vals"][0]
-        if isinstance(val, dict):
-            val = val["literal"]
-
-        if col not in self.featurizer:
-            # print("col: {} not found in featurizer".format(col))
-            return allcurpfeats
-
-        _, _, continuous = self.featurizer[col]
-        cmp_op = aliasinfo["pred_types"][0]
-        feat_idx_start = 0
-        pfeats = np.zeros(self.max_pred_len)
-        assert col in self.column_stats
-
-        if self.set_column_feature == "onehot":
-            # which column does the current feature belong to
-            cidx = self.columns_onehot_idx[col]
-            pfeats[cidx] = 1.0
-            feat_idx_start += len(self.columns_onehot_idx)
-
-        # set comparison operator 1-hot value, same for all types
-        cmp_idx = self.cmp_ops_onehot[cmp_op]
-        pfeats[feat_idx_start + cmp_idx] = 1.00
-
-        pred_idx_start = feat_idx_start + len(self.cmp_ops)
-        col_info = self.column_stats[col]
-
-        toaddpfeats = True
-        if continuous:
-            self._handle_continuous_feature(pfeats, pred_idx_start, col, val)
-        else:
-            pred_idx_start += \
-                    self.continuous_feature_size
-
-            if "like" in cmp_op:
-                self._handle_ilike_feature(pfeats,
-                        pred_idx_start, col, val)
-            else:
-                if self.embedding_fn is None \
-                        or cmp_op == "eq":
-                    self._handle_categorical_feature(pfeats,
-                            pred_idx_start, col, val)
-                else:
-                    toaddpfeats = False
-                    # now do embeddings for each value
-                    assert isinstance(val, list)
-                    node_key = tuple([alias])
-                    alias_est = self._get_pg_est(subsetgraph.nodes()[node_key])
-                    curfeats = []
-                    for word in val:
-                        pf2 = copy.deepcopy(pfeats)
-                        self._handle_categorical_feature(pf2,
-                                pred_idx_start, col, [word])
-                        curfeats.append(pf2)
-                        assert pf2[-1] == 0.0
-                        assert pf2[-2] == 0.0
-                        pf2[-2] = alias_est
-                        subp_est = self._get_pg_est(subsetgraph.nodes()[subplan])
-                        pf2[-1] = subp_est
-
-                    if self.embedding_pooling == "sum":
-                        pooled_feats = np.sum(np.array(curfeats), axis=0)
-                        allcurpfeats.append(pooled_feats)
-                    else:
-                        allcurpfeats += curfeats
-
-        # add the appropriate postgresql estimate for this table in the
-        # subplan; Note that the last elements are reserved for the
-        # heuristic estimates for both continuous / categorical
-        # features
-        if self.heuristic_features \
-                and toaddpfeats:
-            node_key = tuple([alias])
-            alias_est = self._get_pg_est(subsetgraph.nodes()[node_key])
-            assert pfeats[-1] == 0.0
-            assert pfeats[-2] == 0.0
-            pfeats[-2] = alias_est
-            subp_est = self._get_pg_est(subsetgraph.nodes()[subplan])
-            pfeats[-1] = subp_est
-
-        if toaddpfeats:
-            allcurpfeats.append(pfeats)
-
-        return allcurpfeats
-
     def _handle_continuous_feature(self, pfeats, pred_idx_start,
             col, val):
         '''
@@ -909,8 +894,11 @@ class Featurizer():
         hashed features;
         '''
         col_info = self.column_stats[col]
-        num_buckets = min(self.max_discrete_featurizing_buckets,
-                col_info["num_values"])
+        if self.featurization_type == "combined":
+            num_buckets = min(self.max_like_featurizing_buckets,
+                    col_info["num_values"])
+        else:
+            num_buckets = self.max_discrete_featurizing_buckets
 
         if self.feat_mcvs and col in self.mcvs:
             mcvs = self.mcvs[col]
@@ -963,12 +951,12 @@ class Featurizer():
             col, val):
         assert len(val) == 1
         col_info = self.column_stats[col]
-        num_buckets = min(self.max_like_featurizing_buckets,
-                col_info["num_values"])
 
-        # if self.separate_ilike_bins:
-            # first half of spaces reserved for "IN" predicates
-        pred_idx_start += num_buckets
+        if self.featurization_type == "combined":
+            num_buckets = min(self.max_like_featurizing_buckets,
+                    col_info["num_values"])
+        else:
+            num_buckets = self.max_like_featurizing_buckets
 
         regex_val = val[0].replace("%","")
         pred_idx = deterministic_hash(regex_val) % num_buckets
@@ -998,35 +986,31 @@ class Featurizer():
 
     def _handle_join_features(self, join_str):
         join_str = join_str.replace(" ", "")
-        if self.join_features == "onehot_tables":
-            jfeats  = np.zeros(self.join_features_len)
-            keys = join_str.split("=")
-            for key in keys:
-                curalias = key[0:key.find(".")]
-                curtab = self.aliases[curalias]
-                tidx = self.table_featurizer[curtab]
-                jfeats[tidx] = 1.0
-            return jfeats
 
-        elif self.join_features == "onehot":
-            jfeats  = np.zeros(self.join_features_len)
+        use_onehot = "onehot" in self.join_features
+        use_stats = "stats" in self.join_features
+        jfeats  = np.zeros(self.join_features_len)
+
+        if use_onehot:
             if not self.feat_separate_alias:
-                join_str = ''.join([ck for ck in join_str if not ck.isdigit()])
+                join_str2 = ''.join([ck for ck in join_str if not ck.isdigit()])
+            else:
+                join_str2 = join_str
 
-            keys = join_str.split("=")
+            keys = join_str2.split("=")
             keys.sort()
             keys = ",".join(keys)
             if keys not in self.join_featurizer:
                 print("join_str: {} not found in featurizer".format(join_str))
-                return jfeats
-            jfeats[self.join_featurizer[keys]] = 1.00
-            return jfeats
+                # return jfeats
+            else:
+                jfeats[self.join_featurizer[keys]] = 1.00
 
-        elif self.join_features == "stats":
-            jfeats = np.zeros(self.join_features_len)
+        if use_stats:
+            jstart,_ = self.featurizer_type_idxs["join_stats"]
+
             join_keys = join_str.split("=")
             ordered_join_keys = [None]*2
-
             found_primary_key = False
             join_keys.sort()
             for ji, joinkey in enumerate(join_keys):
@@ -1045,9 +1029,9 @@ class Featurizer():
                 ordered_join_keys[ji] = joinkey
 
             if found_primary_key:
-                jfeats[0] = 1.0
+                jfeats[jstart+0] = 1.0
             else:
-                jfeats[1] = 1.0
+                jfeats[jstart+1] = 1.0
 
             key1 = ordered_join_keys[0]
             key2 = ordered_join_keys[1]
@@ -1055,40 +1039,118 @@ class Featurizer():
             jk2 = ''.join([ck for ck in key2 if not ck.isdigit()])
 
             if jk1 == jk2:
-                jfeats[2] = 1.0
+                jfeats[jstart+2] = 1.0
             else:
-                jfeats[2] = 0.0
+                jfeats[jstart+2] = 0.0
 
-            jfeats[3] = float(self.join_key_stats[key1]["distinct"]) \
+            jfeats[jstart+3] = float(self.join_key_stats[key1]["distinct"]) \
                     / self.join_key_stats[key2]["distinct"]
 
             for ji, joinkey in enumerate(ordered_join_keys):
-                sidx = 4 + ji*len(self.join_key_stat_names)
+                sidx = jstart + 4 + ji*len(self.join_key_stat_names)
                 statdata = self.join_key_stats[joinkey]
                 for si, statname in enumerate(self.join_key_stat_names):
                     val = statdata[statname]
                     statmean, statstd = self.join_key_normalizers[statname]
                     jfeats[sidx+si] = (val-statmean) / statstd
 
-            return jfeats
-        else:
-            assert False
+        return jfeats
+
+        # if self.join_features == "onehot_tables":
+            # jfeats  = np.zeros(self.join_features_len)
+            # keys = join_str.split("=")
+            # for key in keys:
+                # curalias = key[0:key.find(".")]
+                # curtab = self.aliases[curalias]
+                # tidx = self.table_featurizer[curtab]
+                # jfeats[tidx] = 1.0
+            # return jfeats
+
+        # elif self.join_features == "onehot":
+            # jfeats  = np.zeros(self.join_features_len)
+            # if not self.feat_separate_alias:
+                # join_str = ''.join([ck for ck in join_str if not ck.isdigit()])
+
+            # keys = join_str.split("=")
+            # keys.sort()
+            # keys = ",".join(keys)
+            # if keys not in self.join_featurizer:
+                # print("join_str: {} not found in featurizer".format(join_str))
+                # return jfeats
+            # jfeats[self.join_featurizer[keys]] = 1.00
+            # return jfeats
+
+        # elif self.join_features == "stats":
+            # jfeats = np.zeros(self.join_features_len)
+            # join_keys = join_str.split("=")
+            # ordered_join_keys = [None]*2
+
+            # found_primary_key = False
+            # join_keys.sort()
+            # for ji, joinkey in enumerate(join_keys):
+                # if joinkey in self.primary_join_keys:
+                    # ordered_join_keys[0] = joinkey
+                    # found_primary_key = True
+                    # other_key = None
+                    # for joinkey2 in join_keys:
+                        # # joinkey2 = joinkey2.strip()
+                        # if joinkey2 != joinkey:
+                            # other_key = joinkey2
+                    # assert other_key is not None
+                    # ordered_join_keys[1] = other_key
+                    # break
+
+                # ordered_join_keys[ji] = joinkey
+
+            # if found_primary_key:
+                # jfeats[0] = 1.0
+            # else:
+                # jfeats[1] = 1.0
+
+            # key1 = ordered_join_keys[0]
+            # key2 = ordered_join_keys[1]
+            # jk1 = ''.join([ck for ck in key1 if not ck.isdigit()])
+            # jk2 = ''.join([ck for ck in key2 if not ck.isdigit()])
+
+            # if jk1 == jk2:
+                # jfeats[2] = 1.0
+            # else:
+                # jfeats[2] = 0.0
+
+            # jfeats[3] = float(self.join_key_stats[key1]["distinct"]) \
+                    # / self.join_key_stats[key2]["distinct"]
+
+            # for ji, joinkey in enumerate(ordered_join_keys):
+                # sidx = 4 + ji*len(self.join_key_stat_names)
+                # statdata = self.join_key_stats[joinkey]
+                # for si, statname in enumerate(self.join_key_stat_names):
+                    # val = statdata[statname]
+                    # statmean, statstd = self.join_key_normalizers[statname]
+                    # jfeats[sidx+si] = (val-statmean) / statstd
+
+            # return jfeats
+        # else:
+            # assert False
 
     def _update_set_column_features(self, col, pfeats):
         assert col in self.column_stats
-        if self.set_column_feature == "onehot":
+        use_onehot = "onehot" in self.set_column_feature
+        use_stats = "stats" in self.set_column_feature
+
+        if use_onehot:
+            feat_start,_ = self.featurizer_type_idxs["col_onehot"]
             # which column does the current feature belong to
             cidx = self.columns_onehot_idx[col]
-            pfeats[cidx] = 1.0
+            pfeats[feat_start + cidx] = 1.0
             # feat_idx_start += len(self.columns_onehot_idx)
-        elif self.set_column_feature == "stats":
-            # for ji, joinkey in enumerate(ordered_join_keys):
-            sidx = 0
+
+        if use_stats:
+            feat_start,_ = self.featurizer_type_idxs["col_stats"]
             statdata = self.join_key_stats[col]
             for si, statname in enumerate(self.join_key_stat_names):
                 val = statdata[statname]
                 statmean, statstd = self.join_key_normalizers[statname]
-                pfeats[sidx+si] = (val-statmean) / statstd
+                pfeats[feat_start+si] = (val-statmean) / statstd
 
     def _handle_single_col(self, col, val,
             alias_est, subp_est,
@@ -1096,49 +1158,37 @@ class Featurizer():
 
         ret_feats = []
         feat_idx_start = 0
+
         pfeats = np.zeros(self.max_pred_len)
-
-        # assert col in self.column_stats
-        # if self.set_column_feature == "onehot":
-            # # which column does the current feature belong to
-            # cidx = self.columns_onehot_idx[col]
-            # pfeats[cidx] = 1.0
-            # feat_idx_start += len(self.columns_onehot_idx)
-        # elif self.set_column_feature == "stats":
-            # print("handle stats featurizing for columns")
-            # pdb.set_trace()
-
         self._update_set_column_features(col, pfeats)
-        feat_idx_start += self.set_column_features_len
 
-        # # set comparison operator 1-hot value, same for all types
+        # feat_idx_start += self.set_column_features_len
+
+        # set comparison operator 1-hot value, same for all types
+        cmp_start,_ = self.featurizer_type_idxs["cmp_op"]
         cmp_idx = self.cmp_ops_onehot[cmp_op]
-        try:
-            pfeats[feat_idx_start + cmp_idx] = 1.00
-        except:
-            print(feat_idx_start)
-            pdb.set_trace()
+        pfeats[cmp_start + cmp_idx] = 1.00
 
-        pred_idx_start = feat_idx_start + len(self.cmp_ops)
         col_info = self.column_stats[col]
-
         toaddpfeats = True
         if continuous:
-            self._handle_continuous_feature(pfeats, pred_idx_start, col, val)
+            cstart,_ = self.featurizer_type_idxs["constant_continuous"]
+            self._handle_continuous_feature(pfeats, cstart, col, val)
             ret_feats.append(pfeats)
         else:
-            # if self.separate_cont_bins:
-            pred_idx_start += \
-                    self.continuous_feature_size
-
             if "like" in cmp_op:
+                lstart,_ = self.featurizer_type_idxs["constant_like"]
                 self._handle_ilike_feature(pfeats,
-                        pred_idx_start, col, val)
+                        lstart, col, val)
             else:
+                # look at _handle_ilike_feature to know how its used
+                # pred_idx_start += self.max_like_featurizing_buckets + 2
+                dstart,_ = self.featurizer_type_idxs["constant_discrete"]
+
                 if self.embedding_fn is None \
                         or cmp_op == "eq":
                     self._handle_categorical_feature(pfeats,
-                            pred_idx_start, col, val)
+                            dstart, col, val)
                 else:
                     toaddpfeats = False
                     # now do embeddings for each value
@@ -1149,7 +1199,7 @@ class Featurizer():
                     for word in val:
                         pf2 = copy.deepcopy(pfeats)
                         self._handle_categorical_feature(pf2,
-                                pred_idx_start, col, [word])
+                                dstart, col, [word])
                         curfeats.append(pf2)
                         assert pf2[-1] == 0.0
                         assert pf2[-2] == 0.0
@@ -1172,6 +1222,10 @@ class Featurizer():
             assert pfeats[-2] == 0.0
             pfeats[-2] = alias_est
             pfeats[-1] = subp_est
+            # test:
+            hstart,_ = self.featurizer_type_idxs["heuristic_ests"]
+            assert pfeats[hstart] == alias_est
+            assert pfeats[hstart+1] == subp_est
 
         if toaddpfeats:
             ret_feats.append(pfeats)
@@ -1233,11 +1287,6 @@ class Featurizer():
             if not self.pred_features:
                 continue
             aliasinfo = joingraph.nodes()[alias]
-            # if "implied_pred_cols" in aliasinfo and \
-                # len(aliasinfo["implied_pred_cols"]) > 0:
-                # print(aliasinfo)
-                # pdb.set_trace()
-
             if len(aliasinfo["pred_cols"]) == 0:
                 continue
 
@@ -1245,25 +1294,28 @@ class Featurizer():
             alias_est = self._get_pg_est(subsetgraph.nodes()[node_key])
             subp_est = self._get_pg_est(subsetgraph.nodes()[subplan])
 
+            seencols = set()
             for ci, col in enumerate(aliasinfo["pred_cols"]):
-                if col not in self.featurizer:
-                    print("col: {} not found in featurizer".format(col))
+                if col not in self.column_stats:
+                    print("col: {} not found in column stats".format(col))
                     continue
+
                 allvals = aliasinfo["pred_vals"][ci]
                 if isinstance(allvals, dict):
                     allvals = allvals["literal"]
                 cmp_op = aliasinfo["pred_types"][ci]
-                _, _, continuous = self.featurizer[col]
+                continuous = self.column_stats[col]["continuous"]
+
+                if continuous and col in seencols:
+                    continue
+                seencols.add(col)
                 pfeats = self._handle_single_col(col,allvals,
                         alias_est, subp_est,
                         cmp_op,
                         continuous)
                 allpredfeats += pfeats
 
-                if continuous:
-                    # have repeated the same values in the parsing;
-                    break
-
+        ## FIXME: need to test this
         # using mcvs for implied preds
         for alias in subplan:
             if not self.implied_pred_features:

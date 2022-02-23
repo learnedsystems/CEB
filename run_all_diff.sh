@@ -1,10 +1,14 @@
 ALG=$1
 DECAY=$2
 BUCKETS=$3
+BUCKETS_LIKE=$BUCKETS
+LOSS_FUNC=$4
+SEED=$5
+EVAL_EPOCH=$6
+MAX_EPOCHS=$7
 
 LR=0.0001
-SEP=1
-MAX_EPOCHS=10
+SEP=0
 
 TABLE_FEATURES=1
 JOIN_FEATURES=onehot
@@ -17,7 +21,6 @@ ONEHOT_DROPOUT=0
 LOAD_PADDED=1
 WANDB_TAGS=default
 FEAT_ONLYSEEN=1
-LOSS_FUNC=mse
 #ALG=mscn
 
 ## keep fixed
@@ -32,12 +35,20 @@ FLOW_FEATS=0
 #SEEDS=(1 2 3 4 5 6 7 8 9 10)
 #SEEDS=(7 6 1 2 3 4 5 8 9 10)
 #SEEDS=(7 6 2 11 12 13 14 15 16 17 18 19 20)
-SEEDS=(11 12 13 14 15 16 17 18 19 20 7 6 2)
+#SEEDS=(7 6 2 11 12 13 14 15 16 17 18 19 20 1 3 4 5 8 9 10)
+
+if test $SEED == 0;
+then
+  SEEDS=(7 6 1 2 3 4 5 8 9 10)
+  #SEEDS=(1 2 3 4 5 6 7 8 9 10)
+else
+  SEEDS=(11 12 13 14 15 16 17 18 19 20)
+fi
 
 #SEEDS=(4 5 6 7 8 9 10)
-EVAL_EPOCH=100
+#EVAL_EPOCH=100
 
-EVAL_FNS=qerr,ppc
+EVAL_FNS=qerr,ppc,constraints
 
 RES_DIR=results/
 
@@ -58,6 +69,7 @@ for i in "${!SEEDS[@]}";
    --train_test_split_kind template \
    --diff_templates_seed ${SEEDS[$i]} \
    --max_discrete_featurizing_buckets $BUCKETS \
+   --max_like_featurizing_buckets $BUCKETS_LIKE \
    --weight_decay $DECAY \
    --alg $ALG \
    --load_padded_mscn_feats $LOAD_PADDED \

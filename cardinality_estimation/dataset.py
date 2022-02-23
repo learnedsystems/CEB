@@ -315,6 +315,7 @@ class QueryDataset(data.Dataset):
                 if not hasattr(attrvals, "__len__") and \
                     "method" not in str(attrvals):
                     attrs += str(k) + str(attrvals) + ";"
+
             attrs += "padded"+str(self.load_padded_mscn_feats)
             self.feathash = deterministic_hash(attrs)
             self.featdir = "./mscn_features/" + str(self.feathash)
@@ -376,7 +377,9 @@ class QueryDataset(data.Dataset):
             cur_info["num_tables"] = len(node)
             cur_info["dataset_idx"] = dataset_qidx + node_idx
             cur_info["query_idx"] = query_idx
+            cur_info["node"] = str(node)
             sample_info.append(cur_info)
+
         return sample_info
 
     def _get_query_features(self, qrep, dataset_qidx,
@@ -422,6 +425,7 @@ class QueryDataset(data.Dataset):
             cur_info["num_tables"] = len(node)
             cur_info["dataset_idx"] = dataset_qidx + node_idx
             cur_info["query_idx"] = query_idx
+            cur_info["node"] = str(node)
             sample_info.append(cur_info)
 
         return X,Y,sample_info

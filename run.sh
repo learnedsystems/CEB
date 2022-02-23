@@ -2,9 +2,10 @@
 #bash run_all_diff.sh 0
 #bash run_all_diff.sh 0 embeddings1.pkl
 
-BINS=$1
+SWA=swa
+BINS=10
 FLNORM=1
-EPOCHS=4
+EPOCHS=10
 QDIR=queries/imdb
 #TRAIN_TMPS=1a
 #TEST_TMPS=2a,2b
@@ -22,6 +23,7 @@ do
   for ei in "${!EMBS[@]}";
   do
   CMD="time python3 main.py --algs mscn \
+  --training_opt $SWA \
   --query_dir $QDIR \
   --loss_func_name mse \
   --lr 0.00001 \

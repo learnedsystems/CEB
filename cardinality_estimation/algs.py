@@ -22,6 +22,8 @@ from evaluation.flow_loss import FlowLoss, \
 from torch.utils import data
 from torch.nn.utils.clip_grad import clip_grad_norm_
 
+from torch.optim.swa_utils import AveragedModel, SWALR
+
 import wandb
 import random
 
@@ -35,6 +37,16 @@ def qloss_torch(yhat, ytrue):
     yhat = torch.max(yhat, epsilons)
 
     errors = torch.max( (ytrue / yhat), (yhat / ytrue))
+    return errors
+
+def mse_pos(yhat, ytrue):
+    assert yhat.shape == ytrue.shape
+    errors = torch.nn.MSELoss(reduction="none")(yhat, ytrue)
+
+    for i,err in enumerate(errors):
+        if yhat[i] < ytrue[i]:
+            errors[i] *= 10
+
     return errors
 
 
@@ -114,6 +126,9 @@ class NN(CardinalityEstimationAlg):
         elif self.loss_func_name == "mse":
             self.loss_func = torch.nn.MSELoss(reduction="none")
             self.load_query_together = False
+        elif self.loss_func_name == "mse_pos":
+            self.loss_func = mse_pos
+            self.load_query_together = False
         elif self.loss_func_name == "flowloss":
             self.loss_func = FlowLoss.apply
             self.load_query_together = True
@@ -175,6 +190,8 @@ class NN(CardinalityEstimationAlg):
 
             # do evaluations
             for efunc in self.eval_fn_handles:
+                if "Constraint" in str(efunc):
+                    continue
                 errors = efunc.eval(samples, preds,
                         args=None, samples_type=st,
                         result_dir=None,
@@ -182,7 +199,7 @@ class NN(CardinalityEstimationAlg):
                         db_name = self.featurizer.db_name,
                         db_host = self.featurizer.db_host,
                         port = self.featurizer.port,
-                        num_processes = -1,
+                        num_processes = 16,
                         alg_name = self.__str__(),
                         save_pdf_plans=False,
                         use_wandb=False)
@@ -269,6 +286,11 @@ class NN(CardinalityEstimationAlg):
         self.featurizer = kwargs["featurizer"]
         self.training_samples = training_samples
 
+        self.seen_subplans = set()
+        for sample in training_samples:
+            for node in sample["subset_graph"].nodes():
+                self.seen_subplans.add(str(node))
+
         self.trainds = self.init_dataset(training_samples,
                 self.load_query_together)
         self.trainloader = data.DataLoader(self.trainds,
@@ -303,14 +325,30 @@ class NN(CardinalityEstimationAlg):
         if "flow" in self.loss_func_name:
             self.update_flow_training_info()
 
+        if self.training_opt == "swa":
+            self.swa_net = AveragedModel(self.net)
+            # self.swa_start = self.swa_start
+            self.swa_scheduler = SWALR(self.optimizer, swa_lr=self.opt_lr)
+
         for self.epoch in range(0,self.max_epochs):
+
             if self.epoch % self.eval_epoch == 0 \
                     and self.epoch != 0:
                 self.periodic_eval()
+
             self.train_one_epoch()
+
+        if self.training_opt == "swa":
+            torch.optim.swa_utils.update_bn(self.trainloader, self.swa_net)
 
     def _eval_ds(self, ds, samples=None):
         torch.set_grad_enabled(False)
+
+        if self.training_opt == "swa":
+            net = self.swa_net
+        else:
+            net = self.net
+
         # important to not shuffle the data so correct order preserved!
         loader = data.DataLoader(ds,
                 batch_size=5000, shuffle=False,
@@ -323,16 +361,35 @@ class NN(CardinalityEstimationAlg):
         for (xbatch,ybatch,info) in loader:
             ybatch = ybatch.to(device, non_blocking=True)
 
+            if self.mask_unseen_subplans:
+                start = time.time()
+                pf_mask = torch.from_numpy(self.featurizer.pred_onehot_mask).float()
+                jf_mask = torch.from_numpy(self.featurizer.join_onehot_mask).float()
+                tf_mask = torch.from_numpy(self.featurizer.table_onehot_mask).float()
+
+                for ci,curnode in enumerate(info["node"]):
+                    if not curnode in self.seen_subplans:
+                        if self.featurizer.pred_features:
+                            xbatch["pred"][ci] = xbatch["pred"][ci] * pf_mask
+                        if self.featurizer.join_features:
+                            xbatch["join"][ci] = xbatch["join"][ci] * jf_mask
+                        if self.featurizer.table_features:
+                            xbatch["table"][ci] = xbatch["table"][ci] * tf_mask
+
+                # print("masking unseen subplans took: ", time.time()-start)
+
+
             if self.subplan_level_outputs:
-                pred = self.net(xbatch).squeeze(1)
+                pred = net(xbatch).squeeze(1)
                 idxs = torch.zeros(pred.shape,dtype=torch.bool)
                 for i, nt in enumerate(info["num_tables"]):
                     if nt >= 10:
                         nt = 10
+                    nt -= 1
                     idxs[i,nt] = True
                 pred = pred[idxs]
             else:
-                pred = self.net(xbatch).squeeze(1)
+                pred = net(xbatch).squeeze(1)
 
             allpreds.append(pred)
 
@@ -369,7 +426,6 @@ class NN(CardinalityEstimationAlg):
         start = time.time()
         backtimes = []
         ftimes = []
-
         epoch_losses = []
         for idx, (xbatch, ybatch,info) in enumerate(self.trainloader):
             # TODO: load_query_together things
@@ -377,22 +433,18 @@ class NN(CardinalityEstimationAlg):
 
             if self.onehot_dropout:
                 if random.random() < 0.5:
-                    tmsh = xbatch["tmask"].shape
-                    jmsh = xbatch["jmask"].shape
-                    xbatch["tmask"] = torch.zeros(tmsh)
-                    xbatch["jmask"] = torch.zeros(jmsh)
+                    # want to change the inputs by selectively zero-ing out
+                    # some things
+                    pf_mask = torch.from_numpy(self.featurizer.pred_onehot_mask).float()
+                    jf_mask = torch.from_numpy(self.featurizer.join_onehot_mask).float()
+                    tf_mask = torch.from_numpy(self.featurizer.table_onehot_mask).float()
 
-            ## debugging code
-            # if self.onehot_dropout == 2:
-                # if random.random() < 0.5:
-                    # print("onehot drop!")
-                    # xbatch["table"] = torch.zeros(xbatch["table"].shape)
-                    # print(torch.sum(xbatch["table"]))
-                # else:
-                    # print("not onehotdrop!")
-                    # print(torch.sum(xbatch["table"]))
-                    # preds = xbatch["pred"]
-                    # pdb.set_trace()
+                    if self.featurizer.pred_features:
+                        xbatch["pred"] = xbatch["pred"] * pf_mask
+                    if self.featurizer.join_features:
+                        xbatch["join"] = xbatch["join"] * jf_mask
+                    if self.featurizer.table_features:
+                        xbatch["table"] = xbatch["table"] * tf_mask
 
             if self.subplan_level_outputs:
                 pred = self.net(xbatch).squeeze(1)
@@ -400,6 +452,7 @@ class NN(CardinalityEstimationAlg):
                 for i, nt in enumerate(info["num_tables"]):
                     if nt >= 10:
                         nt = 10
+                    nt -= 1
                     idxs[i,nt] = True
                 pred = pred[idxs]
             else:
@@ -446,15 +499,47 @@ class NN(CardinalityEstimationAlg):
                 losses = self.loss_func(pred, ybatch)
                 loss = losses.sum() / len(losses)
 
-            bstart = time.time()
-            self.optimizer.zero_grad()
-            loss.backward()
-            backtimes.append(time.time()-bstart)
-
-            if self.clip_gradient is not None:
-                clip_grad_norm_(self.net.parameters(), self.clip_gradient)
-            self.optimizer.step()
             epoch_losses.append(loss.item())
+            # bstart = time.time()
+
+            if self.onehot_reg:
+                reg_loss = None
+                for name, param in self.net.named_parameters():
+                    if name == "sample_mlp1.weight":
+                        mask = torch.from_numpy(~np.array(self.featurizer.table_onehot_mask,
+                            dtype="bool")).float()
+                    elif name == "join_mlp1.weight":
+                        mask = torch.from_numpy(~np.array(self.featurizer.join_onehot_mask,
+                            dtype="bool")).float()
+                    elif name == "predicate_mlp1.weight":
+                        mask = torch.from_numpy(~np.array(self.featurizer.pred_onehot_mask,
+                            dtype="bool")).float()
+                    else:
+                        continue
+
+                    reg_param = param*mask
+                    if reg_loss is None:
+                        reg_loss = reg_param.norm(p=2)
+                    else:
+                        reg_loss = reg_loss + reg_param.norm(p=2)
+
+                if reg_loss is not None:
+                    loss += self.onehot_reg_decay * reg_loss
+
+            if self.training_opt == "swa":
+                self.optimizer.zero_grad()
+                loss.backward()
+                self.optimizer.step()
+                if self.epoch > self.swa_start:
+                    self.swa_net.update_parameters(self.net)
+                    self.swa_scheduler.step()
+            else:
+                self.optimizer.zero_grad()
+                loss.backward()
+                # backtimes.append(time.time()-bstart)
+                if self.clip_gradient is not None:
+                    clip_grad_norm_(self.net.parameters(), self.clip_gradient)
+                self.optimizer.step()
 
         curloss = round(float(sum(epoch_losses))/len(epoch_losses),6)
         print("Epoch {} took {}, Avg Loss: {}".format(self.epoch,

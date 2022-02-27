@@ -49,6 +49,36 @@ def mse_pos(yhat, ytrue):
 
     return errors
 
+def mse_ranknet(yhat, ytrue):
+    mseloss = torch.nn.MSELoss(reduction="mean")(yhat, ytrue)
+    rloss = ranknet_loss(yhat, ytrue)
+    # print(mseloss, rloss)
+    return mseloss + 0.1*rloss
+
+def ranknet_loss(batch_pred, batch_label):
+    '''
+    :param batch_preds: [batch, ranking_size] each row represents the relevance predictions for documents within a ltr_adhoc
+    :param batch_label:  [batch, ranking_size] each row represents the standard relevance grades for documents within a ltr_adhoc
+    :return:
+    '''
+    batch_pred = batch_pred.unsqueeze(0)
+    batch_label = batch_label.unsqueeze(0)
+    # batch_pred = batch_pred.T
+    # batch_label = batch_label.T
+    sigma = 1.0
+
+    batch_s_ij = torch.unsqueeze(batch_pred, dim=2) - torch.unsqueeze(batch_pred, dim=1)  # computing pairwise differences w.r.t. predictions, i.e., s_i - s_j
+
+    batch_p_ij = 1.0 / (torch.exp(-sigma * batch_s_ij) + 1.0)
+
+    batch_std_diffs = torch.unsqueeze(batch_label, dim=2) - torch.unsqueeze(batch_label, dim=1)  # computing pairwise differences w.r.t. standard labels, i.e., S_{ij}
+    batch_Sij = torch.clamp(batch_std_diffs, min=-1.0, max=1.0)  # ensuring S_{ij} \in {-1, 0, 1}
+    batch_std_p_ij = 0.5 * (1.0 + batch_Sij)
+
+    # about reduction, both mean & sum would work, mean seems straightforward due to the fact that the number of pairs differs from query to query
+    batch_loss = F.binary_cross_entropy(input=torch.triu(batch_p_ij, diagonal=1), target=torch.triu(batch_std_p_ij, diagonal=1), reduction='mean')
+
+    return batch_loss
 
 class CardinalityEstimationAlg():
 
@@ -135,6 +165,10 @@ class NN(CardinalityEstimationAlg):
             self.mb_size = 1
             self.num_workers = 1
             # self.collate_fn = None
+        elif self.loss_func_name == "mse+ranknet":
+            self.loss_func = mse_ranknet
+            self.load_query_together = True
+            self.mb_size = 1
         else:
             assert False
 
@@ -419,9 +453,22 @@ class NN(CardinalityEstimationAlg):
 
         return preds
 
+    def _get_onehot_mask(self, vec):
+        tmask = ~np.array(vec, dtype="bool")
+        ptrue = self.onehot_mask_truep
+        pfalse = 1-self.onehot_mask_truep
+
+        # probabilities are switched
+        bools = np.random.choice(a=[False, True], size=(len(tmask),),
+                p=[ptrue,pfalse])
+        tmask *= bools
+        tmask = ~tmask
+        tmask = torch.from_numpy(tmask).float()
+        return tmask
+
     def train_one_epoch(self):
-        # if self.loss_func_name == "flowloss":
-            # torch.set_num_threads(1)
+        if self.loss_func_name == "flowloss":
+            torch.set_num_threads(1)
 
         start = time.time()
         backtimes = []
@@ -431,7 +478,7 @@ class NN(CardinalityEstimationAlg):
             # TODO: load_query_together things
             ybatch = ybatch.to(device, non_blocking=True)
 
-            if self.onehot_dropout:
+            if self.onehot_dropout == 1:
                 if random.random() < 0.5:
                     # want to change the inputs by selectively zero-ing out
                     # some things
@@ -445,6 +492,21 @@ class NN(CardinalityEstimationAlg):
                         xbatch["join"] = xbatch["join"] * jf_mask
                     if self.featurizer.table_features:
                         xbatch["table"] = xbatch["table"] * tf_mask
+
+            elif self.onehot_dropout == 2:
+                # pf_mask = torch.from_numpy(self.featurizer.pred_onehot_mask).float()
+                # jf_mask = torch.from_numpy(self.featurizer.join_onehot_mask).float()
+                # tf_mask = torch.from_numpy(self.featurizer.table_onehot_mask).float()
+                tf_mask = self._get_onehot_mask(self.featurizer.table_onehot_mask)
+                jf_mask = self._get_onehot_mask(self.featurizer.join_onehot_mask)
+                pf_mask = self._get_onehot_mask(self.featurizer.pred_onehot_mask)
+
+                if self.featurizer.pred_features:
+                    xbatch["pred"] = xbatch["pred"] * pf_mask
+                if self.featurizer.join_features:
+                    xbatch["join"] = xbatch["join"] * jf_mask
+                if self.featurizer.table_features:
+                    xbatch["table"] = xbatch["table"] * tf_mask
 
             if self.subplan_level_outputs:
                 pred = self.net(xbatch).squeeze(1)
@@ -497,7 +559,10 @@ class NN(CardinalityEstimationAlg):
                 # pdb.set_trace()
             else:
                 losses = self.loss_func(pred, ybatch)
-                loss = losses.sum() / len(losses)
+                if len(losses.shape) != 0:
+                    loss = losses.sum() / len(losses)
+                else:
+                    loss = losses
 
             epoch_losses.append(loss.item())
             # bstart = time.time()

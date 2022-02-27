@@ -6,6 +6,7 @@ LOSS_FUNC=$4
 SEED=$5
 EVAL_EPOCH=$6
 MAX_EPOCHS=$7
+LOAD_QUERY_TOGTHER=$8
 
 LR=0.0001
 SEP=0
@@ -39,7 +40,7 @@ FLOW_FEATS=0
 
 if test $SEED == 0;
 then
-  SEEDS=(7 6 1 2 3 4 5 8 9 10)
+  SEEDS=(7 6 1 2 3 4 5 8 9 10 13 14 19 20)
   #SEEDS=(1 2 3 4 5 6 7 8 9 10)
 else
   SEEDS=(11 12 13 14 15 16 17 18 19 20)
@@ -53,7 +54,6 @@ EVAL_FNS=qerr,ppc,constraints
 RES_DIR=results/
 
 HLS=128
-LOAD_QUERY_TOGTHER=0
 
 for i in "${!SEEDS[@]}";
   do

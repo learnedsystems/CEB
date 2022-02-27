@@ -136,6 +136,7 @@ def get_alg(alg):
                 load_query_together = args.load_query_together,
                 result_dir = args.result_dir,
                 onehot_dropout=args.onehot_dropout,
+                onehot_mask_truep=args.onehot_mask_truep,
                 onehot_reg=args.onehot_reg,
                 onehot_reg_decay=args.onehot_reg_decay,
                 # num_hidden_layers=args.num_hidden_layers,
@@ -485,8 +486,12 @@ def read_flags():
 
     parser.add_argument("--onehot_dropout", type=int, required=False,
             default=0)
+    parser.add_argument("--onehot_mask_truep", type=float, required=False,
+            default=0.5)
+
     parser.add_argument("--onehot_reg", type=int, required=False,
             default=0)
+
     parser.add_argument("--onehot_reg_decay", type=float, required=False,
             default=0.1)
     parser.add_argument("--subplan_level_outputs", type=int, required=False,

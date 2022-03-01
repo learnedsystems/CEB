@@ -788,12 +788,8 @@ void get_costs11(float *ests, float *totals,
 
   if (nilj[i] == 1 || nilj[i] == 4) {
     nilj_cost = card2 + NILJ_CONSTANT*card1;
-    //nilj_cost = card2 + card3;
-    //nilj_cost = card2;
   } else if (nilj[i] == 2) {
     nilj_cost = card1 + NILJ_CONSTANT*card2;
-    //nilj_cost = card1 + card3;
-    //nilj_cost = card1;
   } else {
     printf("should not have happened!\n");
     exit(-1);
@@ -812,7 +808,7 @@ void get_costs11(float *ests, float *totals,
           dgdxt[node2*num_edges + i] = - max_val / costs[i];
       } else {
         // index nested loop join
-        if (nilj[i]  == 1) {
+        if (nilj[i]  == 1 || nilj[i] == 4) {
             dgdxt[node1*num_edges + i] = - (max_val*card1*NILJ_CONSTANT) / (cost*cost);
             dgdxt[node2*num_edges + i] = - (max_val*card2) / (cost*cost);
             dgdxt[head_node*num_edges + i] = 0.0;

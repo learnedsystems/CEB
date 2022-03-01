@@ -354,6 +354,7 @@ class Featurizer():
         '''
         self.featurizer = {}
         self.num_cols = len(self.column_stats)
+
         all_cols = list(self.column_stats.keys())
         all_cols.sort()
 
@@ -1138,11 +1139,12 @@ class Featurizer():
         use_stats = "stats" in self.set_column_feature
 
         if use_onehot:
+            # if not self.feat_separate_alias:
+                # col = ''.join([ck for ck in col if not ck.isdigit()])
             feat_start,_ = self.featurizer_type_idxs["col_onehot"]
             # which column does the current feature belong to
             cidx = self.columns_onehot_idx[col]
             pfeats[feat_start + cidx] = 1.0
-            # feat_idx_start += len(self.columns_onehot_idx)
 
         if use_stats:
             feat_start,_ = self.featurizer_type_idxs["col_stats"]
@@ -1293,6 +1295,8 @@ class Featurizer():
             node_key = tuple([alias])
             alias_est = self._get_pg_est(subsetgraph.nodes()[node_key])
             subp_est = self._get_pg_est(subsetgraph.nodes()[subplan])
+            # print("DEBUGGING subplan est = 0")
+            # subp_est = 0.0
 
             seencols = set()
             for ci, col in enumerate(aliasinfo["pred_cols"]):

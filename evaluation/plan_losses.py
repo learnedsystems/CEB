@@ -207,7 +207,8 @@ def compute_cost_pg_single(queries, join_graphs, true_cardinalities,
                 user=user,password=pwd)
 
     # can take a lot of space
-    if use_qplan_cache:
+    # if use_qplan_cache:
+    if False:
         archive_fn = "./.lc_cache/sql_costs_" + cost_model
         sql_costs_archive = klepto.archives.dir_archive(archive_fn,
                 cached=True, serialized=True)

@@ -25,6 +25,7 @@ import jax.numpy as jp
 from jax import jacfwd, jacrev
 # import tensorflow as tf
 import pyamg
+from .cost_model import *
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -40,6 +41,7 @@ else:
 
 DEBUG_JAX = False
 DEBUG = False
+SOURCE_NODE_CONST = 100000
 
 def get_costs_jax(card1, card2, card3, nilj, cost_model,
         total1, total2,penalty, rc, rf):
@@ -49,8 +51,10 @@ def get_costs_jax(card1, card2, card3, nilj, cost_model,
             nilj_cost = card2 + NILJ_CONSTANT*card1;
         elif nilj == 2:
             nilj_cost = card1 + NILJ_CONSTANT*card2;
-        elif nilj == 3:
-            nilj_cost = card1 + card2;
+        # elif nilj == 3:
+            # nilj_cost = card1 + card2;
+        elif nilj == 4:
+            nilj_cost = card2 + NILJ_CONSTANT*card1;
         else:
             assert False
         cost2 = card1*card2
@@ -64,21 +68,27 @@ def get_costs_jax(card1, card2, card3, nilj, cost_model,
     return cost
 
 def get_subsetg_vectors(sample, cost_model, source_node=None,
-        mysql_costs=True):
+        mysql_costs=False):
     start = time.time()
+    # used for the mysql cost model
+    edges_read_costs = None
+    edges_rows_fetched = None
+
     node_dict = {}
 
-    # edge_dict = {}
-    nodes = list(sample["subset_graph"].nodes())
+    subsetg = sample["subset_graph"]
+    add_single_node_edges(subsetg, SOURCE_NODE)
 
+    nodes = list(subsetg.nodes())
     if SOURCE_NODE in nodes:
         nodes.remove(SOURCE_NODE)
+
     nodes.sort()
 
-    subsetg = sample["subset_graph"]
     join_graph = sample["join_graph"]
     edges = list(sample["subset_graph"].edges())
     edges.sort()
+
     N = len(nodes)
     num_edges = len(edges)
     M = len(edges)
@@ -111,6 +121,7 @@ def get_subsetg_vectors(sample, cost_model, source_node=None,
             if edges_read_costs is not None:
                 edges_read_costs[edgei] = 1.0
                 edges_rows_fetched[edgei] = 1.0
+            continue
 
         edges_head[edgei] = node_dict[edge[0]]
         edges_tail[edgei] = node_dict[edge[1]]
@@ -132,8 +143,26 @@ def get_subsetg_vectors(sample, cost_model, source_node=None,
         edges_cost_node1[edgei] = node_dict[node1]
         edges_cost_node2[edgei] = node_dict[node2]
 
+        ## FIXME: simplify these conditions
         if len(node1) == 1:
+            # nilj[edgei] = 1
             nilj[edgei] = 4
+
+            ## version from lc
+            # fkey_join = True
+            # join_edge_data = join_graph[node1[0]]
+            # for other_node in node2:
+                # if other_node not in join_edge_data:
+                    # continue
+                # jc = join_edge_data[other_node]["join_condition"]
+                # if "!=" in jc:
+                    # fkey_join = False
+                    # break
+
+            # if fkey_join:
+                # nilj[edgei] = 2
+            # else:
+                # nilj[edgei] = 3
 
         elif len(node2) == 1:
             fkey_join = True
@@ -158,9 +187,6 @@ def get_subsetg_vectors(sample, cost_model, source_node=None,
     nilj = np.array(nilj, dtype=np.int32)
     edges_penalties = np.array(edges_penalties, dtype=np.float32)
 
-    # used for the mysql cost model
-    edges_read_costs = None
-    edges_rows_fetched = None
     if edges_read_costs is not None:
         edges_read_costs = np.array(edges_read_costs, dtype=np.float32)
         edges_rows_fetched = np.array(edges_rows_fetched, dtype = np.float32)
@@ -260,8 +286,15 @@ def get_optimization_variables_jax(yhat, totals, min_val, max_val,
         total1 = totals[node1]
         total2 = totals[node2]
         penalty = penalties[i]
+        if edges_read_costs is not None:
+            rc = edges_read_costs[i]
+            rf = edges_rows_fetched[i]
+        else:
+            rc = 0
+            rf = 0
+
         cost = get_costs_jax(card1, card2, card3, nilj[i], cost_model, total1,
-                total2, penalty, edges_read_costs[i], edges_rows_fetched[i])
+                total2, penalty, rc, rf)
         assert cost != 0.0
         costs = jax.ops.index_update(costs, jax.ops.index[i], cost)
 
@@ -498,8 +531,15 @@ def single_forward2(yhat, totals, edges_head, edges_tail, edges_cost_node1,
 
     Gv2 = to_variable(Gv2).float().to(device)
     G2 = to_variable(G2).float().to(device)
-    invG = torch.pinverse(G2)
-    # invG = np.linalg.inv(G2)
+
+    invstart = time.time()
+    # might fail if it is not invertible
+    try:
+        invG = torch.inverse(G2)
+    except:
+        invG = torch.pinverse(G2)
+
+    # print("inverse took: ", time.time()-invstart)
     invG = to_variable(invG).float()
 
     # print("inversion took: ", time.time() - start)
@@ -596,8 +636,8 @@ def single_backward(Q, invG,
     dfdg_start = time.time()
     num_threads = int(len(edges_head) / 400)
     num_threads = max(1, num_threads)
-    num_threads = min(8, num_threads)
-    # num_threads = 1
+    num_threads = min(32, num_threads)
+
     fl_cpp.get_dfdg(
             c_int(len(edges_head)),
             c_int(len(v)),
@@ -632,7 +672,7 @@ class FlowLoss(Function):
         '''
         # Note: do flow loss computation and save G, invG etc. for backward
         # pass
-        # torch.set_num_threads(1)
+        torch.set_num_threads(1)
         start = time.time()
         yhat = yhat.detach()
         ctx.pool = pool
@@ -668,6 +708,8 @@ class FlowLoss(Function):
         ctx.invGs.append(res[2])
         ctx.Qs.append(res[3])
         ctx.vs.append(res[4])
+        # print("Num ctx.Qs in forward: ", len(ctx.Qs))
+        assert len(ctx.Qs) == 1
 
         if normalize_flow_loss == 1:
             loss = loss / opt_flow_loss
@@ -679,8 +721,8 @@ class FlowLoss(Function):
         '''
         return gradients wrt preds, and bunch of Nones
         '''
-        # torch.set_grad_enabled(False)
-        # torch.set_num_threads(1)
+        torch.set_grad_enabled(False)
+        torch.set_num_threads(1)
         start = time.time()
         assert ctx.needs_input_grad[0]
         assert not ctx.needs_input_grad[1]

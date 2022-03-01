@@ -257,9 +257,13 @@ def get_query_fns():
                         test_size=1-args.val_size,
                         random_state=args.seed)
 
-            cur_train_fns, cur_test_fns = train_test_split(qfns,
-                    test_size=args.test_size,
-                    random_state=args.seed)
+            if args.test_size == 0:
+                cur_test_fns = []
+                cur_train_fns = qfns
+            else:
+                cur_train_fns, cur_test_fns = train_test_split(qfns,
+                        test_size=args.test_size,
+                        random_state=args.seed)
 
         train_qfns += cur_train_fns
         val_qfns += cur_val_fns
@@ -304,7 +308,6 @@ def load_qdata(fns):
     return qreps
 
 def get_featurizer(trainqs, valqs, testqs):
-
     featurizer = Featurizer(args.user, args.pwd, args.db_name,
             args.db_host, args.port)
     featdata_fn = os.path.join(args.query_dir, "dbdata.json")
@@ -441,7 +444,7 @@ def read_flags():
     parser.add_argument("--pwd", type=str, required=False,
             default="password")
     parser.add_argument("--port", type=int, required=False,
-            default=5431)
+            default=5432)
 
     parser.add_argument("--result_dir", type=str, required=False,
             default="results")

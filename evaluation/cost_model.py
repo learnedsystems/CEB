@@ -18,7 +18,6 @@ def set_cost_model(cursor, cost_model):
         cursor.execute("SET max_parallel_workers_per_gather = 0")
 
         cursor.execute("SET enable_material = off")
-
         cursor.execute("SET enable_hashjoin = on")
         cursor.execute("SET enable_mergejoin = on")
         cursor.execute("SET enable_nestloop = on")

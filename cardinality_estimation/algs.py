@@ -309,6 +309,9 @@ class NN(CardinalityEstimationAlg):
             opt_flow_loss = left @ trueC @ right
             del trueC
 
+            # print(opt_flow_loss)
+            # pdb.set_trace()
+
             self.flow_training_info.append((subsetg_vectors, trueC_vec,
                     opt_flow_loss))
 
@@ -525,6 +528,7 @@ class NN(CardinalityEstimationAlg):
                 assert self.load_query_together
                 qstart = 0
                 losses = []
+
                 for cur_info in info:
                     if "query_idx" not in cur_info[0]:
                         print(cur_info)
@@ -535,8 +539,11 @@ class NN(CardinalityEstimationAlg):
                             self.flow_training_info[qidx]
 
                     assert len(subsetg_vectors) == 10
-
                     fstart = time.time()
+
+                    # print(pred)
+                    # print("before flow loss!")
+                    # pdb.set_trace()
                     cur_loss = self.loss_func(
                             pred[qstart:qstart+len(cur_info)],
                             ybatch[qstart:qstart+len(cur_info)],

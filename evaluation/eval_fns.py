@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from .plan_losses import PPC, PlanCost,get_leading_hint
+from .cost_model import *
 from query_representation.utils import deterministic_hash,make_dir
 from query_representation.viz import *
 from matplotlib.backends.backend_pdf import PdfPages
@@ -403,6 +404,8 @@ class PostgresPlanCost(EvalFunc):
             trues = {}
             predq = preds[i]
             for node, node_info in qrep["subset_graph"].nodes().items():
+                if node == SOURCE_NODE:
+                    continue
                 est_card = predq[node]
                 alias_key = ' '.join(node)
                 trues[alias_key] = node_info["cardinality"]["actual"]

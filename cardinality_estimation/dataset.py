@@ -306,7 +306,8 @@ class QueryDataset(data.Dataset):
         self.save_mscn_feats = False
 
         if self.load_padded_mscn_feats:
-            self.save_mscn_feats = True
+            print("DEBUG: not saving mscn features")
+            # self.save_mscn_feats = True
             fkeys = list(dir(self.featurizer))
             fkeys.sort()
             attrs = ""
@@ -428,6 +429,11 @@ class QueryDataset(data.Dataset):
             cur_info["node"] = str(node)
             sample_info.append(cur_info)
 
+        # print(Y)
+        # print(X[0]["table"].shape)
+        # print(X[0]["join"].shape)
+        # print(X[0]["pred"].shape)
+        # pdb.set_trace()
         return X,Y,sample_info
 
     def _get_feature_vectors_par(self, samples):
@@ -553,6 +559,12 @@ class QueryDataset(data.Dataset):
 
         Y = to_variable(Y, requires_grad=False).float()
 
+        # print(Y)
+        # print(X[0]["table"].shape)
+        # print(X[0]["join"].shape)
+        # print(X[0]["pred"].shape)
+        # print(X[0]["tmask"].shape)
+        # pdb.set_trace()
         return X,Y,sample_info
 
     def __len__(self):

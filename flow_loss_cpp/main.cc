@@ -812,7 +812,7 @@ void get_costs11(float *ests, float *totals,
           dgdxt[node2*num_edges + i] = - max_val / costs[i];
       } else {
         // index nested loop join
-        if (nilj[i]  == 1) {
+        if (nilj[i]  == 1 || nilj[i] == 4) {
             dgdxt[node1*num_edges + i] = - (max_val*card1*NILJ_CONSTANT) / (cost*cost);
             dgdxt[node2*num_edges + i] = - (max_val*card2) / (cost*cost);
             dgdxt[head_node*num_edges + i] = 0.0;

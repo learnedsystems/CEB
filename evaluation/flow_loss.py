@@ -498,8 +498,13 @@ def single_forward2(yhat, totals, edges_head, edges_tail, edges_cost_node1,
 
     Gv2 = to_variable(Gv2).float().to(device)
     G2 = to_variable(G2).float().to(device)
-    invG = torch.pinverse(G2)
-    # invG = np.linalg.inv(G2)
+
+    # might not be invertible
+    try:
+        invG = torch.inverse(G2)
+    except:
+        invG = torch.pinverse(G2)
+
     invG = to_variable(invG).float()
 
     # print("inversion took: ", time.time() - start)
@@ -596,7 +601,7 @@ def single_backward(Q, invG,
     dfdg_start = time.time()
     num_threads = int(len(edges_head) / 400)
     num_threads = max(1, num_threads)
-    num_threads = min(8, num_threads)
+    num_threads = min(16, num_threads)
     # num_threads = 1
     fl_cpp.get_dfdg(
             c_int(len(edges_head)),

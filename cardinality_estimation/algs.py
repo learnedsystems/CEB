@@ -52,7 +52,6 @@ def mse_pos(yhat, ytrue):
 def mse_ranknet(yhat, ytrue):
     mseloss = torch.nn.MSELoss(reduction="mean")(yhat, ytrue)
     rloss = ranknet_loss(yhat, ytrue)
-    # print(mseloss, rloss)
     return mseloss + 0.1*rloss
 
 def ranknet_loss(batch_pred, batch_label):

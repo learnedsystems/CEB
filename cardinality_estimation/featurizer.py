@@ -218,6 +218,9 @@ class Featurizer():
             for node, info in qrep["join_graph"].nodes(data=True):
                 for ci, col in enumerate(info["pred_cols"]):
                     # cur_columns.append(col)
+                    if not self.feat_separate_alias:
+                        col = ''.join([ck for ck in col if not ck.isdigit()])
+
                     if col not in self.seen_preds:
                         self.seen_preds[col] = set()
                     vals = info["pred_vals"][ci]
@@ -669,6 +672,23 @@ class Featurizer():
 
         if self.set_column_feature == "1":
             self.set_column_feature = "onehot"
+
+        # change the
+        if not self.feat_separate_alias:
+            newstats = {}
+            for k,v in self.column_stats.items():
+                newk = ''.join([ck for ck in k if not ck.isdigit()])
+                newstats[newk] = v
+            self.column_stats = newstats
+
+            jkey_stats = {}
+            for k,v in self.join_key_stats.items():
+                newk = ''.join([ck for ck in k if not ck.isdigit()])
+                jkey_stats[newk] = v
+            self.join_key_stats = jkey_stats
+
+            print("Updated stats to remove alias based columns")
+
 
     def init_feature_mapping(self):
 
@@ -1139,8 +1159,6 @@ class Featurizer():
         use_stats = "stats" in self.set_column_feature
 
         if use_onehot:
-            # if not self.feat_separate_alias:
-                # col = ''.join([ck for ck in col if not ck.isdigit()])
             feat_start,_ = self.featurizer_type_idxs["col_onehot"]
             # which column does the current feature belong to
             cidx = self.columns_onehot_idx[col]
@@ -1300,8 +1318,14 @@ class Featurizer():
 
             seencols = set()
             for ci, col in enumerate(aliasinfo["pred_cols"]):
+                # we should have updated self.column_stats etc. to be appropriately
+                # updated
+                if not self.feat_separate_alias:
+                    col = ''.join([ck for ck in col if not ck.isdigit()])
+
                 if col not in self.column_stats:
-                    print("col: {} not found in column stats".format(col))
+                    # print("col: {} not found in column stats".format(col))
+                    # assert False
                     continue
 
                 allvals = aliasinfo["pred_vals"][ci]

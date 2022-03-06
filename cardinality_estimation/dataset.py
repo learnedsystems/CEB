@@ -283,7 +283,8 @@ class QueryDataset(data.Dataset):
 
         self.save_mscn_feats = False
 
-        if self.load_padded_mscn_feats:
+        # if self.load_padded_mscn_feats:
+        if False:
             # print("DEBUG: not saving mscn features")
             self.save_mscn_feats = True
             fkeys = list(dir(self.featurizer))

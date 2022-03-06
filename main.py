@@ -381,7 +381,7 @@ def main():
 
     # set up wandb logging metrics
     if args.use_wandb:
-        wandb_tags = ["v10"]
+        wandb_tags = ["v11"]
         if args.wandb_tags is not None:
             wandb_tags += args.wandb_tags.split(",")
         wandb.init("ceb", config={},

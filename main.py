@@ -357,6 +357,7 @@ def get_featurizer(trainqs, valqs, testqs):
             heuristic_features = args.heuristic_features,
             featurization_type=feat_type,
             table_features=args.table_features,
+            flow_features = args.flow_features,
             join_features=args.join_features,
             set_column_feature=args.set_column_feature,
             max_discrete_featurizing_buckets=args.max_discrete_featurizing_buckets,
@@ -380,7 +381,7 @@ def main():
 
     # set up wandb logging metrics
     if args.use_wandb:
-        wandb_tags = ["v9"]
+        wandb_tags = ["v10"]
         if args.wandb_tags is not None:
             wandb_tags += args.wandb_tags.split(",")
         wandb.init("ceb", config={},
@@ -444,7 +445,7 @@ def read_flags():
     parser.add_argument("--pwd", type=str, required=False,
             default="password")
     parser.add_argument("--port", type=int, required=False,
-            default=5432)
+            default=5431)
 
     parser.add_argument("--result_dir", type=str, required=False,
             default="results")
@@ -490,7 +491,7 @@ def read_flags():
     parser.add_argument("--onehot_dropout", type=int, required=False,
             default=0)
     parser.add_argument("--onehot_mask_truep", type=float, required=False,
-            default=0.5)
+            default=0.8)
 
     parser.add_argument("--onehot_reg", type=int, required=False,
             default=0)
@@ -560,6 +561,8 @@ def read_flags():
             default="onehot")
     parser.add_argument("--set_column_feature", type=str, required=False,
             default="onehot")
+    parser.add_argument("--flow_features", type=int, required=False,
+            default=0)
 
     parser.add_argument("--max_discrete_featurizing_buckets", type=int, required=False,
             default=10)

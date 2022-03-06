@@ -1367,6 +1367,7 @@ class Featurizer():
             flow_features = self.get_flow_features(subplan,
                     qrep["subset_graph"], qrep["template_name"],
                     qrep["join_graph"])
+
         featdict["flow"] = flow_features
 
         return featdict

@@ -4,9 +4,12 @@ BUCKETS=$3
 BUCKETS_LIKE=$BUCKETS
 LOSS_FUNC=$4
 SEED=$5
-EVAL_EPOCH=$6
-MAX_EPOCHS=$7
-LOAD_QUERY_TOGTHER=$8
+ONEHOT_DROPOUT=$6
+TRUEP=$7
+
+EVAL_EPOCH=200
+MAX_EPOCHS=10
+LOAD_QUERY_TOGETHER=0
 
 LR=0.0001
 SEP=0
@@ -18,7 +21,6 @@ COLUMN_FEATURES=onehot
 #COLUMN_FEATURES=stats
 
 FEAT_MCV=0
-ONEHOT_DROPOUT=0
 LOAD_PADDED=1
 WANDB_TAGS=default
 FEAT_ONLYSEEN=1
@@ -60,6 +62,7 @@ for i in "${!SEEDS[@]}";
   CMD="time python3 main.py --algs $ALG \
    -n $N \
    --onehot_dropout $ONEHOT_DROPOUT \
+   --onehot_mask_truep $TRUEP \
    --no_regex_templates $NO_REGEX \
    --feat_onlyseen_preds $FEAT_ONLYSEEN \
    --wandb_tags $WANDB_TAGS \
@@ -73,7 +76,7 @@ for i in "${!SEEDS[@]}";
    --weight_decay $DECAY \
    --alg $ALG \
    --load_padded_mscn_feats $LOAD_PADDED \
-   --load_query_together $LOAD_QUERY_TOGTHER \
+   --load_query_together $LOAD_QUERY_TOGETHER \
    --eval_fns $EVAL_FNS \
    --loss_func $LOSS_FUNC \
    --test_size 0.5 \

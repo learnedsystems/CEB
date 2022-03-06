@@ -161,13 +161,15 @@ class NN(CardinalityEstimationAlg):
         elif self.loss_func_name == "flowloss":
             self.loss_func = FlowLoss.apply
             self.load_query_together = True
-            self.mb_size = 1
+            if self.mb_size > 16:
+                self.mb_size = 1
             self.num_workers = 1
             # self.collate_fn = None
         elif self.loss_func_name == "mse+ranknet":
             self.loss_func = mse_ranknet
             self.load_query_together = True
-            self.mb_size = 1
+            if self.mb_size > 16:
+                self.mb_size = 1
         else:
             assert False
 
@@ -476,6 +478,7 @@ class NN(CardinalityEstimationAlg):
         backtimes = []
         ftimes = []
         epoch_losses = []
+
         for idx, (xbatch, ybatch,info) in enumerate(self.trainloader):
             # TODO: load_query_together things
             ybatch = ybatch.to(device, non_blocking=True)
@@ -529,6 +532,10 @@ class NN(CardinalityEstimationAlg):
                 qstart = 0
                 losses = []
 
+                # print(self.mb_size)
+                # print(len(info))
+                # pdb.set_trace()
+
                 for cur_info in info:
                     if "query_idx" not in cur_info[0]:
                         print(cur_info)
@@ -541,9 +548,6 @@ class NN(CardinalityEstimationAlg):
                     assert len(subsetg_vectors) == 10
                     fstart = time.time()
 
-                    # print(pred)
-                    # print("before flow loss!")
-                    # pdb.set_trace()
                     cur_loss = self.loss_func(
                             pred[qstart:qstart+len(cur_info)],
                             ybatch[qstart:qstart+len(cur_info)],
@@ -558,11 +562,8 @@ class NN(CardinalityEstimationAlg):
                     losses.append(cur_loss)
                     qstart += len(cur_info)
 
-                assert len(losses) == 1
                 losses = torch.stack(losses)
                 loss = losses.sum() / len(losses)
-                # print("flowloss computations...")
-                # pdb.set_trace()
             else:
                 losses = self.loss_func(pred, ybatch)
                 if len(losses.shape) != 0:
@@ -571,7 +572,6 @@ class NN(CardinalityEstimationAlg):
                     loss = losses
 
             epoch_losses.append(loss.item())
-            # bstart = time.time()
 
             if self.onehot_reg:
                 reg_loss = None
@@ -605,9 +605,10 @@ class NN(CardinalityEstimationAlg):
                     self.swa_net.update_parameters(self.net)
                     self.swa_scheduler.step()
             else:
+                bstart = time.time()
                 self.optimizer.zero_grad()
                 loss.backward()
-                # backtimes.append(time.time()-bstart)
+                backtimes.append(time.time()-bstart)
                 if self.clip_gradient is not None:
                     clip_grad_norm_(self.net.parameters(), self.clip_gradient)
                 self.optimizer.step()
@@ -615,8 +616,8 @@ class NN(CardinalityEstimationAlg):
         curloss = round(float(sum(epoch_losses))/len(epoch_losses),6)
         print("Epoch {} took {}, Avg Loss: {}".format(self.epoch,
             round(time.time()-start, 2), curloss))
-        # print("Backward avg time: {}, Forward avg time: {}".format(\
-                # np.mean(backtimes), np.mean(ftimes)))
+        print("Backward avg time: {}, Forward avg time: {}".format(\
+                np.mean(backtimes), np.mean(ftimes)))
 
         if self.use_wandb:
             wandb.log({"TrainLoss": curloss, "epoch":self.epoch})

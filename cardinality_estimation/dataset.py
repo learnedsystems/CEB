@@ -58,6 +58,7 @@ def get_query_features(qrep, dataset_qidx,
             x["tmask"] = tm
             x["pmask"] = pm
             x["jmask"] = jm
+            x["flow"] = to_variable(x["flow"], requires_grad=False).float()
 
         X.append(x)
         Y.append(y)
@@ -90,65 +91,42 @@ def get_queries_features(samples, dataset_qidx,
 def mscn_collate_fn_together(data):
     start = time.time()
     alldata = defaultdict(list)
-    for feats in data[0][0]:
-        for k,v in feats.items():
-            alldata[k].append(v)
+    # print(len(data))
+
+    for di in range(len(data)):
+        for feats in data[di][0]:
+            for k,v in feats.items():
+                alldata[k].append(v)
+
     xdata = {}
     for k,v in alldata.items():
+        # xdata[k] = torch.stack(v)
         if k == "flow":
-            xdata[k] = v
+            if len(v[0]) == 0:
+                xdata[k] = v
+            else:
+                # print(type(v))
+                # print(type(v[0]))
+                # pdb.set_trace()
+                # xdata[k] = to_variable(v, requires_grad=False).float()
+                xdata[k] = torch.stack(v)
         else:
             xdata[k] = torch.stack(v)
 
-    ys = data[0][1]
-    infos = [data[0][2]]
-    return xdata,ys,infos
+    # ys = data[0][1]
+
+    # for cinfo in data
+    # infos = [data[0][2]]
+
+    ys = [d[1] for d in data]
+    ys = torch.cat(ys)
+    infos = [d[2] for d in data]
+    # print(xdata["table"].shape)
+    # print(ys.shape)
 
     # pdb.set_trace()
-    # alltabs = []
-    # allpreds = []
-    # alljoins = []
 
-    # flows = []
-    # ys = []
-    # infos = []
-
-    # maxtabs = 0
-    # maxpreds = 0
-    # maxjoins = 0
-
-    # for d in data:
-        # alltabs.append(d[0]["table"])
-        # if len(alltabs[-1]) > maxtabs:
-            # maxtabs = len(alltabs[-1])
-
-        # allpreds.append(d[0]["pred"])
-        # if len(allpreds[-1]) > maxpreds:
-            # maxpreds = len(allpreds[-1])
-
-        # alljoins.append(d[0]["join"])
-        # if len(alljoins[-1]) > maxjoins:
-            # maxjoins = len(alljoins[-1])
-
-        # flows.append(d[0]["flow"])
-        # ys.append(d[1])
-        # infos.append(d[2])
-
-    # tf,pf,jf,tm,pm,jm = pad_sets(alltabs, allpreds,
-            # alljoins, maxtabs,maxpreds,maxjoins)
-
-    # flows = to_variable(flows, requires_grad=False).float()
-    # ys = to_variable(ys, requires_grad=False).float()
-    # data = {}
-    # data["table"] = tf
-    # data["pred"] = pf
-    # data["join"] = jf
-    # data["flow"] = flows
-    # data["tmask"] = tm
-    # data["pmask"] = pm
-    # data["jmask"] = jm
-
-    # return data
+    return xdata,ys,infos
 
 def mscn_collate_fn(data):
     '''
@@ -306,8 +284,8 @@ class QueryDataset(data.Dataset):
         self.save_mscn_feats = False
 
         if self.load_padded_mscn_feats:
-            print("DEBUG: not saving mscn features")
-            # self.save_mscn_feats = True
+            # print("DEBUG: not saving mscn features")
+            self.save_mscn_feats = True
             fkeys = list(dir(self.featurizer))
             fkeys.sort()
             attrs = ""
@@ -418,6 +396,8 @@ class QueryDataset(data.Dataset):
                 x["tmask"] = tm
                 x["pmask"] = pm
                 x["jmask"] = jm
+
+            x["flow"] = to_variable(x["flow"], requires_grad=False).float()
 
             X.append(x)
             Y.append(y)

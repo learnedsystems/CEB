@@ -152,6 +152,9 @@ class LogicalConstraints(EvalFunc):
             sg = qrep["subset_graph"]
             jg = qrep["join_graph"]
             for node in sg.nodes():
+                if node == SOURCE_NODE:
+                    continue
+
                 edges = sg.out_edges(node)
                 nodepred = cur_preds[node]
                 # calculating error per node instead of per edge

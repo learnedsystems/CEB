@@ -6,9 +6,9 @@ LOSS_FUNC=$4
 SEED=$5
 ONEHOT_DROPOUT=$6
 TRUEP=$7
+EVAL_EPOCH=$8
+MAX_EPOCHS=$9
 
-EVAL_EPOCH=200
-MAX_EPOCHS=10
 LOAD_QUERY_TOGETHER=0
 
 LR=0.0001
@@ -42,8 +42,10 @@ FLOW_FEATS=0
 
 if test $SEED == 0;
 then
-  SEEDS=(7 6 1 2 3 4 5 8 9 10 13 14 19 20)
-  #SEEDS=(1 2 3 4 5 6 7 8 9 10)
+  SEEDS=(7 6 1 2 3 4 5 8 9 10 11 12 13 14 15 16 17 18 19 20)
+elif test $SEED == 1;
+then
+  SEEDS=(2 7 6 13 14 19)
 else
   SEEDS=(11 12 13 14 15 16 17 18 19 20)
 fi
@@ -51,7 +53,7 @@ fi
 #SEEDS=(4 5 6 7 8 9 10)
 #EVAL_EPOCH=100
 
-EVAL_FNS=qerr,ppc,constraints
+EVAL_FNS=qerr,ppc
 
 RES_DIR=results/
 

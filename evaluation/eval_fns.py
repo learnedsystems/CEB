@@ -177,6 +177,10 @@ class LogicalConstraints(EvalFunc):
                         newjkey = jdata[newt]
                         otherjkey = jdata[alias]
 
+                        if not featurizer.feat_separate_alias:
+                            newjkey = ''.join([ck for ck in newjkey if not ck.isdigit()])
+                            otherjkey = ''.join([ck for ck in otherjkey if not ck.isdigit()])
+
                         stats1 = featurizer.join_key_stats[newjkey]
                         stats2 = featurizer.join_key_stats[otherjkey]
 

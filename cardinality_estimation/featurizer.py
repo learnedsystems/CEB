@@ -214,6 +214,10 @@ class Featurizer():
     def update_seen_preds(self, qreps):
         # key: column name, val: set() of seen values
         self.seen_preds = {}
+        # need separate dictionaries, because like constants / like
+        # featurization has very different meaning from categorical
+        # featurization
+        self.seen_like_preds = {}
         for qrep in qreps:
             for node, info in qrep["join_graph"].nodes(data=True):
                 for ci, col in enumerate(info["pred_cols"]):
@@ -223,9 +227,17 @@ class Featurizer():
 
                     if col not in self.seen_preds:
                         self.seen_preds[col] = set()
+
                     vals = info["pred_vals"][ci]
+                    cmp_op = info["pred_types"][ci]
                     for val in vals:
                         self.seen_preds[col].add(val)
+
+                    if "like" in cmp_op:
+                        if col not in self.seen_like_preds:
+                            self.seen_like_preds[col] = set()
+                        assert len(vals) == 1
+                        self.seen_like_preds[col].add(vals[0])
 
     def update_using_saved_stats(self, featdata):
         for k,v in featdata.items():
@@ -971,6 +983,11 @@ class Featurizer():
     def _handle_ilike_feature(self, pfeats, pred_idx_start,
             col, val):
         assert len(val) == 1
+
+        if self.feat_onlyseen_preds:
+            if col not in self.seen_like_preds:
+                return
+
         col_info = self.column_stats[col]
 
         if self.featurization_type == "combined":
@@ -1029,6 +1046,9 @@ class Featurizer():
 
         if use_stats:
             jstart,_ = self.featurizer_type_idxs["join_stats"]
+
+            if not self.feat_separate_alias:
+                join_str = ''.join([ck for ck in join_str if not ck.isdigit()])
 
             join_keys = join_str.split("=")
             ordered_join_keys = [None]*2

@@ -513,6 +513,22 @@ class NN(CardinalityEstimationAlg):
                 if self.featurizer.table_features:
                     xbatch["table"] = xbatch["table"] * tf_mask
 
+            elif self.onehot_dropout == 3:
+                print(xbatch["table"].shape)
+                num_batches = xbatch["table"].shape[0]
+                tf_mask = self._get_onehot_mask_per_subplan(
+                        num_batches, xbatch["table"].shape[1],
+                        self.featurizer.table_onehot_mask)
+                jf_mask = self._get_onehot_mask_per_subplan(num_batches,
+                        xbatch["join"].shape[1],
+                        self.featurizer.join_onehot_mask)
+                pf_mask = self._get_onehot_mask_per_subplan(num_batches,
+                        xbatch["pred"].shape[1],
+                        self.featurizer.pred_onehot_mask)
+                print(tf_mask)
+                print(tf_mask.shape)
+                pdb.set_trace()
+
             if self.subplan_level_outputs:
                 pred = self.net(xbatch).squeeze(1)
                 idxs = torch.zeros(pred.shape,dtype=torch.bool)

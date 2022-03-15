@@ -377,11 +377,54 @@ def get_featurizer(trainqs, valqs, testqs):
 
     return featurizer
 
+def _get_distr(samples):
+    tabs = set()
+    cols = set()
+    consts = set()
+
+    joins = set()
+    joins2 = set()
+
+    subplans = set()
+    subplans2 = set()
+
+    for qrep in samples:
+        for node,data in qrep["join_graph"].nodes(data=True):
+            tabs.add(data["real_name"])
+            for ci,col in enumerate(data["pred_cols"]):
+                col = ''.join([ck for ck in col if not ck.isdigit()])
+                cols.add(col)
+                for const in data["pred_vals"][ci]:
+                    consts.add(col+str(const))
+
+        for node in qrep["subset_graph"].nodes():
+            # in order to remove aliases
+            subplans2.add(str(node))
+            node = list(node)
+            node.sort()
+            node = str(node)
+            node = ''.join([ck for ck in node if not ck.isdigit()])
+            subplans.add(str(node))
+
+        for e in qrep["join_graph"].edges(data=True):
+            # TODO: remove ints
+            e0 = ''.join([ck for ck in e[0] if not ck.isdigit()])
+            e1 = ''.join([ck for ck in e[1] if not ck.isdigit()])
+            jointabs = [e0, e1]
+            jointabs.sort()
+            joins.add(str(jointabs))
+
+            jointabs2 = [e[0], e[1]]
+            jointabs2.sort()
+            joins2.add(str(jointabs2))
+
+    return tabs,cols,consts,joins,subplans,joins2,subplans2
+
 def main():
 
     # set up wandb logging metrics
     if args.use_wandb:
-        wandb_tags = ["v12"]
+        wandb_tags = ["v13"]
         if args.wandb_tags is not None:
             wandb_tags += args.wandb_tags.split(",")
         wandb.init("ceb", config={},
@@ -396,6 +439,55 @@ def main():
     # keep around the qfns and load them as needed
     valqs = load_qdata(val_qfns)
     testqs = load_qdata(test_qfns)
+
+    if args.onehot_dropout == -1:
+        # traintabs = set()
+        traintabs,traincols,trainconsts,trainjoins,trainsubs,trainjoins2, \
+            trainsubs2 = _get_distr(trainqs)
+        testtabs,testcols,testconsts,testjoins,testsubs, testjoins2, \
+            testsubs2 = _get_distr(testqs)
+
+        tabdiff = round(len(testtabs-traintabs) / float(len(testtabs)), 4)
+        coldiff = round(len(testcols-traincols) / float(len(testcols)), 4)
+        constdiff = round(len(testconsts-trainconsts) / float(len(testconsts)),
+                3)
+        joindiff = round(len(testjoins-trainjoins) / float(len(testjoins)), 3)
+        joindiff2 = round(len(testjoins2-trainjoins2) / float(len(testjoins2)),
+                3)
+
+        subdiff = round(len(testsubs-trainsubs) / float(len(testsubs)), 2)
+        subdiff2 = round(len(testsubs2-trainsubs2) / float(len(testsubs2)), 2)
+
+        print("""Table: {}, Columns: {}, Const: {}, Joins: {}, Subplans: {},
+                 Joins2: {}, Subplans2: {}""".format(
+            tabdiff, coldiff, constdiff, joindiff, subdiff, joindiff2, subdiff2))
+
+        testunseensubs = []
+        testunseensubs2 = []
+        for qrep in testqs:
+            for node in qrep["subset_graph"]:
+                # subplans2.add(str(node))
+                if str(node) not in trainsubs2:
+                    testunseensubs2.append(True)
+                else:
+                    testunseensubs2.append(False)
+
+                node = list(node)
+                node.sort()
+                node = str(node)
+                node = ''.join([ck for ck in node if not ck.isdigit()])
+                if node not in trainsubs:
+                    testunseensubs.append(True)
+                else:
+                    testunseensubs.append(False)
+
+        print("Fraction UnseenSubs1: ", np.mean(testunseensubs))
+        print("Fraction UnseenSubs2: ", np.mean(testunseensubs2))
+
+        exit(-1)
+
+        # pdb.set_trace()
+
 
     # only needs featurizer for learned models
     if args.algs in ["xgb", "fcnn", "mscn"]:

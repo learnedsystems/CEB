@@ -8,11 +8,14 @@ ONEHOT_DROPOUT=$6
 TRUEP=$7
 EVAL_EPOCH=$8
 MAX_EPOCHS=$9
+HEURISTIC="${10:-1}"
+#VARIABLE="${1:-$DEFAULTVALUE}"
+
+SEP=0
 
 LOAD_QUERY_TOGETHER=0
 
 LR=0.0001
-SEP=0
 
 TABLE_FEATURES=1
 JOIN_FEATURES=onehot
@@ -32,7 +35,6 @@ QDIR=queries/imdb-unique-plans
 #QDIR=queries/imdb
 NO_REGEX=0
 N=-1
-
 FLOW_FEATS=0
 
 #SEEDS=(1 2 3 4 5 6 7 8 9 10)
@@ -64,6 +66,7 @@ for i in "${!SEEDS[@]}";
   CMD="time python3 main.py --algs $ALG \
    -n $N \
    --onehot_dropout $ONEHOT_DROPOUT \
+   --heuristic_feat $HEURISTIC \
    --onehot_mask_truep $TRUEP \
    --no_regex_templates $NO_REGEX \
    --feat_onlyseen_preds $FEAT_ONLYSEEN \

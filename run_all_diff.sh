@@ -9,6 +9,12 @@ TRUEP=$7
 EVAL_EPOCH=$8
 MAX_EPOCHS=$9
 HEURISTIC="${10:-1}"
+DROP1="${11:-0.0}"
+DROP2="${12:-0.0}"
+DROP3="${13:-0.0}"
+QDIR="${14:-queries/imdb-unique-plans}"
+#QDIR=queries/imdb-unique-plans
+
 #VARIABLE="${1:-$DEFAULTVALUE}"
 
 SEP=0
@@ -31,7 +37,6 @@ FEAT_ONLYSEEN=1
 
 ## keep fixed
 EMBEDDING_FN=none
-QDIR=queries/imdb-unique-plans
 #QDIR=queries/imdb
 NO_REGEX=0
 N=-1
@@ -66,6 +71,9 @@ for i in "${!SEEDS[@]}";
   CMD="time python3 main.py --algs $ALG \
    -n $N \
    --onehot_dropout $ONEHOT_DROPOUT \
+   --inp_dropout $DROP1 \
+   --hl_dropout $DROP2 \
+   --comb_dropout $DROP3 \
    --heuristic_feat $HEURISTIC \
    --onehot_mask_truep $TRUEP \
    --no_regex_templates $NO_REGEX \

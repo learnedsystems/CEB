@@ -47,6 +47,7 @@ class MSCN(NN):
                 pfeats, jfeats,
                 len(sample[0]["flow"]),
                 self.hidden_layer_size,
-                n_out=n_out)
+                n_out=n_out,
+                dropouts=[self.inp_dropout, self.hl_dropout, self.comb_dropout])
 
         return net

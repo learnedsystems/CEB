@@ -409,11 +409,6 @@ class QueryDataset(data.Dataset):
             cur_info["node"] = str(node)
             sample_info.append(cur_info)
 
-        # print(Y)
-        # print(X[0]["table"].shape)
-        # print(X[0]["join"].shape)
-        # print(X[0]["pred"].shape)
-        # pdb.set_trace()
         return X,Y,sample_info
 
     def _get_feature_vectors_par(self, samples):
@@ -430,8 +425,6 @@ class QueryDataset(data.Dataset):
         outbatch = math.ceil(len(samples) / batchsize)
 
         dsqidx = 0
-        print("outbatch: ", outbatch)
-        print(len(samples))
         pool = mp.Pool(nump)
         for i in range(outbatch):
             startidx = i*batchsize
@@ -538,13 +531,6 @@ class QueryDataset(data.Dataset):
             pass
 
         Y = to_variable(Y, requires_grad=False).float()
-
-        # print(Y)
-        # print(X[0]["table"].shape)
-        # print(X[0]["join"].shape)
-        # print(X[0]["pred"].shape)
-        # print(X[0]["tmask"].shape)
-        # pdb.set_trace()
         return X,Y,sample_info
 
     def __len__(self):

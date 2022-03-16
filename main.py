@@ -120,6 +120,9 @@ def get_alg(alg):
                 hidden_layer_size = args.hidden_layer_size)
     elif alg == "mscn":
         return MSCN(max_epochs = args.max_epochs, lr=args.lr,
+                inp_dropout = args.inp_dropout,
+                hl_dropout = args.hl_dropout,
+                comb_dropout = args.comb_dropout,
                 training_opt = args.training_opt,
                 opt_lr = args.opt_lr,
                 swa_start = args.swa_start,
@@ -351,6 +354,7 @@ def get_featurizer(trainqs, valqs, testqs):
     # include this in the cached version
 
     featurizer.setup(ynormalization=args.ynormalization,
+            sample_bitmap = args.sample_bitmap,
             feat_separate_alias = args.feat_separate_alias,
             onehot_dropout = args.onehot_dropout,
             feat_mcvs = args.feat_mcvs,
@@ -582,6 +586,13 @@ def read_flags():
 
     parser.add_argument("--onehot_dropout", type=int, required=False,
             default=0)
+    parser.add_argument("--inp_dropout", type=float, required=False,
+            default=0.0)
+    parser.add_argument("--hl_dropout", type=float, required=False,
+            default=0.0)
+    parser.add_argument("--comb_dropout", type=float, required=False,
+            default=0.0)
+
     parser.add_argument("--onehot_mask_truep", type=float, required=False,
             default=0.8)
 
@@ -656,6 +667,8 @@ def read_flags():
     parser.add_argument("--flow_features", type=int, required=False,
             default=0)
 
+    parser.add_argument("--sample_bitmap", type=int, required=False,
+            default=0)
     parser.add_argument("--max_discrete_featurizing_buckets", type=int, required=False,
             default=10)
     parser.add_argument("--max_like_featurizing_buckets", type=int, required=False,

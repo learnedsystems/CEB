@@ -737,35 +737,39 @@ class Featurizer():
             self.table_featurizer[table] = i
 
         if self.sample_bitmap:
-            bitmap_tables = []
+            # bitmap_tables = []
             self.sample_bitmap_key = "sb" + str(self.sample_bitmap_num)
-            self.bitmap_mapping = {}
-            self.bitmap_next_mapping = {}
+            assert self.featurization_type == "set"
+            self.table_features_len = len(self.tables) + self.sample_bitmap_num
+            self.max_table_feature_len = len(self.tables) + self.sample_bitmap_num
 
-            for i, table in enumerate(sorted(self.tables)):
-                if table in SAMPLE_TABLES:
-                    bitmap_tables.append(table)
-                    self.bitmap_next_mapping[table] = 0
+            # self.bitmap_mapping = {}
+            # self.bitmap_next_mapping = {}
 
-            bitmap_tables.sort()
-            # also indexes into table_featurizer
-            self.sample_bitmap_featurizer = {}
-            table_idx = len(self.tables)
-            self.max_table_feature_len = 0
-            for i, table in enumerate(bitmap_tables):
-                # how many elements in the current table
-                count_str = "SELECT COUNT(*) FROM {}".format(table)
-                output = self.execute(count_str)
-                count = output[0][0]
-                feat_count = min(count, sample_bitmap_buckets)
-                self.sample_bitmap_featurizer[table] = (table_idx, feat_count)
-                table_idx += feat_count
+            # for i, table in enumerate(sorted(self.tables)):
+                # # if table in SAMPLE_TABLES:
+                # bitmap_tables.append(table)
+                # self.bitmap_next_mapping[table] = 0
 
-                cur_table_feature_len = feat_count + len(self.tables)
-                if cur_table_feature_len > self.max_table_feature_len:
-                    self.max_table_feature_len = cur_table_feature_len
+            # bitmap_tables.sort()
+            # # also indexes into table_featurizer
+            # self.sample_bitmap_featurizer = {}
+            # table_idx = len(self.tables)
+            # self.max_table_feature_len = 0
+            # for i, table in enumerate(bitmap_tables):
+                # # how many elements in the current table
+                # count_str = "SELECT COUNT(*) FROM {}".format(table)
+                # output = self.execute(count_str)
+                # count = output[0][0]
+                # feat_count = min(count, self.sample_bitmap_buckets)
+                # self.sample_bitmap_featurizer[table] = (table_idx, feat_count)
+                # table_idx += feat_count
 
-            self.table_features_len = table_idx
+                # cur_table_feature_len = feat_count + len(self.tables)
+                # if cur_table_feature_len > self.max_table_feature_len:
+                    # self.max_table_feature_len = cur_table_feature_len
+
+            # self.table_features_len = table_idx
         else:
             self.table_features_len = len(self.tables)
             self.max_table_feature_len = len(self.tables)
@@ -1299,6 +1303,17 @@ class Featurizer():
                     continue
                 # Note: same table might be set to 1.0 twice, in case of aliases
                 tfeats[self.table_featurizer[table]] = 1.00
+                if self.sample_bitmap:
+                    startidx = len(self.table_featurizer)
+                    cards = subsetgraph.nodes()[(alias,)]
+                    if "sample_bitmap" in cards:
+                        sb = cards["sample_bitmap"]
+                        if self.sample_bitmap_key in sb:
+                            bitmap = sb[self.sample_bitmap_key]
+                            for val in bitmap:
+                                bitmapidx = val % self.sample_bitmap_buckets
+                                tfeats[startidx+bitmapidx] = 1.0
+
                 alltablefeats.append(tfeats)
 
         featdict["table"] = alltablefeats
@@ -1534,8 +1549,8 @@ class Featurizer():
         @ret: []
             will depend on if self.featurization_type == set or combined;
         '''
-        if self.sample_bitmap:
-            assert False, "TODO: not implemented yet"
+        # if self.sample_bitmap:
+            # assert False, "TODO: not implemented yet"
 
         # the shapes will depend on combined v/s set feat types
         if self.featurization_type == "combined":

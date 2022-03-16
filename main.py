@@ -466,6 +466,11 @@ def main():
                  Joins2: {}, Subplans2: {}""".format(
             tabdiff, coldiff, constdiff, joindiff, subdiff, joindiff2, subdiff2))
 
+        print("TabDiff: ", testtabs-traintabs)
+        print("ColDiff: ", testcols-traincols)
+        print("JoinDiff: ", testjoins-trainjoins)
+        # print("SubDiff: ", testsubs-trainsubs)
+
         testunseensubs = []
         testunseensubs2 = []
         for qrep in testqs:

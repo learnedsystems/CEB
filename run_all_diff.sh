@@ -13,7 +13,8 @@ DROP1="${11:-0.0}"
 DROP2="${12:-0.0}"
 DROP3="${13:-0.0}"
 QDIR="${14:-queries/imdb-unique-plans}"
-#QDIR=queries/imdb-unique-plans
+BITMAP="${15:-0}"
+LOAD_PADDED="${16:-1}"
 
 #VARIABLE="${1:-$DEFAULTVALUE}"
 
@@ -30,7 +31,6 @@ COLUMN_FEATURES=onehot
 #COLUMN_FEATURES=stats
 
 FEAT_MCV=0
-LOAD_PADDED=1
 WANDB_TAGS=default
 FEAT_ONLYSEEN=1
 #ALG=mscn
@@ -60,7 +60,7 @@ fi
 #SEEDS=(4 5 6 7 8 9 10)
 #EVAL_EPOCH=100
 
-EVAL_FNS=qerr,ppc
+EVAL_FNS=qerr,ppc,ppc2
 
 RES_DIR=results/
 
@@ -70,6 +70,7 @@ for i in "${!SEEDS[@]}";
   do
   CMD="time python3 main.py --algs $ALG \
    -n $N \
+   --sample_bitmap $BITMAP \
    --onehot_dropout $ONEHOT_DROPOUT \
    --inp_dropout $DROP1 \
    --hl_dropout $DROP2 \

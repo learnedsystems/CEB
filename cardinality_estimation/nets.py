@@ -162,7 +162,7 @@ class SetConv(nn.Module):
             flows = flows.to(device, non_blocking=True)
             self.inp_drop_layer(flows)
             hid_flow = F.relu(self.flow_mlp1(flows))
-            hid_flow = self.hl_dropout_layer(hid_flow)
+            hid_flow = self.hl_drop_layer(hid_flow)
             hid_flow = F.relu(self.flow_mlp2(hid_flow))
             tocat.append(hid_flow)
 

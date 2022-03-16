@@ -165,7 +165,11 @@ def mscn_collate_fn(data):
     tf,pf,jf,tm,pm,jm = pad_sets(alltabs, allpreds,
             alljoins, maxtabs,maxpreds,maxjoins)
 
-    flows = to_variable(flows, requires_grad=False).float()
+    # print(flows)
+    # pdb.set_trace()
+    # flows = to_variable(flows, requires_grad=False).float()
+    flows = torch.stack(flows).float()
+
     ys = to_variable(ys, requires_grad=False).float()
     data = {}
     data["table"] = tf

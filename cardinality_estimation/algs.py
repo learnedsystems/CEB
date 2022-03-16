@@ -390,8 +390,7 @@ class NN(CardinalityEstimationAlg):
         # important to not shuffle the data so correct order preserved!
         loader = data.DataLoader(ds,
                 batch_size=5000, shuffle=False,
-                collate_fn = None
-                # collate_fn=self.collate_fn
+                collate_fn=self.collate_fn
                 )
 
         allpreds = []

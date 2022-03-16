@@ -26,7 +26,9 @@ def get_eval_fn(loss_name):
     elif loss_name == "rel":
         return RelativeError()
     elif loss_name == "ppc":
-        return PostgresPlanCost()
+        return PostgresPlanCost(cost_model="C")
+    elif loss_name == "ppc2":
+        return PostgresPlanCost(cost_model="C2")
     elif loss_name == "plancost":
         return SimplePlanCost()
     elif loss_name == "flowloss":
@@ -268,6 +270,12 @@ class RelativeError(EvalFunc):
         return errors
 
 class PostgresPlanCost(EvalFunc):
+    def __init__(self, cost_model="C"):
+        self.cost_model = cost_model
+
+    def __str__(self):
+        return self.__class__.__name__ + "-" + self.cost_model
+
     def save_logs(self, qreps, errors, **kwargs):
         if "result_dir" not in kwargs:
             return
@@ -356,22 +364,30 @@ class PostgresPlanCost(EvalFunc):
                     relcost))
 
         if use_wandb:
-            loss_key = "Final-{}-{}".format("Relative-TotalPPCost",
-                                                   samples_type)
+            if self.cost_model == "C":
+                suffix = ""
+            else:
+                suffix = "-" + self.cost_model
+
+            loss_key = "Final-{}-{}{}".format("Relative-TotalPPCost",
+                                                   samples_type,
+                                                   suffix)
             wandb.run.summary[loss_key] = relcost
 
-            loss_key = "Final-{}-{}-mean".format("PPError",
-                                                samples_type)
+            loss_key = "Final-{}-{}{}-mean".format("PPError",
+                                                samples_type,
+                                                suffix)
             wandb.run.summary[loss_key] = np.mean(ppes)
 
-            loss_key = "Final-{}-{}-99p".format("PPError",
-                                                samples_type)
+            loss_key = "Final-{}-{}{}-99p".format("PPError",
+                                                samples_type,
+                                                suffix)
             wandb.run.summary[loss_key] = np.percentile(ppes, 99)
 
 
     def eval(self, qreps, preds, user="imdb",pwd="password",
             db_name="imdb", db_host="localhost", port=5432, num_processes=-1,
-            result_dir=None, cost_model="cm1", **kwargs):
+            result_dir=None, **kwargs):
         ''''
         @kwargs:
             cost_model: this is just a convenient key to specify the PostgreSQL
@@ -388,6 +404,7 @@ class PostgresPlanCost(EvalFunc):
         assert isinstance(qreps, list)
         assert isinstance(preds, list)
         assert isinstance(qreps[0], dict)
+        cost_model = self.cost_model
 
         if num_processes == -1:
             pool = mp.Pool(int(mp.cpu_count()))

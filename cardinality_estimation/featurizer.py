@@ -509,19 +509,25 @@ class Featurizer():
             pred_len += self.embedding_size
 
         if self.heuristic_features:
-            self.featurizer_type_idxs["heuristic_ests"] = (pred_len, 2)
+            numh = 2
+            if self.feat_separate_like_ests:
+                numh += 2
+            self.featurizer_type_idxs["heuristic_ests"] = (pred_len, numh)
             # for pg_est of current table in subplan
             # and for pg est of full subplan/query; repeated in each predicate
             # feature
-            pred_len += 2
+            pred_len += numh
 
         self.max_pred_len = pred_len
         self.pred_onehot_mask = np.ones(self.max_pred_len)
+        self.pred_onehot_mask_consts = np.ones(self.max_pred_len)
+
         a,b = self.featurizer_type_idxs["constant_discrete"]
         self.pred_onehot_mask[a:a+b] = 0.0
+        self.pred_onehot_mask_consts[a:a+b] = 0.0
 
         a,b = self.featurizer_type_idxs["constant_like"]
-        self.pred_onehot_mask[a:a+b] = 0.0
+        self.pred_onehot_mask_consts[a:a+b] = 0.0
 
         if "col_onehot" in self.featurizer_type_idxs:
             a,b = self.featurizer_type_idxs["col_onehot"]
@@ -539,61 +545,11 @@ class Featurizer():
             else:
                 self.column_stats[col]["continuous"] = False
 
-        # for col in col_keys:
-            # info = self.column_stats[col]
-            # pred_len = 0
-            # # for operator type
-            # pred_len += len(self.cmp_ops)
-
-            # if self.set_column_feature == "onehot":
-                # # one-hot vector for which column is predicate on
-                # pred_len += self.num_cols
-            # elif self.set_column_feature == "stats":
-                # pred_len += self.set_column_features_len
-            # else:
-                # pass
-
-            # # for num_tables present
-            # if self.num_tables_feature:
-                # pred_len += 1
-
-            # # these are stored at the very end;
-            # if self.heuristic_features:
-                # # for pg_est of current table in subplan
-                # pred_len += 1
-                # # for pg est of full subplan/query; repeated in each predicate
-                # # feature
-                # pred_len += 1
-
-            # # FIXME: special casing "id" not in col to avoid columns like
-            # # it.id; very specific to CEB workloads.
-            # if is_float(info["min_value"]) and is_float(info["max_value"]) \
-                    # and "id" not in col:
-                # # then use min-max normalization, no matter what
-                # # only support range-queries, so lower / and upper predicate
-                # pred_len += self.continuous_feature_size
-                # continuous = True
-            # else:
-                # # so the idxs used for continous features v/s categorical
-                # # features don't clash with each other
-                # pred_len += self.continuous_feature_size
-                # pred_len += 2
-                # pred_len += self.max_like_featurizing_buckets
-
-                # # for discrete features
-                # pred_len += self.max_discrete_featurizing_buckets
-                # continuous = False
-
-                # if self.embedding_fn is not None:
-                    # pred_len += self.embedding_size
-
-            # if self.max_pred_len < pred_len:
-                # self.max_pred_len = pred_len
-                # print("self.max_pred_len updated to: ", pred_len)
-
     def setup(self,
+            bitmap_dir = None,
             heuristic_features=True,
-            feat_separate_alias=True,
+            feat_separate_alias=False,
+            feat_separate_like_ests=False,
             separate_ilike_bins=False,
             separate_cont_bins=False,
             onehot_dropout=False,
@@ -742,34 +698,6 @@ class Featurizer():
             assert self.featurization_type == "set"
             self.table_features_len = len(self.tables) + self.sample_bitmap_num
             self.max_table_feature_len = len(self.tables) + self.sample_bitmap_num
-
-            # self.bitmap_mapping = {}
-            # self.bitmap_next_mapping = {}
-
-            # for i, table in enumerate(sorted(self.tables)):
-                # # if table in SAMPLE_TABLES:
-                # bitmap_tables.append(table)
-                # self.bitmap_next_mapping[table] = 0
-
-            # bitmap_tables.sort()
-            # # also indexes into table_featurizer
-            # self.sample_bitmap_featurizer = {}
-            # table_idx = len(self.tables)
-            # self.max_table_feature_len = 0
-            # for i, table in enumerate(bitmap_tables):
-                # # how many elements in the current table
-                # count_str = "SELECT COUNT(*) FROM {}".format(table)
-                # output = self.execute(count_str)
-                # count = output[0][0]
-                # feat_count = min(count, self.sample_bitmap_buckets)
-                # self.sample_bitmap_featurizer[table] = (table_idx, feat_count)
-                # table_idx += feat_count
-
-                # cur_table_feature_len = feat_count + len(self.tables)
-                # if cur_table_feature_len > self.max_table_feature_len:
-                    # self.max_table_feature_len = cur_table_feature_len
-
-            # self.table_features_len = table_idx
         else:
             self.table_features_len = len(self.tables)
             self.max_table_feature_len = len(self.tables)
@@ -907,7 +835,12 @@ class Featurizer():
         min_val = float(col_info["min_value"])
         max_val = float(col_info["max_value"])
 
-        assert isinstance(val, list)
+        # assert isinstance(val, list)
+        if not isinstance(val, list):
+            # print(val)
+            # pdb.set_trace()
+            val = [None, val]
+
         for vi, v in enumerate(val):
             # assert v is not None
             # handling the case when one end of the range predicate is
@@ -1218,7 +1151,8 @@ class Featurizer():
         if continuous:
             cstart,_ = self.featurizer_type_idxs["constant_continuous"]
             self._handle_continuous_feature(pfeats, cstart, col, val)
-            ret_feats.append(pfeats)
+            ## will be done at the end
+            # ret_feats.append(pfeats)
         else:
             if "like" in cmp_op:
                 lstart,_ = self.featurizer_type_idxs["constant_like"]
@@ -1264,19 +1198,29 @@ class Featurizer():
                 and toaddpfeats:
             assert pfeats[-1] == 0.0
             assert pfeats[-2] == 0.0
-            pfeats[-2] = alias_est
-            pfeats[-1] = subp_est
-            # test:
-            hstart,_ = self.featurizer_type_idxs["heuristic_ests"]
-            assert pfeats[hstart] == alias_est
-            assert pfeats[hstart+1] == subp_est
+            if self.feat_separate_like_ests:
+                assert pfeats[-3] == 0.0
+                assert pfeats[-4] == 0.0
+                if "like" in cmp_op:
+                    pfeats[-4] = alias_est
+                    pfeats[-3] = subp_est
+                else:
+                    pfeats[-2] = alias_est
+                    pfeats[-1] = subp_est
+            else:
+                pfeats[-2] = alias_est
+                pfeats[-1] = subp_est
+                # test:
+                hstart,_ = self.featurizer_type_idxs["heuristic_ests"]
+                assert pfeats[hstart] == alias_est
+                assert pfeats[hstart+1] == subp_est
 
         if toaddpfeats:
             ret_feats.append(pfeats)
 
         return ret_feats
 
-    def get_subplan_features_set(self, qrep, subplan):
+    def get_subplan_features_set(self, qrep, subplan, bitmaps=None):
         '''
         @ret: {}
             key: table,pred,join etc.
@@ -1303,16 +1247,16 @@ class Featurizer():
                     continue
                 # Note: same table might be set to 1.0 twice, in case of aliases
                 tfeats[self.table_featurizer[table]] = 1.00
+
                 if self.sample_bitmap:
+                    assert bitmaps is not None
                     startidx = len(self.table_featurizer)
-                    cards = subsetgraph.nodes()[(alias,)]
-                    if "sample_bitmap" in cards:
-                        sb = cards["sample_bitmap"]
-                        if self.sample_bitmap_key in sb:
-                            bitmap = sb[self.sample_bitmap_key]
-                            for val in bitmap:
-                                bitmapidx = val % self.sample_bitmap_buckets
-                                tfeats[startidx+bitmapidx] = 1.0
+                    sb = bitmaps[(alias,)]
+                    if self.sample_bitmap_key in sb:
+                        bitmap = sb[self.sample_bitmap_key]
+                        for val in bitmap:
+                            bitmapidx = val % self.sample_bitmap_buckets
+                            tfeats[startidx+bitmapidx] = 1.0
 
                 alltablefeats.append(tfeats)
 
@@ -1368,10 +1312,11 @@ class Featurizer():
                     allvals = allvals["literal"]
                 cmp_op = aliasinfo["pred_types"][ci]
                 continuous = self.column_stats[col]["continuous"]
+                if continuous and not isinstance(allvals, list):
+                    # FIXME: hack for jobm queries like = '1997'
+                    # print("Hacking around jobM: ", allvals)
+                    allvals = [allvals, allvals]
 
-                if continuous and col in seencols:
-                    continue
-                seencols.add(col)
                 pfeats = self._handle_single_col(col,allvals,
                         alias_est, subp_est,
                         cmp_op,
@@ -1431,7 +1376,7 @@ class Featurizer():
 
         return featdict
 
-    def get_subplan_features_combined(self, qrep, subplan):
+    def get_subplan_features_combined(self, qrep, subplan, bitmaps=None):
         assert isinstance(subplan, tuple)
         featvectors = []
 
@@ -1542,7 +1487,7 @@ class Featurizer():
         feat = np.concatenate(featvectors)
         return feat
 
-    def get_subplan_features(self, qrep, node):
+    def get_subplan_features(self, qrep, node, bitmaps=None):
         '''
         @subsetg:
         @node: subplan in the subsetgraph;
@@ -1555,10 +1500,10 @@ class Featurizer():
         # the shapes will depend on combined v/s set feat types
         if self.featurization_type == "combined":
             x = self.get_subplan_features_combined(qrep,
-                    node)
+                    node, bitmaps=bitmaps)
         elif self.featurization_type == "set":
             x = self.get_subplan_features_set(qrep,
-                    node)
+                    node, bitmaps=bitmaps)
         else:
             assert False
 

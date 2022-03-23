@@ -167,6 +167,7 @@ def mscn_collate_fn(data):
 
     # print(flows)
     # pdb.set_trace()
+    print(flows)
     # flows = to_variable(flows, requires_grad=False).float()
     flows = torch.stack(flows).float()
 
@@ -286,9 +287,7 @@ class QueryDataset(data.Dataset):
         self.featurizer = featurizer
 
         self.save_mscn_feats = False
-
         if self.load_padded_mscn_feats:
-            # print("DEBUG: not saving mscn features")
             self.save_mscn_feats = True
             fkeys = list(dir(self.featurizer))
             fkeys.sort()
@@ -302,10 +301,13 @@ class QueryDataset(data.Dataset):
             attrs += "padded"+str(self.load_padded_mscn_feats)
             self.feathash = deterministic_hash(attrs)
             self.featdir = "./mscn_features/" + str(self.feathash)
+            if os.path.exists(self.featdir):
+                print("features saved before")
+            else:
+                print("features NOT saved before")
 
             make_dir("./mscn_features")
             make_dir(self.featdir)
-
 
         # shorthands
         self.ckey = self.featurizer.ckey
@@ -381,9 +383,18 @@ class QueryDataset(data.Dataset):
             node_names.remove(SOURCE_NODE)
         node_names.sort()
 
+        if self.featurizer.sample_bitmap:
+            assert self.featurizer.bitmap_dir is not None
+            bitmapfn = os.path.join(self.featurizer.bitmap_dir, qrep["name"])
+            assert os.path.exists(bitmapfn)
+            with open(bitmapfn, "rb") as handle:
+                sbitmaps = pickle.load(handle)
+        else:
+            sbitmaps = None
+
         for node_idx, node in enumerate(node_names):
             x,y = self.featurizer.get_subplan_features(qrep,
-                    node)
+                    node, bitmaps=sbitmaps)
 
             if self.featurizer.featurization_type == "set" \
                 and self.load_padded_mscn_feats:
@@ -510,7 +521,8 @@ class QueryDataset(data.Dataset):
         for i, qrep in enumerate(samples):
             qhash = str(deterministic_hash(qrep["sql"]))
 
-            if self.save_mscn_feats:
+            if self.save_mscn_feats and \
+                    "job" not in qrep["template_name"]:
                 featfn = os.path.join(self.featdir, qhash) + ".pkl"
                 if os.path.exists(featfn):
                     x,y = self._load_mscn_features(featfn)

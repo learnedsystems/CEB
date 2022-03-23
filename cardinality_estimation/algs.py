@@ -219,7 +219,7 @@ class NN(CardinalityEstimationAlg):
         curerrs = {}
         for st, ds in self.eval_ds.items():
             samples = self.samples[st]
-            preds = self._eval_ds(ds, samples)
+            preds, _ = self._eval_ds(ds, samples)
             preds = format_model_test_output(preds,
                     samples, self.featurizer)
 
@@ -339,15 +339,15 @@ class NN(CardinalityEstimationAlg):
 
         self.eval_ds = {}
         self.samples = {}
-        if self.eval_epoch < self.max_epochs:
-            # create eval loaders
-            # self.eval_ds["train"] = self.trainds
-            # self.samples["train"] = training_samples
 
+        self.eval_ds["train"] = self.trainds
+        if "valqs" in kwargs and len(kwargs["valqs"]) > 0:
+            self.eval_ds["val"] = self.init_dataset(kwargs["valqs"], False)
+
+        if self.eval_epoch < self.max_epochs:
             if "valqs" in kwargs and len(kwargs["valqs"]) > 0:
                 self.eval_ds["val"] = self.init_dataset(kwargs["valqs"], False)
                 self.samples["val"] = kwargs["valqs"]
-
             if "testqs" in kwargs and len(kwargs["testqs"]) > 0:
                 self.eval_ds["test"] = self.init_dataset(kwargs["testqs"],
                         False)
@@ -368,13 +368,45 @@ class NN(CardinalityEstimationAlg):
             # self.swa_start = self.swa_start
             self.swa_scheduler = SWALR(self.optimizer, swa_lr=self.opt_lr)
 
-        for self.epoch in range(0,self.max_epochs):
+        if self.max_epochs == -1:
+            total_epochs = 1000
+        else:
+            total_epochs = self.max_epochs
+
+        if self.early_stopping:
+            eplosses = []
+            pct_chngs = []
+
+        for self.epoch in range(0,total_epochs):
 
             if self.epoch % self.eval_epoch == 0 \
                     and self.epoch != 0:
                 self.periodic_eval()
 
             self.train_one_epoch()
+
+            # TODO: needs to decide if we should stop training
+            if self.early_stopping:
+                if "val" in self.eval_ds:
+                    ds = self.eval_ds["val"]
+                else:
+                    ds = self.eval_ds["train"]
+
+                preds, ys = self._eval_ds(ds)
+                losses = self.loss_func(torch.from_numpy(preds), torch.from_numpy(ys))
+                eploss = torch.mean(losses).item()
+                if len(eplosses) >= 1:
+                    pct = 100* ((eploss-eplosses[-1])/eplosses[-1])
+                    pct_chngs.append(pct)
+
+                eplosses.append(eploss)
+                # print(eplosses[-5:-1])
+                # print(pct_chngs[-5:-1])
+                if len(pct_chngs) > 5:
+                    trailing_chng = np.mean(pct_chngs[-5:-1])
+                    if trailing_chng > -0.1:
+                        print("Going to exit training at epoch: ", self.epoch)
+                        break
 
         if self.training_opt == "swa":
             torch.optim.swa_utils.update_bn(self.trainloader, self.swa_net)
@@ -394,6 +426,7 @@ class NN(CardinalityEstimationAlg):
                 )
 
         allpreds = []
+        allys = []
 
         for (xbatch,ybatch,info) in loader:
             ybatch = ybatch.to(device, non_blocking=True)
@@ -429,8 +462,11 @@ class NN(CardinalityEstimationAlg):
                 pred = net(xbatch).squeeze(1)
 
             allpreds.append(pred)
+            allys.append(ybatch)
 
         preds = torch.cat(allpreds).detach().cpu().numpy()
+        ys = torch.cat(allys).detach().cpu().numpy()
+
         torch.set_grad_enabled(True)
 
         if self.heuristic_unseen_preds == "pg" and samples is not None:
@@ -454,7 +490,7 @@ class NN(CardinalityEstimationAlg):
             preds = np.array(newpreds)
             pdb.set_trace()
 
-        return preds
+        return preds, ys
 
     def _get_onehot_mask(self, vec):
         tmask = ~np.array(vec, dtype="bool")
@@ -530,6 +566,70 @@ class NN(CardinalityEstimationAlg):
             pf_mask *= pmask
             pf_mask = ~pf_mask
             pf_mask = pf_mask[:,None,:]
+        elif self.onehot_dropout == 5:
+            # print(xbatch["pred"].shape)
+            # pdb.set_trace()
+            pf_mask = self._get_onehot_mask(self.featurizer.pred_onehot_mask_consts)
+            tmask_ones = np.ones(len(self.featurizer.table_onehot_mask))
+            tf_mask = torch.from_numpy(tmask_ones).float()
+            # tf_mask = self._get_onehot_mask(self.featurizer.table_onehot_mask)
+            jmask_ones = np.ones(len(self.featurizer.join_onehot_mask))
+            # jf_mask = self._get_onehot_mask(jmask_ones)
+            jf_mask = torch.from_numpy(jmask_ones).float()
+            return tf_mask, jf_mask, pf_mask
+        elif self.onehot_dropout == 6:
+            rval = random.random()
+            tmask_ones = np.ones(len(self.featurizer.table_onehot_mask))
+            tf_mask = torch.from_numpy(tmask_ones).float()
+            jmask_ones = np.ones(len(self.featurizer.join_onehot_mask))
+            jf_mask = torch.from_numpy(jmask_ones).float()
+            pmask_ones = np.ones(len(self.featurizer.pred_onehot_mask))
+            pf_mask = torch.from_numpy(pmask_ones).float()
+            # knock out nothing
+            if rval <= 0.1:
+                return tf_mask, jf_mask, pf_mask
+            elif rval > 0.1 and rval <= 0.2:
+                # knock out a table + joins + relevant columns
+                # FIXME:
+                return tf_mask, jf_mask, pf_mask
+
+            elif rval > 0.2 and rval <= 0.3:
+                # TODO: knock out some joins; leave everything else in place
+                jf_mask = self._get_onehot_mask(self.featurizer.join_onehot_mask)
+                return tf_mask, jf_mask, pf_mask
+            elif rval > 0.3 and rval <= 0.65:
+                # knock out a column
+                p1 = xbatch["pred"]
+                # TODO: drop columns;
+                colidx,collen = self.featurizer.featurizer_type_idxs["col_onehot"]
+                colend = colidx+collen
+                # choose which column to drop from the batch
+                dropcol = random.choice(range(colidx,colend))
+                p1[:,:,dropcol] = 0.0
+                pcols = p1[:,:,colidx:colend]
+
+                pcols_sum = pcols.sum(axis=2)
+                pcols_zero = pcols_sum == 0
+                pm = torch.from_numpy(self.featurizer.pred_onehot_mask)
+                pmall = pm.repeat(p1.shape[0],p1.shape[1], 1).bool()
+                # because we will reverse it again after multiplying by 0s/1s
+                pmall = ~pmall
+                # When no columns are turned on, then we want to multiply each
+                # feature by pred_onehot_mask; otherwise, we want to multiply by 1
+                pm2 = pmall*pcols_zero[:,:,None]
+
+                pmall = ~pmall
+                pm2 = ~pm2
+                pf_mask = pm2.float()
+            elif rval > 0.65 and rval <= 1.0:
+                # knock out only constants
+                pf_mask = self._get_onehot_mask(self.featurizer.pred_onehot_mask_consts)
+                return tf_mask, jf_mask, pf_mask
+            else:
+                assert False
+
+            return tf_mask, jf_mask, pf_mask
+
         else:
             assert False
 
@@ -592,22 +692,6 @@ class NN(CardinalityEstimationAlg):
                     xbatch["join"] = xbatch["join"] * jf_mask
                 if self.featurizer.table_features:
                     xbatch["table"] = xbatch["table"] * tf_mask
-
-            # elif self.onehot_dropout == 3:
-                # print(xbatch["table"].shape)
-                # num_batches = xbatch["table"].shape[0]
-                # tf_mask = self._get_onehot_mask_per_subplan(
-                        # num_batches, xbatch["table"].shape[1],
-                        # self.featurizer.table_onehot_mask)
-                # jf_mask = self._get_onehot_mask_per_subplan(num_batches,
-                        # xbatch["join"].shape[1],
-                        # self.featurizer.join_onehot_mask)
-                # pf_mask = self._get_onehot_mask_per_subplan(num_batches,
-                        # xbatch["pred"].shape[1],
-                        # self.featurizer.pred_onehot_mask)
-                # print(tf_mask)
-                # print(tf_mask.shape)
-                # pdb.set_trace()
 
             if self.subplan_level_outputs:
                 pred = self.net(xbatch).squeeze(1)
@@ -712,8 +796,8 @@ class NN(CardinalityEstimationAlg):
         curloss = round(float(sum(epoch_losses))/len(epoch_losses),6)
         print("Epoch {} took {}, Avg Loss: {}".format(self.epoch,
             round(time.time()-start, 2), curloss))
-        print("Backward avg time: {}, Forward avg time: {}".format(\
-                np.mean(backtimes), np.mean(ftimes)))
+        # print("Backward avg time: {}, Forward avg time: {}".format(\
+                # np.mean(backtimes), np.mean(ftimes)))
 
         if self.use_wandb:
             wandb.log({"TrainLoss": curloss, "epoch":self.epoch})
@@ -730,7 +814,7 @@ class NN(CardinalityEstimationAlg):
                 # False,
                 # load_padded_mscn_feats=self.load_padded_mscn_feats)
 
-        preds = self._eval_ds(testds, test_samples)
+        preds, _ = self._eval_ds(testds, test_samples)
 
         return format_model_test_output(preds, test_samples, self.featurizer)
 

@@ -120,6 +120,7 @@ def get_alg(alg):
                 hidden_layer_size = args.hidden_layer_size)
     elif alg == "mscn":
         return MSCN(max_epochs = args.max_epochs, lr=args.lr,
+                early_stopping = args.early_stopping,
                 inp_dropout = args.inp_dropout,
                 hl_dropout = args.hl_dropout,
                 comb_dropout = args.comb_dropout,
@@ -187,14 +188,15 @@ def get_query_fns():
         test_tmp_names = args.test_tmps.split(",")
         train_tmps = []
         test_tmps = []
+
         for fn in fns:
             for ctmp in train_tmp_names:
-                if ctmp in fn:
+                if "/" + ctmp in fn:
                     train_tmps.append(fn)
                     break
 
             for ctmp in test_tmp_names:
-                if ctmp in fn:
+                if "/" + ctmp in fn or ctmp == "all":
                     test_tmps.append(fn)
                     break
 
@@ -274,13 +276,28 @@ def get_query_fns():
 
     print("Skipped templates: ", " ".join(skipped_templates))
 
+    if args.eval_on_jobm:
+        jobm_dir = "./queries/jobm/all_jobm"
+        qfns = list(glob.glob(jobm_dir+"/*.pkl"))
+        # print(qfns)
+        test_qfns += qfns
+
+    if args.eval_on_job:
+        job_dir = "./queries/job/all_job"
+        qfns = list(glob.glob(job_dir+"/*.pkl"))
+        test_qfns += qfns
+
     if args.train_test_split_kind == "query":
         print("""Selected {} train queries, {} test queries, and {} val queries"""\
                 .format(len(train_qfns), len(test_qfns), len(val_qfns)))
-    # elif args.train_test_split_kind == "template":
     else:
         train_tmp_names = [os.path.basename(tfn) for tfn in train_tmps]
         test_tmp_names = [os.path.basename(tfn) for tfn in test_tmps]
+        if args.eval_on_jobm:
+            test_tmp_names.append("jobm")
+        if args.eval_on_job:
+            test_tmp_names.append("job")
+
         print("""Selected {} train queries, {} test queries, and {} val queries"""\
                 .format(len(train_qfns), len(test_qfns), len(val_qfns)))
         print("""Selected {} train templates, {} test templates"""\
@@ -354,8 +371,10 @@ def get_featurizer(trainqs, valqs, testqs):
     # include this in the cached version
 
     featurizer.setup(ynormalization=args.ynormalization,
+            bitmap_dir = args.bitmap_dir,
             sample_bitmap = args.sample_bitmap,
             feat_separate_alias = args.feat_separate_alias,
+            feat_separate_like_ests = args.feat_separate_like_ests,
             onehot_dropout = args.onehot_dropout,
             feat_mcvs = args.feat_mcvs,
             heuristic_features = args.heuristic_features,
@@ -428,7 +447,7 @@ def main():
 
     # set up wandb logging metrics
     if args.use_wandb:
-        wandb_tags = ["v13"]
+        wandb_tags = ["v14"]
         if args.wandb_tags is not None:
             wandb_tags += args.wandb_tags.split(",")
         wandb.init("ceb", config={},
@@ -438,7 +457,6 @@ def main():
     train_qfns, test_qfns, val_qfns = get_query_fns()
 
     trainqs = load_qdata(train_qfns)
-
     # Note: can be quite memory intensive to load them all; might want to just
     # keep around the qfns and load them as needed
     valqs = load_qdata(val_qfns)
@@ -533,6 +551,13 @@ def read_flags():
     parser = argparse.ArgumentParser()
     parser.add_argument("--query_dir", type=str, required=False,
             default="./queries/imdb/")
+    parser.add_argument("--eval_on_jobm", type=int, required=False,
+            default=1)
+    parser.add_argument("--eval_on_job", type=int, required=False,
+            default=0)
+
+    parser.add_argument("--bitmap_dir", type=str, required=False,
+            default="./queries/sample_bitmaps/")
 
     ## db credentials
     parser.add_argument("--db_name", type=str, required=False,
@@ -622,6 +647,9 @@ def read_flags():
             default=1)
     parser.add_argument("--feat_separate_alias", type=int, required=False,
             default=0)
+    parser.add_argument("--feat_separate_like_ests", type=int, required=False,
+            default=0)
+
     parser.add_argument("--heuristic_unseen_preds", type=str, required=False,
             default=None)
     parser.add_argument("--feat_mcvs", type=int, required=False,
@@ -643,6 +671,10 @@ def read_flags():
             default=0.0)
     parser.add_argument("--max_epochs", type=int,
             required=False, default=10)
+
+    parser.add_argument("--early_stopping", type=int,
+            required=False, default=0)
+
     parser.add_argument("--eval_epoch", type=int,
             required=False, default=100)
     parser.add_argument("--mb_size", type=int, required=False,

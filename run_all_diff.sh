@@ -15,6 +15,7 @@ DROP3="${13:-0.0}"
 QDIR="${14:-queries/imdb-unique-plans}"
 BITMAP="${15:-0}"
 LOAD_PADDED="${16:-1}"
+SEP_LIKE="${17:-0}"
 
 #VARIABLE="${1:-$DEFAULTVALUE}"
 
@@ -49,7 +50,7 @@ FLOW_FEATS=0
 
 if test $SEED == 0;
 then
-  SEEDS=(7 6 1 2 3 4 5 8 9 10 11 12 13 14 15 16 17 18 19 20)
+  SEEDS=(7 6 4 5 13 1 2 3 8 9 10 11 12 14 15 16 17 18 19 20)
 elif test $SEED == 1;
 then
   SEEDS=(2 7 6 13 14 19)
@@ -70,6 +71,7 @@ for i in "${!SEEDS[@]}";
   do
   CMD="time python3 main.py --algs $ALG \
    -n $N \
+   --feat_separate_like_ests $SEP_LIKE \
    --sample_bitmap $BITMAP \
    --onehot_dropout $ONEHOT_DROPOUT \
    --inp_dropout $DROP1 \

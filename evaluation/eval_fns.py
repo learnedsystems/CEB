@@ -363,11 +363,32 @@ class PostgresPlanCost(EvalFunc):
                 .format(samples_type, alg_name, len(costs),
                     relcost))
 
+        template_costs = defaultdict(list)
+        true_template_costs = defaultdict(list)
+        tmp_rel_costs = {}
+        tmp_avg_errs = {}
+
+        for ci in range(len(costs)):
+            template = qreps[ci]["template_name"]
+            template_costs[template].append(costs[ci])
+            true_template_costs[template].append(opt_costs[ci])
+
+        for tmp in template_costs:
+            tmp_costs = np.array(template_costs[tmp])
+            tmp_opt_costs = np.array(true_template_costs[tmp])
+            tmp_relc = np.round(np.sum(tmp_costs) / float(np.sum(tmp_opt_costs)), 3)
+            tmp_avg_err = np.round(np.mean(tmp_costs - tmp_opt_costs), 3)
+            tmp_rel_costs[tmp] = tmp_relc
+            tmp_avg_errs[tmp] = tmp_avg_err
+            print("Template: {}, Relative Cost: {}, Avg Err: {}".format(tmp,
+                tmp_relc, tmp_avg_err))
+
+        if self.cost_model == "C":
+            suffix = ""
+        else:
+            suffix = "-" + self.cost_model
+
         if use_wandb:
-            if self.cost_model == "C":
-                suffix = ""
-            else:
-                suffix = "-" + self.cost_model
 
             loss_key = "Final-{}-{}{}".format("Relative-TotalPPCost",
                                                    samples_type,
@@ -384,6 +405,11 @@ class PostgresPlanCost(EvalFunc):
                                                 suffix)
             wandb.run.summary[loss_key] = np.percentile(ppes, 99)
 
+            for tmp, tmpcost in tmp_rel_costs.items():
+                loss_key = "Final-{}-{}{}-{}".format("Relative-TotalPPCost",
+                                                       samples_type,
+                                                       suffix, tmp)
+                wandb.run.summary[loss_key] = tmpcost
 
     def eval(self, qreps, preds, user="imdb",pwd="password",
             db_name="imdb", db_host="localhost", port=5432, num_processes=-1,

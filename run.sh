@@ -2,10 +2,11 @@
 #bash run_all_diff.sh 0
 #bash run_all_diff.sh 0 embeddings1.pkl
 
-SWA=swa
-BINS=10
+#SWA=none
+BINS=30
+BITMAP=0
 FLNORM=1
-EPOCHS=10
+EPOCHS=30
 QDIR=queries/imdb
 #TRAIN_TMPS=1a
 #TEST_TMPS=2a,2b
@@ -23,18 +24,19 @@ do
   for ei in "${!EMBS[@]}";
   do
   CMD="time python3 main.py --algs mscn \
-  --training_opt $SWA \
   --query_dir $QDIR \
   --loss_func_name mse \
-  --lr 0.00001 \
+  --lr 0.0001 \
   --normalize_flow_loss $FLNORM \
   --embedding_fn ${EMBS[$ei]} \
   --weight_decay $DECAY \
   --embedding_pooling sum \
   --max_discrete_featurizing_buckets $BINS \
+  --sample_bitmap $BITMAP \
   -n -1 --max_epochs $EPOCHS --train_test_split_kind custom \
   --use_wandb 1 --load_padded_mscn_feats 1 \
   --train_tmps $TRAIN_TMPS --test_tmps $TEST_TMPS --no_regex 1 \
+  --eval_fns qerr,ppc,ppc2
   --eval_epoch 100 --feat_onlyseen_preds 1 \
   --feat_separate_alias $FEAT_ALIAS_SEP \
   --table_features 1 --join_features onehot \

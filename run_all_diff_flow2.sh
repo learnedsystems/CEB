@@ -47,7 +47,7 @@ else
   SEEDS=(11 12 13 14 15 16 17 18 19 20)
 fi
 
-EVAL_FNS=qerr,ppc
+EVAL_FNS=qerr,ppc,ppc2
 
 RES_DIR=results/
 

@@ -43,11 +43,18 @@ class MSCN(NN):
         else:
             n_out = 1
 
+        if self.featurizer.ynormalization == "selectivity-log":
+            use_sigmoid = False
+        else:
+            use_sigmoid = True
+
         net = SetConv(sfeats,
                 pfeats, jfeats,
                 len(sample[0]["flow"]),
                 self.hidden_layer_size,
                 n_out=n_out,
-                dropouts=[self.inp_dropout, self.hl_dropout, self.comb_dropout])
+                dropouts=[self.inp_dropout, self.hl_dropout,
+                    self.comb_dropout],
+                use_sigmoid = use_sigmoid)
 
         return net

@@ -8,6 +8,7 @@ import sys
 import torch
 from collections import defaultdict
 import random
+import copy
 
 from query_representation.utils import *
 
@@ -118,6 +119,28 @@ class CardinalityEstimationAlg():
     def save_model(self, save_dir="./", suffix_name=""):
         pass
 
+def get_true_ests(samples, featurizer):
+    all_ests = []
+    query_idx = 0
+    for sample in samples:
+        ests = {}
+        node_keys = list(sample["subset_graph"].nodes())
+        if SOURCE_NODE in node_keys:
+            node_keys.remove(SOURCE_NODE)
+        node_keys.sort()
+        for subq_idx, node in enumerate(node_keys):
+            cards = sample["subset_graph"].nodes()[node]["cardinality"]
+            alias_key = node
+            est_card = cards["actual"]
+            # idx = query_idx + subq_idx
+            # est_card = featurizer.unnormalize(pred[idx], cards["total"])
+            # assert est_card > 0
+            ests[alias_key] = est_card
+
+        all_ests.append(ests)
+        query_idx += len(node_keys)
+    return all_ests
+
 def format_model_test_output(pred, samples, featurizer):
     all_ests = []
     query_idx = 0
@@ -186,6 +209,9 @@ class NN(CardinalityEstimationAlg):
 
         self.eval_fn_handles = []
         for efn in self.eval_fns.split(","):
+            if efn in ["planloss", "ppc2"]:
+                print("skipping eval fn: ", efn)
+                continue
             self.eval_fn_handles.append(get_eval_fn(efn))
 
     def init_net(self, sample):
@@ -215,10 +241,15 @@ class NN(CardinalityEstimationAlg):
     def periodic_eval(self):
         if not self.use_wandb:
             return
+
         start = time.time()
         curerrs = {}
+
         for st, ds in self.eval_ds.items():
+            if st == "train":
+                continue
             samples = self.samples[st]
+
             preds, _ = self._eval_ds(ds, samples)
             preds = format_model_test_output(preds,
                     samples, self.featurizer)
@@ -227,6 +258,25 @@ class NN(CardinalityEstimationAlg):
             for efunc in self.eval_fn_handles:
                 if "Constraint" in str(efunc):
                     continue
+                if "PostgresPlanCost-C" == str(efunc):
+                    if self.true_costs[st] == 0:
+                        truepreds = get_true_ests(samples, self.featurizer)
+                        truecosts = efunc.eval(samples, truepreds,
+                                args=None, samples_type=st,
+                                result_dir=None,
+                                user = self.featurizer.user,
+                                db_name = self.featurizer.db_name,
+                                db_host = self.featurizer.db_host,
+                                port = self.featurizer.port,
+                                num_processes = 16,
+                                alg_name = self.__str__(),
+                                save_pdf_plans=False,
+                                use_wandb=False)
+                        self.true_costs[st] = np.sum(truecosts)
+                        truecost = np.sum(truecosts)
+                    else:
+                        truecost = self.true_costs[st]
+
                 errors = efunc.eval(samples, preds,
                         args=None, samples_type=st,
                         result_dir=None,
@@ -239,9 +289,20 @@ class NN(CardinalityEstimationAlg):
                         save_pdf_plans=False,
                         use_wandb=False)
 
-                err = np.mean(errors)
-                wandb.log({str(efunc)+"-"+st: err, "epoch":self.epoch})
-                curerrs[str(efunc)+"-"+st] = round(err,4)
+                if "PostgresPlanCost-C" == str(efunc):
+                    assert truecost != 0.0
+                    totcost = np.sum(errors)
+                    relcost = totcost / truecost
+                    key = str(efunc)+"-Relative-"+st
+                    wandb.log({key: relcost, "epoch":self.epoch})
+                    curerrs[key] = round(relcost,4)
+                else:
+                    err = np.mean(errors)
+                    wandb.log({str(efunc)+"-"+st: err, "epoch":self.epoch})
+                    curerrs[str(efunc)+"-"+st] = round(err,4)
+
+        if self.early_stopping == 2:
+            self.all_errs.append(curerrs)
 
         print("Epoch ", self.epoch, curerrs)
         print("periodic_eval took: ", time.time()-start)
@@ -320,6 +381,15 @@ class NN(CardinalityEstimationAlg):
         print("precomputing flow info took: ", time.time()-fstart)
 
     def train(self, training_samples, **kwargs):
+
+        self.all_errs = []
+        self.best_model_epoch = -1
+        self.model_weights = []
+
+        self.true_costs = {}
+        self.true_costs["val"] = 0.0
+        self.true_costs["test"] = 0.0
+
         assert isinstance(training_samples[0], dict)
         self.featurizer = kwargs["featurizer"]
         self.training_samples = training_samples
@@ -341,17 +411,26 @@ class NN(CardinalityEstimationAlg):
         self.samples = {}
 
         self.eval_ds["train"] = self.trainds
+
         if "valqs" in kwargs and len(kwargs["valqs"]) > 0:
             self.eval_ds["val"] = self.init_dataset(kwargs["valqs"], False)
+            self.samples["val"] = kwargs["valqs"]
 
         if self.eval_epoch < self.max_epochs:
-            if "valqs" in kwargs and len(kwargs["valqs"]) > 0:
-                self.eval_ds["val"] = self.init_dataset(kwargs["valqs"], False)
-                self.samples["val"] = kwargs["valqs"]
+
+            # if "valqs" in kwargs and len(kwargs["valqs"]) > 0:
+                # pass
             if "testqs" in kwargs and len(kwargs["testqs"]) > 0:
-                self.eval_ds["test"] = self.init_dataset(kwargs["testqs"],
+                if len(kwargs["testqs"]) > 400:
+                    ns = int(len(kwargs["testqs"]) / 10)
+                    random.seed(42)
+                    testqs = random.sample(kwargs["testqs"], ns)
+                else:
+                    testqs = kwargs["testqs"]
+
+                self.eval_ds["test"] = self.init_dataset(testqs,
                         False)
-                self.samples["test"] = kwargs["testqs"]
+                self.samples["test"] = testqs
 
         # TODO: initialize self.num_features
         self.net, self.optimizer = self.init_net(self.trainds[0])
@@ -384,9 +463,10 @@ class NN(CardinalityEstimationAlg):
                 self.periodic_eval()
 
             self.train_one_epoch()
+            self.model_weights.append(copy.deepcopy(self.net.state_dict()))
 
             # TODO: needs to decide if we should stop training
-            if self.early_stopping:
+            if self.early_stopping == 1:
                 if "val" in self.eval_ds:
                     ds = self.eval_ds["val"]
                 else:
@@ -400,16 +480,42 @@ class NN(CardinalityEstimationAlg):
                     pct_chngs.append(pct)
 
                 eplosses.append(eploss)
-                # print(eplosses[-5:-1])
-                # print(pct_chngs[-5:-1])
                 if len(pct_chngs) > 5:
                     trailing_chng = np.mean(pct_chngs[-5:-1])
                     if trailing_chng > -0.1:
                         print("Going to exit training at epoch: ", self.epoch)
                         break
 
+            elif self.early_stopping == 2:
+                self.periodic_eval()
+                ppc_rel = self.all_errs[-1]['PostgresPlanCost-C-Relative-val']
+
+                if len(eplosses) >= 1:
+                    pct = 100* ((ppc_rel-eplosses[-1])/eplosses[-1])
+                    pct_chngs.append(pct)
+
+                eplosses.append(ppc_rel)
+
+                if self.epoch > 2 and pct_chngs[-1] > 1:
+                    print(eplosses)
+                    print(pct_chngs)
+                    # print(eplosses[-5:-1])
+                    # print(pct_chngs[-5:-1])
+                    # revert to model before this epoch's training
+                    print("Going to exit training at epoch: ", self.epoch)
+                    self.best_model_epoch = self.epoch-1
+                    break
+
         if self.training_opt == "swa":
             torch.optim.swa_utils.update_bn(self.trainloader, self.swa_net)
+
+        if self.best_model_epoch != -1:
+            print("""training done, will update our model based on validation set""")
+            assert len(self.model_weights) > 0
+            self.net.load_state_dict(self.model_weights[self.best_model_epoch])
+
+            # self.nets[0].load_state_dict(self.best_model_dict)
+            # self.nets[0].eval()
 
     def _eval_ds(self, ds, samples=None):
         torch.set_grad_enabled(False)
@@ -422,7 +528,7 @@ class NN(CardinalityEstimationAlg):
         # important to not shuffle the data so correct order preserved!
         loader = data.DataLoader(ds,
                 batch_size=5000, shuffle=False,
-                collate_fn=self.collate_fn
+                # collate_fn=self.collate_fn
                 )
 
         allpreds = []
@@ -810,11 +916,11 @@ class NN(CardinalityEstimationAlg):
         list of aliases / table names
         '''
         testds = self.init_dataset(test_samples, False)
-        # testds = QueryDataset(test_samples, self.featurizer,
-                # False,
-                # load_padded_mscn_feats=self.load_padded_mscn_feats)
 
+        start = time.time()
         preds, _ = self._eval_ds(testds, test_samples)
+        # print("samples: {}, _eval_ds took: {}".format(len(preds),
+            # (time.time()-start)*1000))
 
         return format_model_test_output(preds, test_samples, self.featurizer)
 

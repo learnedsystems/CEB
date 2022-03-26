@@ -230,6 +230,11 @@ def get_query_fns():
             cur_val_fns = []
             if qdir in train_tmps:
                 cur_train_fns = qfns
+                if args.val_size != 0.0:
+                    cur_val_fns, cur_train_fns = train_test_split(cur_train_fns,
+                            test_size=1-args.val_size,
+                            random_state=args.seed)
+
                 cur_test_fns = []
             elif qdir in test_tmps:
                 cur_train_fns = []
@@ -276,13 +281,13 @@ def get_query_fns():
 
     print("Skipped templates: ", " ".join(skipped_templates))
 
-    if args.eval_on_jobm:
+    if args.eval_on_jobm and not args.sample_bitmap:
         jobm_dir = "./queries/jobm/all_jobm"
         qfns = list(glob.glob(jobm_dir+"/*.pkl"))
         # print(qfns)
         test_qfns += qfns
 
-    if args.eval_on_job:
+    if args.eval_on_job and not args.sample_bitmap:
         job_dir = "./queries/job/all_job"
         qfns = list(glob.glob(job_dir+"/*.pkl"))
         test_qfns += qfns
@@ -351,9 +356,11 @@ def get_featurizer(trainqs, valqs, testqs):
             if isinstance(attrvals, set):
                 attrvals = list(attrvals)
             featdata[k] = attrvals
-        f = open(featdata_fn, "w")
-        json.dump(featdata, f)
-        f.close()
+
+        if args.save_featstats:
+            f = open(featdata_fn, "w")
+            json.dump(featdata, f)
+            f.close()
     else:
         f = open(featdata_fn, "r")
         featdata = json.load(f)
@@ -371,8 +378,10 @@ def get_featurizer(trainqs, valqs, testqs):
     # include this in the cached version
 
     featurizer.setup(ynormalization=args.ynormalization,
+            use_saved_feats = args.use_saved_feats,
             bitmap_dir = args.bitmap_dir,
             sample_bitmap = args.sample_bitmap,
+            true_base_cards = args.feat_true_base_cards,
             feat_separate_alias = args.feat_separate_alias,
             feat_separate_like_ests = args.feat_separate_like_ests,
             onehot_dropout = args.onehot_dropout,
@@ -390,7 +399,10 @@ def get_featurizer(trainqs, valqs, testqs):
             implied_pred_features = args.implied_pred_features,
             feat_onlyseen_preds = args.feat_onlyseen_preds
             )
+
+    featurizer.update_max_sets(trainqs+valqs+testqs)
     featurizer.update_workload_stats(trainqs+valqs+testqs)
+
     featurizer.init_feature_mapping()
     featurizer.update_ystats(trainqs+valqs+testqs)
 
@@ -447,7 +459,7 @@ def main():
 
     # set up wandb logging metrics
     if args.use_wandb:
-        wandb_tags = ["v14"]
+        wandb_tags = ["v15"]
         if args.wandb_tags is not None:
             wandb_tags += args.wandb_tags.split(",")
         wandb.init("ceb", config={},
@@ -552,7 +564,7 @@ def read_flags():
     parser.add_argument("--query_dir", type=str, required=False,
             default="./queries/imdb/")
     parser.add_argument("--eval_on_jobm", type=int, required=False,
-            default=1)
+            default=0)
     parser.add_argument("--eval_on_job", type=int, required=False,
             default=0)
 
@@ -639,15 +651,23 @@ def read_flags():
     # featurizer arguments
     parser.add_argument("--regen_featstats", type=int, required=False,
             default=0)
+    parser.add_argument("--save_featstats", type=int, required=False,
+            default=0)
+    parser.add_argument("--use_saved_feats", type=int, required=False,
+            default=1)
     parser.add_argument("--heuristic_features", type=int, required=False,
             default=1)
     parser.add_argument("--ynormalization", type=str, required=False,
             default="log")
     parser.add_argument("--feat_onlyseen_preds", type=int, required=False,
             default=1)
+    parser.add_argument("--feat_onlyseen_cols", type=int, required=False,
+            default=0)
     parser.add_argument("--feat_separate_alias", type=int, required=False,
             default=0)
     parser.add_argument("--feat_separate_like_ests", type=int, required=False,
+            default=0)
+    parser.add_argument("--feat_true_base_cards", type=int, required=False,
             default=0)
 
     parser.add_argument("--heuristic_unseen_preds", type=str, required=False,
@@ -676,7 +696,7 @@ def read_flags():
             required=False, default=0)
 
     parser.add_argument("--eval_epoch", type=int,
-            required=False, default=100)
+            required=False, default=10000)
     parser.add_argument("--mb_size", type=int, required=False,
             default=1024)
 

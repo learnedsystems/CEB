@@ -43,8 +43,9 @@ class SimpleRegression(torch.nn.Module):
 class SetConv(nn.Module):
     def __init__(self, sample_feats, predicate_feats, join_feats, flow_feats,
             hid_units, num_hidden_layers=2, n_out=1,
-            dropouts=[0.0, 0.0, 0.0]):
+            dropouts=[0.0, 0.0, 0.0], use_sigmoid=True):
         super(SetConv, self).__init__()
+        self.use_sigmoid = use_sigmoid
 
         self.sample_feats = sample_feats
         self.predicate_feats = predicate_feats
@@ -169,5 +170,9 @@ class SetConv(nn.Module):
         hid = torch.cat(tocat, 1)
         hid = self.combined_drop_layer(hid)
         hid = F.relu(self.out_mlp1(hid))
-        out = torch.sigmoid(self.out_mlp2(hid))
+
+        if self.use_sigmoid:
+            out = torch.sigmoid(self.out_mlp2(hid))
+        else:
+            out = self.out_mlp2(hid)
         return out

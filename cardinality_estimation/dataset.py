@@ -94,9 +94,25 @@ def mscn_collate_fn_together(data):
     # print(len(data))
 
     for di in range(len(data)):
-        for feats in data[di][0]:
-            for k,v in feats.items():
-                alldata[k].append(v)
+        # if isinstance(data[di][0], dict):
+            # for feats in data[di]:
+                # for k,v in feats.items():
+                    # alldata[k].append(v)
+        # else:
+            # for feats in data[di][0]:
+                # for k,v in feats.items():
+                    # alldata[k].append(v)
+        try:
+            for feats in data[di][0]:
+                for k,v in feats.items():
+                    alldata[k].append(v)
+        except Exception:
+            print(type(data[di]))
+            print(type(data[di][0]))
+            print(type(data[di][1]))
+            for feats in data[di]:
+                for k,v in feats.items():
+                    alldata[k].append(v)
 
     xdata = {}
     for k,v in alldata.items():
@@ -287,7 +303,7 @@ class QueryDataset(data.Dataset):
         self.featurizer = featurizer
 
         self.save_mscn_feats = False
-        if self.load_padded_mscn_feats:
+        if self.load_padded_mscn_feats and self.featurizer.use_saved_feats:
             self.save_mscn_feats = True
             fkeys = list(dir(self.featurizer))
             fkeys.sort()

@@ -218,8 +218,17 @@ class Featurizer():
         # featurization has very different meaning from categorical
         # featurization
         self.seen_like_preds = {}
+        self.seen_joins = set()
+        self.seen_tabs = set()
+
         for qrep in qreps:
+            for ekey in qrep["join_graph"].edges():
+                join_str = qrep["join_graph"].edges()[ekey]["join_condition"]
+                self.seen_joins.add(join_str)
+
             for node, info in qrep["join_graph"].nodes(data=True):
+                self.seen_tabs.add(info["real_name"])
+
                 for ci, col in enumerate(info["pred_cols"]):
                     # cur_columns.append(col)
                     if not self.feat_separate_alias:
@@ -230,8 +239,15 @@ class Featurizer():
 
                     vals = info["pred_vals"][ci]
                     cmp_op = info["pred_types"][ci]
-                    for val in vals:
-                        self.seen_preds[col].add(val)
+                    if isinstance(vals, list):
+                        for val in vals:
+                            if isinstance(val, dict):
+                                val = val["literal"]
+                            self.seen_preds[col].add(val)
+                    else:
+                        if isinstance(vals, dict):
+                            vals = vals["literal"]
+                        self.seen_preds[col].add(vals)
 
                     if "like" in cmp_op:
                         if col not in self.seen_like_preds:
@@ -256,7 +272,7 @@ class Featurizer():
         self.aliases = {}
         self.regex_templates = set()
 
-    def update_workload_stats(self, qreps):
+    def update_max_sets(self, qreps):
         for qrep in qreps:
             if qrep["template_name"] not in self.templates:
                 self.templates.append(qrep["template_name"])
@@ -291,6 +307,9 @@ class Featurizer():
             if num_joins > self.max_joins:
                 self.max_joins = num_joins
 
+    def update_workload_stats(self, qreps):
+
+        for qrep in qreps:
             cur_columns = []
             for node, info in qrep["join_graph"].nodes(data=True):
                 for i, cmp_op in enumerate(info["pred_types"]):
@@ -547,6 +566,8 @@ class Featurizer():
 
     def setup(self,
             bitmap_dir = None,
+            use_saved_feats = True,
+            true_base_cards = False,
             heuristic_features=True,
             feat_separate_alias=False,
             feat_separate_like_ests=False,
@@ -899,16 +920,32 @@ class Featurizer():
 
             for v in val:
                 if self.feat_onlyseen_preds:
+                    if isinstance(v, dict):
+                        v = v["literal"]
+                        # print(v)
+                        # pdb.set_trace()
                     if v not in self.seen_preds[col]:
                         continue
 
                 pred_idx = deterministic_hash(str(v)) % num_buckets
                 pfeats[pred_idx_start+pred_idx] = 1.00
 
+    def _get_true_est(self, subpinfo):
+        true_est = subpinfo[self.ckey]["actual"]
+        # note: total is only needed for self.ynormalization == selectivity
+
+        if "total" in subpinfo[self.ckey]:
+            total = subpinfo[self.ckey]["total"]
+        else:
+            total = None
+        subp_est = self.normalize_val(true_est,
+                total)
+        return subp_est
+
     def _get_pg_est(self, subpinfo):
-        # subpinfo = subsetgraph.nodes()[node]
         pg_est = subpinfo[self.ckey]["expected"]
         # note: total is only needed for self.ynormalization == selectivity
+
         if "total" in subpinfo[self.ckey]:
             total = subpinfo[self.ckey]["total"]
         else:
@@ -976,8 +1013,9 @@ class Featurizer():
             keys.sort()
             keys = ",".join(keys)
             if keys not in self.join_featurizer:
-                print("join_str: {} not found in featurizer".format(join_str))
+                # print("join_str: {} not found in featurizer".format(join_str))
                 # return jfeats
+                pass
             else:
                 jfeats[self.join_featurizer[keys]] = 1.00
 
@@ -1241,6 +1279,11 @@ class Featurizer():
                 tfeats = np.zeros(self.table_features_len)
                 # need to find its real table name from the join_graph
                 table = joingraph.nodes()[alias]["real_name"]
+                if table not in self.seen_tabs:
+                    # print("skipping unseen tabs!")
+                    alltablefeats.append(tfeats)
+                    continue
+
                 if table not in self.table_featurizer:
                     print("table: {} not found in featurizer".format(table))
                     # assert False
@@ -1272,6 +1315,9 @@ class Featurizer():
                         join_str = joingraph.edges()[ekey]["join_condition"]
                         if join_str in seenjoins:
                             continue
+                        if join_str not in self.seen_joins:
+                            # print("skipping unseen join!")
+                            continue
                         seenjoins.add(join_str)
                         jfeats = self._handle_join_features(join_str)
                         alljoinfeats.append(jfeats)
@@ -1290,8 +1336,14 @@ class Featurizer():
                 continue
 
             node_key = tuple([alias])
-            alias_est = self._get_pg_est(subsetgraph.nodes()[node_key])
+
+            if self.true_base_cards:
+                alias_est = self._get_true_est(subsetgraph.nodes()[node_key])
+            else:
+                alias_est = self._get_pg_est(subsetgraph.nodes()[node_key])
+
             subp_est = self._get_pg_est(subsetgraph.nodes()[subplan])
+
             # print("DEBUGGING subplan est = 0")
             # subp_est = 0.0
 
@@ -1394,8 +1446,12 @@ class Featurizer():
             for alias in subplan:
                 # need to find its real table name from the join_graph
                 table = joingraph.nodes()[alias]["real_name"]
+                if table not in self.seen_tabs:
+                    # print("Skipping table featurization")
+                    continue
+
                 if table not in self.table_featurizer:
-                    # print("table: {} not found in featurizer".format(table))
+                    print("table: {} not found in featurizer".format(table))
                     continue
                 # Note: same table might be set to 1.0 twice, in case of aliases
                 tfeats[self.table_featurizer[table]] = 1.00
@@ -1689,6 +1745,8 @@ class Featurizer():
                 self.min_val)*(self.max_val-self.min_val))
         elif self.ynormalization == "selectivity":
             est_card = y*total
+        elif self.ynormalization == "selectivity-log":
+            est_card = (np.exp(y)) * total
         else:
             assert False
         return est_card
@@ -1698,6 +1756,12 @@ class Featurizer():
             return (np.log(float(val)) - self.min_val) / (self.max_val-self.min_val)
         elif self.ynormalization == "selectivity":
             return float(val) / total
+        elif self.ynormalization == "selectivity-log":
+            sel = float(val) / total
+            if sel == 0:
+                sel += 1
+            logsel = np.log(sel)
+            return logsel
         else:
             assert False
 

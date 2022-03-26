@@ -1,12 +1,12 @@
 ALG=mscn
 NORMFL=1
 #LR=0.0001
-HLS=256
+HLS=128
 #QDIR=queries/imdb
 REPS=(1 1 1)
-SEED=1
+SEED=0
 
-ONEHOTD=2
+ONEHOTD=0
 TF=1
 JF=onehot-stats
 PF=onehot-stats

@@ -1,5 +1,8 @@
 DROPOUT_KIND=2
+TRUEP=0.8
 BINS=10
+LIKE_BINS=10
+BITMAP=0
 FLNORM=1
 EPOCHS=-1
 QDIR=queries/imdb-unique-plans
@@ -24,6 +27,7 @@ do
     --query_dir $QDIR \
     --early_stopping 1 \
     --onehot_dropout $DROPOUT_KIND \
+    --onehot_mask_truep $TRUEP \
     --loss_func_name mse \
     --lr 0.0001 \
     --normalize_flow_loss $FLNORM \
@@ -31,6 +35,8 @@ do
     --weight_decay $DECAY \
     --embedding_pooling sum \
     --max_discrete_featurizing_buckets $BINS \
+    --max_like_featurizing_buckets $LIKE_BINS \
+    --sample_bitmap $BITMAP \
     -n -1 --max_epochs $EPOCHS --train_test_split_kind custom \
     --use_wandb 1 --load_padded_mscn_feats 1 \
     --train_tmps ${TRAIN_TMPS[$ti]} \

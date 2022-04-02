@@ -303,8 +303,7 @@ class QueryDataset(data.Dataset):
         self.featurizer = featurizer
 
         self.save_mscn_feats = False
-        if self.load_padded_mscn_feats and self.featurizer.use_saved_feats:
-            self.save_mscn_feats = True
+        if self.load_padded_mscn_feats:
             fkeys = list(dir(self.featurizer))
             fkeys.sort()
             attrs = ""
@@ -319,11 +318,18 @@ class QueryDataset(data.Dataset):
             self.featdir = "./mscn_features/" + str(self.feathash)
             if os.path.exists(self.featdir):
                 print("features saved before")
+                if not self.featurizer.use_saved_feats:
+                    print("going to delete feature directory, and save again")
+                    # delete these and save again
+                    self.save_mscn_feats = True
+                    os.remove(self.featdir)
             else:
                 print("features NOT saved before")
 
-            make_dir("./mscn_features")
-            make_dir(self.featdir)
+            if self.featurizer.use_saved_feats:
+                self.save_mscn_feats = True
+                make_dir("./mscn_features")
+                make_dir(self.featdir)
 
         # shorthands
         self.ckey = self.featurizer.ckey
@@ -401,8 +407,20 @@ class QueryDataset(data.Dataset):
 
         if self.featurizer.sample_bitmap:
             assert self.featurizer.bitmap_dir is not None
-            bitmapfn = os.path.join(self.featurizer.bitmap_dir, qrep["name"])
-            assert os.path.exists(bitmapfn)
+            if "jobm" in qrep["template_name"]:
+                bitdir = "./queries/jobm_bitmaps/"
+            elif "job" in qrep["template_name"]:
+                bitdir = "./queries/job_bitmaps/"
+            else:
+                bitdir = self.featurizer.bitmap_dir
+
+            bitmapfn = os.path.join(bitdir, qrep["name"])
+
+            # assert os.path.exists(bitmapfn)
+            if not os.path.exists(bitmapfn):
+                print(bitmapfn)
+                pdb.set_trace()
+
             with open(bitmapfn, "rb") as handle:
                 sbitmaps = pickle.load(handle)
         else:

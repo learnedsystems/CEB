@@ -12,6 +12,7 @@ import numpy as np
 import os
 import pickle
 import copy
+import torch
 
 JOIN_KEY_MAX_TMP = """SELECT COUNT(*), {COL} FROM {TABLE} GROUP BY {COL} ORDER BY COUNT(*) DESC LIMIT 1"""
 
@@ -67,6 +68,10 @@ order by
 RANGE_PREDS = ["gt", "gte", "lt", "lte"]
 
 CREATE_INDEX_TMP = '''CREATE INDEX IF NOT EXISTS {INDEX_NAME} ON {TABLE} ({COLUMN});'''
+
+MAX_CEB_IMDB = 23795596119
+MAX_JOB = 5607347034
+TIMEOUT_CARD = 150001000000
 
 import string
 
@@ -162,8 +167,8 @@ class Featurizer():
         self.continuous_feature_size = 2
 
         # regex stuff
-        self.ilike_bigrams = True
-        self.ilike_trigrams = True
+        # self.ilike_bigrams = True
+        # self.ilike_trigrams = True
 
         self.featurizer = None
         self.cmp_ops = set()
@@ -220,14 +225,49 @@ class Featurizer():
         self.seen_like_preds = {}
         self.seen_joins = set()
         self.seen_tabs = set()
+        self.seen_bitmaps = {}
 
         for qrep in qreps:
             for ekey in qrep["join_graph"].edges():
                 join_str = qrep["join_graph"].edges()[ekey]["join_condition"]
                 self.seen_joins.add(join_str)
 
+            if self.sample_bitmap:
+                sbitmaps = None
+                assert self.bitmap_dir is not None
+                if "jobm" in qrep["template_name"]:
+                    bitdir = "./queries/jobm_bitmaps/"
+                elif "job" in qrep["template_name"]:
+                    bitdir = "./queries/job_bitmaps/"
+                else:
+                    bitdir = self.bitmap_dir
+
+                bitmapfn = os.path.join(bitdir, qrep["name"])
+
+                assert os.path.exists(bitmapfn)
+                # if not os.path.exists(bitmapfn):
+                    # print(bitmapfn)
+                    # pdb.set_trace()
+
+                with open(bitmapfn, "rb") as handle:
+                    sbitmaps = pickle.load(handle)
+
             for node, info in qrep["join_graph"].nodes(data=True):
                 self.seen_tabs.add(info["real_name"])
+                real_name = info["real_name"]
+
+                if self.sample_bitmap:
+                    if real_name not in self.seen_bitmaps:
+                        self.seen_bitmaps[real_name] = set()
+                    assert sbitmaps is not None
+                    # startidx = len(self.table_featurizer)
+                    sb = sbitmaps[(node,)]
+                    # assert self.sample_bitmap_key in sb
+                    if self.sample_bitmap_key not in sb:
+                        continue
+                    bitmap = sb[self.sample_bitmap_key]
+                    for val in bitmap:
+                        self.seen_bitmaps[real_name].add(val)
 
                 for ci, col in enumerate(info["pred_cols"]):
                     # cur_columns.append(col)
@@ -254,6 +294,8 @@ class Featurizer():
                             self.seen_like_preds[col] = set()
                         assert len(vals) == 1
                         self.seen_like_preds[col].add(vals[0])
+
+
 
     def update_using_saved_stats(self, featdata):
         for k,v in featdata.items():
@@ -338,13 +380,46 @@ class Featurizer():
 
         print("max pred vals: {}".format(self.max_pred_vals))
 
-    def update_ystats(self, qreps):
-        y = np.array(get_all_cardinalities(qreps, self.ckey))
+        if self.set_column_feature == "debug":
+            pdb.set_trace()
+
+    def update_ystats(self, qreps, clamp_timeouts=False):
+
+        if clamp_timeouts:
+            y0 = []
+            # get max value, so we can replace timeout values with it
+            for qrep in qreps:
+                jg = qrep["join_graph"]
+                for node,data in qrep["subset_graph"].nodes(data=True):
+                    actual = data[self.ckey]["actual"]
+                    if actual >= TIMEOUT_CARD:
+                        continue
+                    y0.append(actual)
+
+            maxval = np.max(y0)
+
+        y = []
+        for qrep in qreps:
+            jg = qrep["join_graph"]
+            for node,data in qrep["subset_graph"].nodes(data=True):
+                actual = data[self.ckey]["actual"]
+                if clamp_timeouts:
+                    if actual >= TIMEOUT_CARD:
+                        y.append(maxval)
+                    else:
+                        y.append(actual)
+                else:
+                    y.append(actual)
+
+        y = np.array(y)
+
         if self.ynormalization == "log":
             y = np.log(y)
 
         self.max_val = np.max(y)
         self.min_val = np.min(y)
+
+        print("min y: {}, max y: {}".format(self.min_val, self.max_val))
 
     def execute(self, sql):
         '''
@@ -457,8 +532,6 @@ class Featurizer():
 
     def _init_pred_featurizer_set(self):
         assert self.featurization_type == "set"
-        # self.featurizer = {}
-        # self.featurizer_type_idxs = {}
 
         self.num_cols = len(self.column_stats)
         all_cols = list(self.column_stats.keys())
@@ -512,7 +585,10 @@ class Featurizer():
                 self.continuous_feature_size)
         pred_len += self.continuous_feature_size
 
-        ilike_feat_size = 2 + self.max_like_featurizing_buckets
+        ilike_feat_size = self.max_like_featurizing_buckets
+        if self.like_char_features:
+            ilike_feat_size += 2
+
         self.featurizer_type_idxs["constant_like"] = (pred_len,
                 ilike_feat_size)
         pred_len += ilike_feat_size
@@ -567,8 +643,11 @@ class Featurizer():
     def setup(self,
             bitmap_dir = None,
             use_saved_feats = True,
+            feat_onlyseen_maxy = False,
             true_base_cards = False,
+            loss_func = "mse",
             heuristic_features=True,
+            like_char_features=False,
             feat_separate_alias=False,
             feat_separate_like_ests=False,
             separate_ilike_bins=False,
@@ -589,11 +668,13 @@ class Featurizer():
             max_discrete_featurizing_buckets=10,
             max_like_featurizing_buckets=10,
             feat_num_paths= False, feat_flows=False,
-            feat_pg_costs = True, feat_tolerance=False,
-            feat_pg_path=True,
-            feat_rel_pg_ests=True, feat_join_graph_neighbors=True,
-            feat_rel_pg_ests_onehot=True,
-            feat_pg_est_one_hot=True,
+            feat_pg_costs = False, feat_tolerance=False,
+            feat_pg_path=False,
+            flow_feat_degrees = False,
+            flow_feat_tables = True,
+            feat_rel_pg_ests=False, feat_join_graph_neighbors=False,
+            feat_rel_pg_ests_onehot=False,
+            feat_pg_est_one_hot=False,
             feat_mcvs = False,
             implied_pred_features=False,
             cost_model=None, sample_bitmap=False, sample_bitmap_num=1000,
@@ -678,6 +759,19 @@ class Featurizer():
 
             print("Updated stats to remove alias based columns")
 
+            if self.loss_func == "flowloss":
+                print("updating features to include flowloss specific ones")
+                self.feat_num_paths= False
+                self.feat_flows=False
+                self.feat_pg_costs = True
+                self.feat_tolerance=False
+                self.feat_pg_path=True
+                self.feat_rel_pg_ests=False
+                self.feat_join_graph_neighbors=True
+                self.feat_rel_pg_ests_onehot=True
+                self.feat_pg_est_one_hot=True
+                self.flow_feat_degrees = True
+                self.flow_feat_tables = True
 
     def init_feature_mapping(self):
 
@@ -766,32 +860,6 @@ class Featurizer():
             a,b = self.featurizer_type_idxs["join_onehot"]
             self.join_onehot_mask[a:b] = 0.0
 
-        # if self.join_features == "onehot":
-            # self.join_featurizer = {}
-            # for i, join in enumerate(sorted(self.joins)):
-                # self.join_featurizer[join] = i
-
-        # if self.join_features == "onehot" \
-                # or self.join_features == "1":
-            # self.join_features_len = len(self.joins)
-        # elif self.join_features == "onehot_tables":
-            # self.join_features_len = len(self.tables)
-        # elif self.join_features == "onehot_debug":
-            # self.join_features_len = len(self.tables)
-
-        # elif self.join_features == "stats":
-            # self.join_features_len = 0
-            # # primary key : foreign key OR fk : fk (onehot)
-            # self.join_features_len += 2
-            # # is self-join or not (boolean)
-            # self.join_features_len += 1
-            # # dv(tab1) / dv(tab2)
-            # self.join_features_len += 1
-
-            # # for both side of joins; pk first OR just sort;
-            # self.join_features_len += len(self.join_key_stat_names)*2
-
-
         ## predicate filter features
         if self.featurization_type == "combined":
             self._init_pred_featurizer_combined()
@@ -802,10 +870,13 @@ class Featurizer():
         if self.flow_features:
             # num flow features: concat of 1-hot vectors
             self.num_flow_features = 0
-            self.num_flow_features += self.max_in_degree+1
-            self.num_flow_features += self.max_out_degree+1
 
-            self.num_flow_features += len(self.aliases)
+            if self.flow_feat_degrees:
+                self.num_flow_features += self.max_in_degree+1
+                self.num_flow_features += self.max_out_degree+1
+
+            if self.flow_feat_tables:
+                self.num_flow_features += len(self.aliases)
 
             # for heuristic estimate for the node
             self.num_flow_features += 1
@@ -844,9 +915,6 @@ class Featurizer():
             if self.feat_pg_est_one_hot:
                 # upto 10^7
                 self.num_flow_features += self.PG_EST_BUCKETS
-
-            # pg est for the node
-            self.num_flow_features += 1
 
     def _handle_continuous_feature(self, pfeats, pred_idx_start,
             col, val):
@@ -950,6 +1018,7 @@ class Featurizer():
             total = subpinfo[self.ckey]["total"]
         else:
             total = None
+
         subp_est = self.normalize_val(pg_est,
                 total)
         return subp_est
@@ -973,28 +1042,28 @@ class Featurizer():
         regex_val = val[0].replace("%","")
         pred_idx = deterministic_hash(regex_val) % num_buckets
         pfeats[pred_idx_start+pred_idx] = 1.00
-        for v in regex_val:
-            pred_idx = deterministic_hash(str(v)) % num_buckets
-            pfeats[pred_idx_start+pred_idx] = 1.00
 
-        if self.ilike_bigrams:
+        if self.like_char_features:
+            for v in regex_val:
+                pred_idx = deterministic_hash(str(v)) % num_buckets
+                pfeats[pred_idx_start+pred_idx] = 1.00
+
             for i,v in enumerate(regex_val):
                 if i != len(regex_val)-1:
                     pred_idx = deterministic_hash(v+regex_val[i+1]) % num_buckets
                     pfeats[pred_idx_start+pred_idx] = 1.00
 
-        if self.ilike_trigrams:
             for i,v in enumerate(regex_val):
                 if i < len(regex_val)-2:
                     pred_idx = deterministic_hash(v+regex_val[i+1]+ \
                             regex_val[i+2]) % num_buckets
                     pfeats[pred_idx_start+pred_idx] = 1.00
 
-        pfeats[pred_idx_start + num_buckets] = len(regex_val)
+            pfeats[pred_idx_start + num_buckets] = len(regex_val)
 
-        # regex has num or not feature
-        if bool(re.search(r'\d', regex_val)):
-            pfeats[pred_idx_start + num_buckets + 1] = 1
+            # regex has num or not feature
+            if bool(re.search(r'\d', regex_val)):
+                pfeats[pred_idx_start + num_buckets + 1] = 1
 
     def _handle_join_features(self, join_str):
         join_str = join_str.replace(" ", "")
@@ -1169,7 +1238,7 @@ class Featurizer():
 
     def _handle_single_col(self, col, val,
             alias_est, subp_est,
-            cmp_op, continuous):
+            cmp_op, continuous, jobquery=False):
 
         ret_feats = []
         feat_idx_start = 0
@@ -1193,9 +1262,10 @@ class Featurizer():
             # ret_feats.append(pfeats)
         else:
             if "like" in cmp_op:
-                lstart,_ = self.featurizer_type_idxs["constant_like"]
-                self._handle_ilike_feature(pfeats,
-                        lstart, col, val)
+                if not jobquery:
+                    lstart,_ = self.featurizer_type_idxs["constant_like"]
+                    self._handle_ilike_feature(pfeats,
+                            lstart, col, val)
             else:
                 # look at _handle_ilike_feature to know how its used
                 # pred_idx_start += self.max_like_featurizing_buckets + 2
@@ -1270,6 +1340,7 @@ class Featurizer():
         featdict = {}
         subsetgraph = qrep["subset_graph"]
         joingraph = qrep["join_graph"]
+        jobquery = "job" in qrep["template_name"]
 
         alltablefeats = []
         if self.table_features:
@@ -1297,9 +1368,26 @@ class Featurizer():
                     sb = bitmaps[(alias,)]
                     if self.sample_bitmap_key in sb:
                         bitmap = sb[self.sample_bitmap_key]
+                        if self.feat_onlyseen_preds:
+                            if table not in self.seen_bitmaps:
+                                print(table, " not in seen bitmaps")
+                                # pdb.set_trace()
+                                continue
+                            train_seenvals = self.seen_bitmaps[table]
+
                         for val in bitmap:
-                            bitmapidx = val % self.sample_bitmap_buckets
-                            tfeats[startidx+bitmapidx] = 1.0
+                            if self.feat_onlyseen_preds:
+                                if val not in train_seenvals:
+                                    # print(" {} not in seen bitmaps for {}".format(val, table))
+                                    continue
+                                # else:
+                                    # print(" {} in seen bitmaps for {}".format(val, table))
+
+                                bitmapidx = val % self.sample_bitmap_buckets
+                                tfeats[startidx+bitmapidx] = 1.0
+                            else:
+                                bitmapidx = val % self.sample_bitmap_buckets
+                                tfeats[startidx+bitmapidx] = 1.0
 
                 alltablefeats.append(tfeats)
 
@@ -1344,9 +1432,6 @@ class Featurizer():
 
             subp_est = self._get_pg_est(subsetgraph.nodes()[subplan])
 
-            # print("DEBUGGING subplan est = 0")
-            # subp_est = 0.0
-
             seencols = set()
             for ci, col in enumerate(aliasinfo["pred_cols"]):
                 # we should have updated self.column_stats etc. to be appropriately
@@ -1362,8 +1447,15 @@ class Featurizer():
                 allvals = aliasinfo["pred_vals"][ci]
                 if isinstance(allvals, dict):
                     allvals = allvals["literal"]
+
                 cmp_op = aliasinfo["pred_types"][ci]
+
+                # if jobquery and "like" in cmp_op.lower():
+                    # # print("skipping featurizing likes for JOB")
+                    # continue
+
                 continuous = self.column_stats[col]["continuous"]
+
                 if continuous and not isinstance(allvals, list):
                     # FIXME: hack for jobm queries like = '1997'
                     # print("Hacking around jobM: ", allvals)
@@ -1372,7 +1464,14 @@ class Featurizer():
                 pfeats = self._handle_single_col(col,allvals,
                         alias_est, subp_est,
                         cmp_op,
-                        continuous)
+                        continuous, jobquery=jobquery)
+
+                if continuous:
+                    pass
+                    # print(aliasinfo)
+                    # print(allvals)
+                    # print(pfeats)
+
                 allpredfeats += pfeats
 
         ## FIXME: need to test this
@@ -1593,20 +1692,28 @@ class Featurizer():
         ckey = "cardinality"
         flow_features = np.zeros(self.num_flow_features, dtype=np.float32)
         cur_idx = 0
+
         # incoming edges
-        in_degree = subsetg.in_degree(node)
-        flow_features[cur_idx + in_degree] = 1.0
-        cur_idx += self.max_in_degree+1
-        # outgoing edges
-        out_degree = subsetg.out_degree(node)
-        flow_features[cur_idx + out_degree] = 1.0
-        cur_idx += self.max_out_degree+1
-        # num tables
-        max_tables = len(self.aliases)
-        nt = len(node)
-        # assert nt <= max_tables
-        flow_features[cur_idx + nt] = 1.0
-        cur_idx += max_tables
+        if self.flow_feat_degrees:
+            in_degree = subsetg.in_degree(node)
+            in_degree = min(in_degree, self.max_in_degree)
+            flow_features[cur_idx + in_degree] = 1.0
+            cur_idx += self.max_in_degree+1
+
+            # outgoing edges
+            out_degree = subsetg.out_degree(node)
+            out_degree = min(out_degree, self.max_out_degree)
+            flow_features[cur_idx + out_degree] = 1.0
+            cur_idx += self.max_out_degree+1
+
+        if self.flow_feat_tables:
+            # # num tables
+            max_tables = len(self.aliases)
+            nt = len(node)
+            # assert nt <= max_tables
+            nt = min(nt, max_tables)
+            flow_features[cur_idx + nt] = 1.0
+            cur_idx += max_tables
 
         # precomputed based stuff
         if self.feat_num_paths:
@@ -1739,6 +1846,18 @@ class Featurizer():
 
         return flow_features
 
+    def unnormalize_torch(self, y, total):
+        if self.ynormalization == "log":
+            est_cards = torch.exp((y + \
+                self.min_val)*(self.max_val-self.min_val))
+        elif self.ynormalization == "selectivity":
+            est_cards = y*total
+        elif self.ynormalization == "selectivity-log":
+            est_cards = (torch.exp(y)) * total
+        else:
+            assert False
+        return est_cards
+
     def unnormalize(self, y, total):
         if self.ynormalization == "log":
             est_card = np.exp((y + \
@@ -1753,6 +1872,9 @@ class Featurizer():
 
     def normalize_val(self, val, total):
         if self.ynormalization == "log":
+            ## TODO: should we add a flag for this? any other effects?
+            # if val == 1:
+                # val += 1
             return (np.log(float(val)) - self.min_val) / (self.max_val-self.min_val)
         elif self.ynormalization == "selectivity":
             return float(val) / total

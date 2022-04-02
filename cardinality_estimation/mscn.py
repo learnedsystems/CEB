@@ -48,13 +48,23 @@ class MSCN(NN):
         else:
             use_sigmoid = True
 
-        net = SetConv(sfeats,
-                pfeats, jfeats,
-                len(sample[0]["flow"]),
-                self.hidden_layer_size,
-                n_out=n_out,
-                dropouts=[self.inp_dropout, self.hl_dropout,
-                    self.comb_dropout],
-                use_sigmoid = use_sigmoid)
+        if self.loss_func_name == "flowloss":
+            net = SetConvFlow(sfeats,
+                    pfeats, jfeats,
+                    len(sample[0]["flow"]),
+                    self.hidden_layer_size,
+                    n_out=n_out,
+                    dropouts=[self.inp_dropout, self.hl_dropout,
+                        self.comb_dropout],
+                    use_sigmoid = use_sigmoid)
+        else:
+            net = SetConv(sfeats,
+                    pfeats, jfeats,
+                    len(sample[0]["flow"]),
+                    self.hidden_layer_size,
+                    n_out=n_out,
+                    dropouts=[self.inp_dropout, self.hl_dropout,
+                        self.comb_dropout],
+                    use_sigmoid = use_sigmoid)
 
         return net

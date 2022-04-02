@@ -1,7 +1,7 @@
 import pdb
 
 NILJ_CONSTANT = 0.001
-MAX_JOINS = 32
+MAX_JOINS = 20
 
 def set_cost_model(cursor, cost_model):
     '''

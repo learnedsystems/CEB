@@ -8,12 +8,19 @@ LIKEBUCKETS=10
 MAX_EPOCHS=20
 ESTOP=2
 VAL=0.2
+FLOW_FEATS=1
+BITMAP=0
+
+MAXY=1
+CLAMPT=1
 
 SUBPLAN_LEVELS=0
 DECAY=0.0
 SEP=0
-BITMAP=0
 LOAD_PADDED=1
+
+JOB=1
+JOBM=1
 
 LOSS_FUNC=mse
 ONEHOT_REG=0
@@ -39,12 +46,11 @@ QDIR=queries/imdb-unique-plans
 NO_REGEX=0
 N=-1
 
-FLOW_FEATS=0
 
 #SEEDS=(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20)
-SEEDS=(7 8 13 14 1 2 3 4 5 6 9 10 11 12 15 16 17 18 19 20)
+#SEEDS=(7 8 13 14 1 2 3 4 5 6 9 10 11 12 15 16 17 18 19 20)
 #SEEDS=(7 13 14 1 2 6 10 17 18 19 20)
-#SEEDS=(7 13 14 19 20)
+SEEDS=(7 13 14 17 19 20)
 REPS=(1 1 1)
 #REPS=(1)
 
@@ -61,11 +67,16 @@ for i in "${!SEEDS[@]}";
   CMD="time python3 main.py --algs $ALG \
    -n $N \
    --onehot_dropout $ONEHOT_DROPOUT \
+   --feat_onlyseen_maxy $MAXY \
+   --flow_features $FLOW_FEATS \
+   --feat_clamp_timeouts $CLAMPT \
    --early_stopping $ESTOP \
    --val_size $VAL \
    --sample_bitmap $BITMAP \
    --onehot_mask_truep $ONEHOT_DROP_PROB \
    --onehot_reg $ONEHOT_REG \
+   --eval_on_job $JOB \
+   --eval_on_jobm $JOBM \
    --mask_unseen_subplans $MASK_UNSEEN \
    --training_opt $SWA \
    --opt_lr $SWA_LR \

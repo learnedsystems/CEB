@@ -3,9 +3,15 @@ TRUEP=0.8
 BINS=10
 LIKE_BINS=10
 BITMAP=0
-FLNORM=1
-EPOCHS=-1
+#FLNORM=1
+FFEATS=1
+EPOCHS=40
 QDIR=queries/imdb-unique-plans
+JOB=0
+JOBM=1
+ES=1
+MAXY=0
+SAVEDFEATS=0
 
 TEST_TMPS=all
 DECAY=0.0
@@ -25,12 +31,16 @@ do
   do
     CMD="time python3 main.py --algs mscn \
     --query_dir $QDIR \
-    --early_stopping 1 \
+    --use_saved_feats $SAVEDFEATS \
+    --feat_onlyseen_maxy $MAXY \
+    --early_stopping $ES \
+    --flow_features $FFEATS \
+    --eval_on_job $JOB \
+    --eval_on_jobm $JOBM \
     --onehot_dropout $DROPOUT_KIND \
     --onehot_mask_truep $TRUEP \
     --loss_func_name mse \
     --lr 0.0001 \
-    --normalize_flow_loss $FLNORM \
     --embedding_fn none \
     --weight_decay $DECAY \
     --embedding_pooling sum \

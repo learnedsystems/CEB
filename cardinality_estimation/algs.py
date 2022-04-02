@@ -264,6 +264,7 @@ class NN(CardinalityEstimationAlg):
                         truecosts = efunc.eval(samples, truepreds,
                                 args=None, samples_type=st,
                                 result_dir=None,
+                                query_dir = None,
                                 user = self.featurizer.user,
                                 db_name = self.featurizer.db_name,
                                 db_host = self.featurizer.db_host,
@@ -281,6 +282,7 @@ class NN(CardinalityEstimationAlg):
                         args=None, samples_type=st,
                         result_dir=None,
                         user = self.featurizer.user,
+                        query_dir = None,
                         db_name = self.featurizer.db_name,
                         db_host = self.featurizer.db_host,
                         port = self.featurizer.port,
@@ -389,6 +391,8 @@ class NN(CardinalityEstimationAlg):
         self.true_costs = {}
         self.true_costs["val"] = 0.0
         self.true_costs["test"] = 0.0
+        self.true_costs["job"] = 0.0
+        self.true_costs["jobm"] = 0.0
 
         assert isinstance(training_samples[0], dict)
         self.featurizer = kwargs["featurizer"]
@@ -431,6 +435,31 @@ class NN(CardinalityEstimationAlg):
                 self.eval_ds["test"] = self.init_dataset(testqs,
                         False)
                 self.samples["test"] = testqs
+
+            if "jobqs" in kwargs and len(kwargs["jobqs"]) > 0:
+                if len(kwargs["jobqs"]) > 400:
+                    ns = int(len(kwargs["jobqs"]) / 10)
+                    random.seed(42)
+                    jobqs = random.sample(kwargs["jobqs"], ns)
+                else:
+                    jobqs = kwargs["jobqs"]
+
+                self.eval_ds["job"] = self.init_dataset(jobqs,
+                        False)
+                self.samples["job"] = jobqs
+
+            if "jobmqs" in kwargs and len(kwargs["jobmqs"]) > 0:
+                if len(kwargs["jobmqs"]) > 400:
+                    ns = int(len(kwargs["jobmqs"]) / 10)
+                    random.seed(42)
+                    jobmqs = random.sample(kwargs["jobmqs"], ns)
+                else:
+                    jobmqs = kwargs["jobmqs"]
+
+                self.eval_ds["jobm"] = self.init_dataset(jobmqs,
+                        False)
+                self.samples["jobm"] = jobmqs
+
 
         # TODO: initialize self.num_features
         self.net, self.optimizer = self.init_net(self.trainds[0])
@@ -818,10 +847,6 @@ class NN(CardinalityEstimationAlg):
                 qstart = 0
                 losses = []
 
-                # print(self.mb_size)
-                # print(len(info))
-                # pdb.set_trace()
-
                 for cur_info in info:
                     if "query_idx" not in cur_info[0]:
                         print(cur_info)
@@ -850,6 +875,16 @@ class NN(CardinalityEstimationAlg):
 
                 losses = torch.stack(losses)
                 loss = losses.sum() / len(losses)
+            elif self.loss_func_name == "qloss" and \
+                self.featurizer.ynormalization == "log":
+                # unnormalize both pred and ybatch
+                pred = self.featurizer.unnormalize_torch(pred, None)
+                ybatch = self.featurizer.unnormalize_torch(ybatch, None)
+                losses = self.loss_func(pred, ybatch)
+                if len(losses.shape) != 0:
+                    loss = losses.sum() / len(losses)
+                else:
+                    loss = losses
             else:
                 losses = self.loss_func(pred, ybatch)
                 if len(losses.shape) != 0:

@@ -16,6 +16,7 @@ import klepto
 from sklearn.model_selection import train_test_split
 import pdb
 import copy
+import pickle
 
 import wandb
 import logging
@@ -32,19 +33,90 @@ def eval_alg(alg, eval_funcs, qreps, samples_type, featurizer=None):
     exp_name = alg.get_exp_name()
     ests = alg.test(qreps)
 
+        # featurizer = kwargs["featurizer"]
+
+        # for qi, qrep in enumerate(qreps):
+            # cur_errs = []
+
+            # cur_preds = preds[qi]
+            # sg = qrep["subset_graph"]
+            # jg = qrep["join_graph"]
+            # for node in sg.nodes():
+                # if node == SOURCE_NODE:
+                    # continue
+
+                # edges = sg.out_edges(node)
+                # nodepred = cur_preds[node]
+                # # calculating error per node instead of per edge
+                # error = 0
+
+                # for edge in edges:
+                    # prev_node = edge[1]
+                    # newt = list(set(edge[0]) - set(edge[1]))[0]
+                    # tab_pred = cur_preds[(newt,)]
+                    # for alias in edge[1]:
+                        # if (alias,newt) in jg.edges():
+                            # jdata = jg.edges[(alias,newt)]
+                        # elif (newt,alias) in jg.edges():
+                            # jdata = jg.edges[(newt,alias)]
+                        # else:
+                            # continue
+                        # if newt not in jdata or alias not in jdata:
+                            # continue
+
+                        # newjkey = jdata[newt]
+                        # otherjkey = jdata[alias]
+
+                        # if not featurizer.feat_separate_alias:
+                            # newjkey = ''.join([ck for ck in newjkey if not ck.isdigit()])
+                            # otherjkey = ''.join([ck for ck in otherjkey if not ck.isdigit()])
+
+                        # stats1 = featurizer.join_key_stats[newjkey]
+                        # stats2 = featurizer.join_key_stats[otherjkey]
+
+                        # newjcol = newjkey[newjkey.find(".")+1:]
+                        # if newjcol == "id":
+                            # card1 = cur_preds[(newt,)]
+                            # maxfkey = stats2["max_key"]
+                            # maxcard1 = maxfkey*card1
+
+                            # ## FIXME: not fully accurate
+                            # if cur_preds[node] > maxcard1:
+                                # fkey_errs.append(1.0)
+                            # else:
+                                # fkey_errs.append(0.0)
+
+                            # # could not have got bigger
+                            # if cur_preds[prev_node] < cur_preds[node]:
+                                # error = 1
+                                # id_errs.append(1)
+                            # else:
+                                # id_errs.append(0)
+
+                # cur_errs.append(error)
+            # errors.append(np.mean(cur_errs))
+
+    rdir = None
+    if args.result_dir is not None:
+        rdir = os.path.join(args.result_dir, exp_name)
+        make_dir(rdir)
+        if samples_type == "test":
+            preds_dir = os.path.join(rdir, "test_preds")
+            make_dir(preds_dir)
+            for i,qrep in enumerate(qreps):
+                predfn = os.path.join(preds_dir, qrep["name"])
+                cur_ests = ests[i]
+                with open(predfn, "wb") as f:
+                    pickle.dump(cur_ests, f)
+
     for efunc in eval_funcs:
-        rdir = None
-
-        if args.result_dir is not None:
-            rdir = os.path.join(args.result_dir, exp_name)
-            make_dir(rdir)
-
         errors = efunc.eval(qreps, ests, args=args, samples_type=samples_type,
                 result_dir=rdir, user = args.user, db_name = args.db_name,
                 db_host = args.db_host, port = args.port,
                 num_processes = args.num_eval_processes,
                 alg_name = alg_name,
                 save_pdf_plans=args.save_pdf_plans,
+                query_dir = args.query_dir,
                 use_wandb=args.use_wandb, featurizer=featurizer,
                 alg=alg)
 
@@ -54,6 +126,16 @@ def eval_alg(alg, eval_funcs, qreps, samples_type, featurizer=None):
                     np.round(np.mean(errors),3),
                     np.round(np.median(errors),3),
                     np.round(np.percentile(errors,99),3)))
+
+        if str(alg) == "Postgres" and "Postgres" in str(efunc):
+            qname_errs = {}
+            for i,qrep in enumerate(qreps):
+                qname_errs[qrep["name"]] = errors[i]
+
+            fn = os.path.join(args.query_dir,
+                    "postgres-{}.pkl".format(str(efunc)))
+            with open(fn, "wb") as f:
+                pickle.dump(qname_errs, f)
 
         if args.use_wandb:
             loss_key = "Final-{}-{}-{}".format(str(efunc),
@@ -203,6 +285,8 @@ def get_query_fns():
     for qi,qdir in enumerate(fns):
         if ".json" in qdir:
             continue
+        if not os.path.isdir(qdir):
+            continue
 
         template_name = os.path.basename(qdir)
         if args.query_templates != "all":
@@ -265,7 +349,7 @@ def get_query_fns():
             else:
                 cur_val_fns, qfns = train_test_split(qfns,
                         test_size=1-args.val_size,
-                        random_state=args.seed)
+                        random_state=args.diff_templates_seed)
 
             if args.test_size == 0:
                 cur_test_fns = []
@@ -273,7 +357,7 @@ def get_query_fns():
             else:
                 cur_train_fns, cur_test_fns = train_test_split(qfns,
                         test_size=args.test_size,
-                        random_state=args.seed)
+                        random_state=args.diff_templates_seed)
 
         train_qfns += cur_train_fns
         val_qfns += cur_val_fns
@@ -281,16 +365,19 @@ def get_query_fns():
 
     print("Skipped templates: ", " ".join(skipped_templates))
 
-    if args.eval_on_jobm and not args.sample_bitmap:
+    job_qfns = []
+    if args.eval_on_jobm:
         jobm_dir = "./queries/jobm/all_jobm"
         qfns = list(glob.glob(jobm_dir+"/*.pkl"))
         # print(qfns)
-        test_qfns += qfns
+        # test_qfns += qfns
+        job_qfns += qfns
 
-    if args.eval_on_job and not args.sample_bitmap:
+    if args.eval_on_job:
         job_dir = "./queries/job/all_job"
         qfns = list(glob.glob(job_dir+"/*.pkl"))
-        test_qfns += qfns
+        # test_qfns += qfns
+        job_qfns += qfns
 
     if args.train_test_split_kind == "query":
         print("""Selected {} train queries, {} test queries, and {} val queries"""\
@@ -303,8 +390,9 @@ def get_query_fns():
         if args.eval_on_job:
             test_tmp_names.append("job")
 
-        print("""Selected {} train queries, {} test queries, and {} val queries"""\
-                .format(len(train_qfns), len(test_qfns), len(val_qfns)))
+        print("""Selected {} train queries, {} test queries, {} val queries,{} job queries"""\
+                .format(len(train_qfns), len(test_qfns), len(val_qfns),
+                    len(job_qfns)))
         print("""Selected {} train templates, {} test templates"""\
                 .format(len(train_tmp_names), len(test_tmp_names)))
         print("""Training templates: {}\nEvaluation templates: {}""".\
@@ -318,7 +406,7 @@ def get_query_fns():
     random.shuffle(test_qfns)
     random.shuffle(val_qfns)
 
-    return train_qfns, test_qfns, val_qfns
+    return train_qfns, test_qfns, val_qfns, job_qfns
 
 def load_qdata(fns):
     qreps = []
@@ -332,7 +420,7 @@ def load_qdata(fns):
 
     return qreps
 
-def get_featurizer(trainqs, valqs, testqs):
+def get_featurizer(trainqs, valqs, testqs, jobqs):
     featurizer = Featurizer(args.user, args.pwd, args.db_name,
             args.db_host, args.port)
     featdata_fn = os.path.join(args.query_dir, "dbdata.json")
@@ -378,6 +466,10 @@ def get_featurizer(trainqs, valqs, testqs):
     # include this in the cached version
 
     featurizer.setup(ynormalization=args.ynormalization,
+            feat_onlyseen_maxy = args.feat_onlyseen_maxy,
+            like_char_features = args.like_char_features,
+            flow_feat_tables = args.feat_tables,
+            loss_func = args.loss_func_name,
             use_saved_feats = args.use_saved_feats,
             bitmap_dir = args.bitmap_dir,
             sample_bitmap = args.sample_bitmap,
@@ -400,13 +492,22 @@ def get_featurizer(trainqs, valqs, testqs):
             feat_onlyseen_preds = args.feat_onlyseen_preds
             )
 
-    featurizer.update_max_sets(trainqs+valqs+testqs)
-    featurizer.update_workload_stats(trainqs+valqs+testqs)
+    featurizer.update_max_sets(trainqs+valqs+testqs+jobqs)
+
+    if False:
+        featurizer.update_workload_stats(trainqs)
+    else:
+        featurizer.update_workload_stats(trainqs+valqs+testqs+jobqs)
 
     featurizer.init_feature_mapping()
-    featurizer.update_ystats(trainqs+valqs+testqs)
 
-    # if args.feat_onlyseen_preds:
+    if args.feat_onlyseen_maxy:
+        featurizer.update_ystats(trainqs,
+                clamp_timeouts=args.feat_clamp_timeouts)
+    else:
+        featurizer.update_ystats(trainqs+valqs+testqs+jobqs,
+                clamp_timeouts=args.feat_clamp_timeouts)
+
     # just do it always
     featurizer.update_seen_preds(trainqs)
 
@@ -459,20 +560,21 @@ def main():
 
     # set up wandb logging metrics
     if args.use_wandb:
-        wandb_tags = ["v15"]
+        wandb_tags = ["v16-job2"]
         if args.wandb_tags is not None:
             wandb_tags += args.wandb_tags.split(",")
         wandb.init("ceb", config={},
                 tags=wandb_tags)
         wandb.config.update(vars(args))
 
-    train_qfns, test_qfns, val_qfns = get_query_fns()
+    train_qfns, test_qfns, val_qfns, job_qfns = get_query_fns()
 
     trainqs = load_qdata(train_qfns)
     # Note: can be quite memory intensive to load them all; might want to just
     # keep around the qfns and load them as needed
     valqs = load_qdata(val_qfns)
     testqs = load_qdata(test_qfns)
+    jobqs = load_qdata(job_qfns)
 
     if args.onehot_dropout == -1:
         # traintabs = set()
@@ -530,7 +632,7 @@ def main():
 
     # only needs featurizer for learned models
     if args.algs in ["xgb", "fcnn", "mscn"]:
-        featurizer = get_featurizer(trainqs, valqs, testqs)
+        featurizer = get_featurizer(trainqs, valqs, testqs, jobqs)
     else:
         featurizer = None
 
@@ -544,7 +646,12 @@ def main():
 
     for alg in algs:
         alg.train(trainqs, valqs=valqs, testqs=testqs,
+                jobqs = jobqs,
                 featurizer=featurizer, result_dir=args.result_dir)
+
+        # if args.eval_epoch < args.max_epochs:
+            # print("skipping evaluation!")
+            # exit(-1)
 
         eval_alg(alg, eval_fns, trainqs, "train", featurizer=featurizer)
 
@@ -553,6 +660,9 @@ def main():
 
         if len(testqs) > 0:
             eval_alg(alg, eval_fns, testqs, "test", featurizer=featurizer)
+
+        if len(jobqs) > 0:
+            eval_alg(alg, eval_fns, jobqs, "job", featurizer=featurizer)
 
 # def check_logical_constraints(alg, qreps):
     # for qrep in qreps:
@@ -569,7 +679,7 @@ def read_flags():
             default=0)
 
     parser.add_argument("--bitmap_dir", type=str, required=False,
-            default="./queries/sample_bitmaps/")
+            default="./queries/sample_bitmaps_up/")
 
     ## db credentials
     parser.add_argument("--db_name", type=str, required=False,
@@ -655,16 +765,27 @@ def read_flags():
             default=0)
     parser.add_argument("--use_saved_feats", type=int, required=False,
             default=1)
+
     parser.add_argument("--heuristic_features", type=int, required=False,
             default=1)
+    parser.add_argument("--like_char_features", type=int, required=False,
+            default=0)
     parser.add_argument("--ynormalization", type=str, required=False,
             default="log")
+
+    parser.add_argument("--feat_tables", type=int, required=False,
+            default=1)
     parser.add_argument("--feat_onlyseen_preds", type=int, required=False,
             default=1)
     parser.add_argument("--feat_onlyseen_cols", type=int, required=False,
             default=0)
     parser.add_argument("--feat_separate_alias", type=int, required=False,
             default=0)
+    parser.add_argument("--feat_onlyseen_maxy", type=int, required=False,
+            default=0)
+    parser.add_argument("--feat_clamp_timeouts", type=int, required=False,
+            default=0)
+
     parser.add_argument("--feat_separate_like_ests", type=int, required=False,
             default=0)
     parser.add_argument("--feat_true_base_cards", type=int, required=False,

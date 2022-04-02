@@ -15,6 +15,7 @@ import pandas as pd
 import networkx as nx
 import os
 import wandb
+import pickle
 
 import pdb
 
@@ -289,6 +290,8 @@ class PostgresPlanCost(EvalFunc):
         sqls = kwargs["sqls"]
         plans = kwargs["plans"]
         opt_costs = kwargs["opt_costs"]
+        pg_costs = kwargs["pg_costs"]
+
         true_cardinalities = kwargs["true_cardinalities"]
         est_cardinalities = kwargs["est_cardinalities"]
         costs = errors
@@ -355,13 +358,21 @@ class PostgresPlanCost(EvalFunc):
         # compute total costs
         totalcost = np.sum(costs)
         opttotal = np.sum(opt_costs)
+
+        if len(pg_costs) == 0:
+            pgtotal = -1
+            relcost_pg = -1
+        else:
+            pgtotal = np.sum(pg_costs)
+            relcost_pg = np.round(float(totalcost) / pgtotal, 6)
+
         relcost = np.round(float(totalcost)/opttotal, 3)
 
         ppes = costs - opt_costs
 
-        print("{}, {}, #samples: {}, total_relative_cost: {}"\
+        print("{}, {}, #samples: {}, relative_cost: {}, pg_relative_cost: {}"\
                 .format(samples_type, alg_name, len(costs),
-                    relcost))
+                    relcost, relcost_pg))
 
         template_costs = defaultdict(list)
         true_template_costs = defaultdict(list)
@@ -389,11 +400,16 @@ class PostgresPlanCost(EvalFunc):
             suffix = "-" + self.cost_model
 
         if use_wandb:
-
             loss_key = "Final-{}-{}{}".format("Relative-TotalPPCost",
                                                    samples_type,
                                                    suffix)
             wandb.run.summary[loss_key] = relcost
+
+            if relcost_pg != 0.0:
+                loss_key = "Final-{}-{}{}".format("Relative-PG-TotalPPCost",
+                                                       samples_type,
+                                                       suffix)
+                wandb.run.summary[loss_key] = relcost_pg
 
             loss_key = "Final-{}-{}{}-mean".format("PPError",
                                                 samples_type,
@@ -444,8 +460,30 @@ class PostgresPlanCost(EvalFunc):
 
         est_cardinalities = []
         true_cardinalities = []
+
         sqls = []
         join_graphs = []
+
+        pg_query_costs = {}
+        pg_costs = []
+        if "query_dir" in kwargs and kwargs["query_dir"] is not None:
+            pgfn = os.path.join(kwargs["query_dir"],
+                    "postgres-{}.pkl".format(str(self)))
+            if os.path.exists(pgfn):
+                with open(pgfn, "rb") as f:
+                    pg_query_costs = pickle.load(f)
+            else:
+                pg_query_costs = {}
+
+        for i, qrep in enumerate(qreps):
+            if not "job" in qrep["template_name"]:
+                continue
+            # open saved scores
+            if qrep["name"] in pg_query_costs:
+                pg_costs.append(pg_query_costs[qrep["name"]])
+
+        if len(pg_costs) != len(qreps):
+            pg_costs = []
 
         for i, qrep in enumerate(qreps):
             sqls.append(qrep["sql"])
@@ -459,6 +497,7 @@ class PostgresPlanCost(EvalFunc):
                 est_card = predq[node]
                 alias_key = ' '.join(node)
                 trues[alias_key] = node_info["cardinality"]["actual"]
+                # pgs[alias_key] = node_info["cardinality"]["expected"]
                 if est_card == 0:
                     est_card += 1
                 ests[alias_key] = est_card
@@ -477,6 +516,7 @@ class PostgresPlanCost(EvalFunc):
 
         self.save_logs(qreps, costs, **kwargs, sqls=sqls,
                 plans=plans, opt_costs=opt_costs,
+                pg_costs = pg_costs,
                 true_cardinalities=true_cardinalities,
                 est_cardinalities=est_cardinalities,
                 result_dir=result_dir)

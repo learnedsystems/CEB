@@ -17,14 +17,17 @@ BITMAP="${15:-0}"
 LOAD_PADDED="${16:-1}"
 SEP_LIKE="${17:-0}"
 TRUEB="${18:-0}"
+MAXY="${19:-1}"
+VAL="${20:-0.2}"
+JOB="${21:-1}"
+LR="${22:-0.0001}"
+CLAMPT="${23:-0}"
 
 #VARIABLE="${1:-$DEFAULTVALUE}"
 
 SEP=0
-
 LOAD_QUERY_TOGETHER=0
 
-LR=0.0001
 
 TABLE_FEATURES=1
 JOIN_FEATURES=onehot
@@ -54,7 +57,8 @@ then
   SEEDS=(7 6 4 5 13 1 2 3 8 9 10 11 12 14 15 16 17 18 19 20)
 elif test $SEED == 1;
 then
-  SEEDS=(7 13 14 1 2 6 10 17 18 19 20)
+  #SEEDS=(7 13 14 1 2 6 10 17 18 19 20)
+  SEEDS=(2 7 13 11 14 17 19 20)
 else
   SEEDS=(11 12 13 14 15 16 17 18 19 20)
 fi
@@ -73,7 +77,12 @@ for i in "${!SEEDS[@]}";
   CMD="time python3 main.py --algs $ALG \
    -n $N \
    --feat_separate_like_ests $SEP_LIKE \
+   --feat_clamp_timeouts $CLAMPT \
+   --eval_on_job $JOB \
+   --eval_on_jobm $JOB \
    --feat_true_base_cards $TRUEB \
+   --val_size $VAL \
+   --feat_onlyseen_maxy $MAXY \
    --sample_bitmap $BITMAP \
    --onehot_dropout $ONEHOT_DROPOUT \
    --inp_dropout $DROP1 \

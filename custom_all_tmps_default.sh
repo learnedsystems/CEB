@@ -1,18 +1,22 @@
-#DROPOUT_KIND=$1
 BINS=10
 LIKEBINS=10
 BITMAP=0
-EPOCHS=50
-ES=2
+EPOCHS=-1
+ES=1
 VAL=0.2
 TRUEBASE=0
+JOB=0
+JOBM=0
+
 QDIR=queries/imdb-unique-plans
 
 TEST_TMPS=all
 DECAY=0.0
 FEAT_ALIAS_SEP=0
-REPS=(1 1 1 1 1)
+REPS=(1 1 1)
 NOREGEX=1
+MAXY=0
+
 TRAIN_TMPS=(1a 2a 2b 2c 3a 5a 6a 7a 8a)
 #TRAIN_TMPS=(2b 2c)
 
@@ -27,8 +31,11 @@ do
   do
     CMD="time python3 main.py --algs mscn \
     --query_dir $QDIR \
+    --feat_onlyseen_maxy $MAXY \
     --early_stopping $ES \
     --val_size $VAL \
+    --eval_on_job $JOB \
+    --eval_on_jobm $JOBM \
     --feat_true_base_cards $TRUEBASE \
     --onehot_dropout 0 \
     --loss_func_name mse \

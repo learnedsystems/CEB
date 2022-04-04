@@ -33,6 +33,7 @@ def eval_alg(alg, eval_funcs, qreps, samples_type, featurizer=None):
     exp_name = alg.get_exp_name()
     ests = alg.test(qreps)
 
+    # if args.correct_logical_constraints:
         # featurizer = kwargs["featurizer"]
 
         # for qi, qrep in enumerate(qreps):
@@ -164,6 +165,8 @@ def get_alg(alg):
         return TrueRandom()
     elif alg == "true_rank_tables":
         return TrueRankTables()
+    elif alg == "joinkeys":
+        return TrueJoinKeys()
     elif alg == "random":
         return Random()
     elif alg == "rf":
@@ -412,6 +415,22 @@ def load_qdata(fns):
     qreps = []
     for qfn in fns:
         qrep = load_qrep(qfn)
+        # if args.algs in ["joinkeys", "postgres"]:
+        if args.algs in ["joinkeys"]:
+            skip = False
+            sg = qrep["subset_graph"]
+            for u,v,data in sg.edges(data=True):
+                if "join_key_cardinality" not in data:
+                    # print(data)
+                    # print(qfn)
+                    # print(u, v)
+                    # pdb.set_trace()
+                    skip = True
+                    break
+
+            if skip:
+                continue
+
         # TODO: can do checks like no queries with zero cardinalities etc.
         qreps.append(qrep)
         template_name = os.path.basename(os.path.dirname(qfn))
@@ -575,6 +594,9 @@ def main():
     valqs = load_qdata(val_qfns)
     testqs = load_qdata(test_qfns)
     jobqs = load_qdata(job_qfns)
+
+    print("""Selected {} train qdata, {} test qdata, and {} val qdata"""\
+            .format(len(trainqs), len(testqs), len(valqs)))
 
     if args.onehot_dropout == -1:
         # traintabs = set()

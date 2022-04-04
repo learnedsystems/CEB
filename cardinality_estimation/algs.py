@@ -1307,3 +1307,116 @@ class RandomForest(CardinalityEstimationAlg):
 
     def __str__(self):
         return self.__class__.__name__
+
+class TrueJoinKeys(CardinalityEstimationAlg):
+    def __init__(self):
+        pass
+
+    def test(self, test_samples):
+        assert isinstance(test_samples[0], dict)
+        preds = []
+        for sample in test_samples:
+            sg = sample["subset_graph"]
+            nodes = list(sample["subset_graph"].nodes())
+            nodes.sort(key = len)
+            cards_so_far = {}
+            pred_dict = {}
+            for node in nodes:
+                if len(node) <= 1:
+                    cards_so_far[node] = sg.nodes()[node]["cardinality"]["actual"]
+                    # cards_so_far[node] = sg.nodes()[node]["cardinality"]["expected"]
+                    pred_dict[(node)] = cards_so_far[node]
+                    continue
+
+                # pred_dict[(node)] = sg.nodes()[node]["cardinality"]["expected"]
+                # continue
+
+                # find any incoming edge
+                connedges = list(sg.out_edges(node))
+
+                # FIXME: maybe choose best one?
+                # cure = random.choice(connedges)
+
+                mcard = 0
+                mincard = 1e25
+
+                for e0 in connedges:
+                    newtab = set(e0[0]) - set(e0[1])
+                    newtab = list(newtab)[0]
+
+                    # if cards_so_far[(newtab,)] < mincard:
+                        # mincard = cards_so_far[(newtab,)]
+                        # cure = e0
+
+                    if cards_so_far[(newtab,)] > mcard:
+                        mcard = cards_so_far[(newtab,)]
+                        cure = e0
+
+                    # if sg.nodes()[(newtab,)]["cardinality"]["total"] > mcard:
+                        # mcard = sg.nodes()[(newtab,)]["cardinality"]["total"]
+                        # cure = e0
+
+                jk = sg.edges()[cure]["join_key_cardinality"]
+                r1_join_tab = list(jk.keys())[0]
+
+                r1 = jk[r1_join_tab]["actual"]
+
+                r1_total = cards_so_far[cure[1]]
+
+                # print(r1, r1_total)
+                newtab = set(cure[0]) - set(cure[1])
+                assert len(newtab) == 1
+                r2_alias = tuple(newtab)
+                r2_total = cards_so_far[r2_alias]
+                # how to find r2? ---> find an edge where it is from the first
+                # one
+                # print(r2_total)
+                joinnode = [r1_join_tab, r2_alias[0]]
+                joinnode.sort()
+                joinnode = tuple(joinnode)
+                # print(joinnode in sg.nodes())
+                ## find the distinct key values of r2 to get to this joinnode
+                r2_edges = list(sg.out_edges(joinnode))
+                r2 = None
+                for e in r2_edges:
+                    if e[1] == r2_alias:
+                        r2 = sg.edges()[e]["join_key_cardinality"][r2_alias[0]]["actual"]
+                        break
+
+                # print(r2_total, r2)
+                assert r2 is not None
+                # assert r2 <= r2_total
+                # assert r1 <= r1_total
+                if r1_total < r1:
+                    r1_total = r1
+                if r2_total < r2:
+                    r2_total = r2
+
+                # if r1 > r1_total:
+                    # print(r1, r1_total)
+                    # print(node, r1_alias)
+                    # pdb.set_trace()
+
+                card = (r1_total*r2_total) / max(r1, r2)
+
+                cards_so_far[node] = card
+                pred_dict[(node)] = card
+
+                # print(node, card, sg.nodes()[node]["cardinality"]["actual"])
+
+                # if node == ('ci', 'cn', 'it1', 'it2', 'k', 'mc', 'mi',
+                        # 'mi_idx', 'mk', 'n', 't'):
+                    # print(cure[1], r1, r1_total)
+                    # print(r2_alias, r2, r2_total)
+                    # pdb.set_trace()
+
+            preds.append(pred_dict)
+            # pdb.set_trace()
+
+        return preds
+
+    def get_exp_name(self):
+        return self.__str__()
+
+    def __str__(self):
+        return "TrueJoinKeys"

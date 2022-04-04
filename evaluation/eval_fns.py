@@ -241,6 +241,27 @@ class QError(EvalFunc):
 
         errors = np.maximum((ytrue / yhat), (yhat / ytrue))
 
+        num_table_errs = defaultdict(list)
+        didx = 0
+        for i, qrep in enumerate(qreps):
+            nodes = list(qrep["subset_graph"].nodes())
+            if SOURCE_NODE in nodes:
+                nodes.remove(SOURCE_NODE)
+            nodes.sort()
+            # qidx = 0
+            for qi, node in enumerate(nodes):
+                numt = len(node)
+                curerr = errors[didx]
+                num_table_errs[numt].append(curerr)
+                didx += 1
+
+        nts = list(num_table_errs.keys())
+        nts.sort()
+        for nt in nts:
+            print("{} Tables, QError mean: {}, 99p: {}".format(
+                nt, np.mean(num_table_errs[nt]),
+                np.percentile(num_table_errs[nt], 99)))
+
         self.save_logs(qreps, errors, **kwargs)
 
         return errors

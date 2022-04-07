@@ -1,6 +1,8 @@
 ALG=mscn
 DECAY=0.0
 QDIR=queries/imdb-unique-plans
+JOB=1
+JOBM=1
 
 TABLE_FEATURES=$1
 JOIN_FEATURES=$2
@@ -12,6 +14,9 @@ FLOW_FEATS=$6
 ONEHOT_DROPOUT=$7
 EVAL_EPOCH=$8
 MAX_EPOCHS=$9
+CLAMPT="${10:-1}"
+MAXY="${11:-1}"
+
 SEED=0
 
 ONEHOT_DROP_PROB=0.8
@@ -75,12 +80,15 @@ for i in "${!SEEDS[@]}";
    --load_query_together $LOAD_QUERY_TOGTHER \
    --eval_fns $EVAL_FNS \
    --loss_func $LOSS_FUNC \
+   --feat_clamp_timeouts $CLAMPT \
+   --feat_onlyseen_maxy $MAXY \
    --test_size 0.5 \
    --result_dir $RES_DIR \
    --max_epochs $MAX_EPOCHS \
    --eval_epoch $EVAL_EPOCH \
    --table_features $TABLE_FEATURES \
    --join_features $JOIN_FEATURES \
+   --eval_on_job $JOB --eval_on_jobm $JOBM \
    --set_column_feature $COLUMN_FEATURES \
    --flow_features $FLOW_FEATS \
    --embedding_fn $EMBEDDING_FN \

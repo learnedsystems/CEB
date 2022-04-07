@@ -19,9 +19,13 @@ import pickle
 
 import pdb
 
+TIMEOUT_CARD = 15000100000
+
 def get_eval_fn(loss_name):
     if loss_name == "qerr":
         return QError()
+    elif loss_name == "qerr_joinkey":
+        return QErrorJoinKey()
     elif loss_name == "abs":
         return AbsError()
     elif loss_name == "rel":
@@ -102,6 +106,27 @@ def _get_all_cardinalities(qreps, preds):
         for alias in keys:
             pred = pred_subsets[alias]
             actual = qrep[alias]["cardinality"]["actual"]
+            if actual == 0:
+                actual += 1
+            ytrue.append(float(actual))
+            yhat.append(float(pred))
+    return np.array(ytrue), np.array(yhat)
+
+def _get_all_joinkeys(qreps, preds):
+    ytrue = []
+    yhat = []
+
+    for i, joinkeys in enumerate(preds):
+        einfos = qreps[i]["subset_graph"].edges()
+        keys = list(joinkeys.keys())
+        keys.sort()
+
+        for curkey in keys:
+            pred = joinkeys[curkey]
+            # actual = einfos[curkey]["actual"]
+            jcards = einfos[curkey]["join_key_cardinality"]
+            actual = list(jcards.values())[0]["actual"]
+
             if actual == 0:
                 actual += 1
             ytrue.append(float(actual))
@@ -227,6 +252,48 @@ class LogicalConstraints(EvalFunc):
 
     # TODO: stuff for saving logs
 
+class QErrorJoinKey(EvalFunc):
+
+    def eval(self, qreps, preds, **kwargs):
+        '''
+        '''
+        assert len(preds) == len(qreps)
+        assert isinstance(preds[0], dict)
+
+        ytrue, yhat = _get_all_joinkeys(qreps, preds)
+
+        assert len(ytrue) == len(yhat)
+        assert 0.00 not in ytrue
+        assert 0.00 not in yhat
+
+        errors = np.maximum((ytrue / yhat), (yhat / ytrue))
+
+        num_table_errs = defaultdict(list)
+        didx = 0
+
+        for i, qrep in enumerate(qreps):
+            edges = list(qrep["subset_graph"].edges())
+            # if SOURCE_NODE in nodes:
+                # nodes.remove(SOURCE_NODE)
+            edges.sort(key = lambda x: str(x))
+            for qi, edge in enumerate(edges):
+                assert len(edge[1]) < len(edge[0])
+                numt = len(edge[1])
+                curerr = errors[didx]
+                num_table_errs[numt].append(curerr)
+                didx += 1
+
+        nts = list(num_table_errs.keys())
+
+        nts.sort()
+        for nt in nts:
+            print("{} Tables, JoinKey-QError mean: {}, 99p: {}".format(
+                nt, np.mean(num_table_errs[nt]),
+                np.percentile(num_table_errs[nt], 99)))
+        # self.save_logs(qreps, errors, **kwargs)
+
+        return errors
+
 class QError(EvalFunc):
     def eval(self, qreps, preds, **kwargs):
         '''
@@ -243,6 +310,7 @@ class QError(EvalFunc):
 
         num_table_errs = defaultdict(list)
         didx = 0
+
         for i, qrep in enumerate(qreps):
             nodes = list(qrep["subset_graph"].nodes())
             if SOURCE_NODE in nodes:
@@ -252,10 +320,19 @@ class QError(EvalFunc):
             for qi, node in enumerate(nodes):
                 numt = len(node)
                 curerr = errors[didx]
+
+                ## debug code!
+                # if numt <= 2 and curerr > 100:
+                    # if ytrue[didx] >= TIMEOUT_CARD:
+                        # continue
+                    # print(node, ytrue[didx], yhat[didx], curerr)
+                    # pdb.set_trace()
+
                 num_table_errs[numt].append(curerr)
                 didx += 1
 
         nts = list(num_table_errs.keys())
+
         nts.sort()
         for nt in nts:
             print("{} Tables, QError mean: {}, 99p: {}".format(

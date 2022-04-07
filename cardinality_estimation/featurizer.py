@@ -14,6 +14,64 @@ import pickle
 import copy
 import torch
 
+JOIN_COL_MAP = {}
+JOIN_COL_MAP["t.id"] = "movie_id"
+JOIN_COL_MAP["mi.movie_id"] = "movie_id"
+JOIN_COL_MAP["ci.movie_id"] = "movie_id"
+JOIN_COL_MAP["mk.movie_id"] = "movie_id"
+JOIN_COL_MAP["mc.movie_id"] = "movie_id"
+JOIN_COL_MAP["ml.movie_id"] = "movie_id"
+JOIN_COL_MAP["mi_idx.movie_id"] = "movie_id"
+JOIN_COL_MAP["mi_idx.movie_id"] = "movie_id"
+JOIN_COL_MAP["ml.linked_movie_id"] = "movie_id"
+## TODO: handle it so same columns map to same table+col
+JOIN_COL_MAP["miidx.movie_id"] = "movie_id"
+JOIN_COL_MAP["at.movie_id"] = "movie_id"
+JOIN_COL_MAP["cc.movie_id"] = "movie_id"
+
+JOIN_COL_MAP["mk.keyword_id"] = "keyword"
+JOIN_COL_MAP["k.id"] = "keyword"
+
+JOIN_COL_MAP["n.id"] = "person_id"
+JOIN_COL_MAP["pi.person_id"] = "person_id"
+JOIN_COL_MAP["ci.person_id"] = "person_id"
+JOIN_COL_MAP["an.person_id"] = "person_id"
+# TODO: handle cases
+JOIN_COL_MAP["a.person_id"] = "person_id"
+
+JOIN_COL_MAP["t.kind_id"] = "kind_id"
+JOIN_COL_MAP["kt.id"] = "kind_id"
+
+JOIN_COL_MAP["ci.role_id"] = "role_id"
+JOIN_COL_MAP["rt.id"] = "role_id"
+
+JOIN_COL_MAP["ci.person_role_id"] = "char_id"
+JOIN_COL_MAP["chn.id"] = "char_id"
+
+JOIN_COL_MAP["mi.info_type_id"] = "info_id"
+JOIN_COL_MAP["mii.info_type_id"] = "info_id"
+JOIN_COL_MAP["mi_idx.info_type_id"] = "info_id"
+JOIN_COL_MAP["miidx.info_type_id"] = "info_id"
+
+JOIN_COL_MAP["pi.info_type_id"] = "info_id"
+JOIN_COL_MAP["it.id"] = "info_id"
+
+JOIN_COL_MAP["mc.company_type_id"] = "company_type"
+JOIN_COL_MAP["ct.id"] = "company_type"
+
+JOIN_COL_MAP["mc.company_id"] = "company_id"
+JOIN_COL_MAP["cn.id"] = "company_id"
+
+JOIN_COL_MAP["ml.link_type_id"] = "link_id"
+JOIN_COL_MAP["lt.id"] = "link_id"
+
+## complete_cast
+JOIN_COL_MAP["cc.status_id"] = "subject"
+JOIN_COL_MAP["cc.subject_id"] = "subject"
+JOIN_COL_MAP["cct.id"] = "subject"
+
+
+
 JOIN_KEY_MAX_TMP = """SELECT COUNT(*), {COL} FROM {TABLE} GROUP BY {COL} ORDER BY COUNT(*) DESC LIMIT 1"""
 
 JOIN_KEY_MIN_TMP = """SELECT COUNT(*), {COL} FROM {TABLE} GROUP BY {COL} ORDER BY COUNT(*) ASC LIMIT 1"""
@@ -350,7 +408,6 @@ class Featurizer():
                 self.max_joins = num_joins
 
     def update_workload_stats(self, qreps):
-
         for qrep in qreps:
             cur_columns = []
             for node, info in qrep["join_graph"].nodes(data=True):
@@ -379,11 +436,37 @@ class Featurizer():
                 self.joins.add(keys)
 
         print("max pred vals: {}".format(self.max_pred_vals))
+        print("Seen comparison operators: ", self.cmp_ops)
 
-        if self.set_column_feature == "debug":
-            pdb.set_trace()
+        # if self.set_column_feature == "debug":
+            # print(self.cmp_ops)
+            # pdb.set_trace()
 
-    def update_ystats(self, qreps, clamp_timeouts=False):
+    def update_ystats_joinkey(self, qreps, clamp_timeouts=False,
+            max_num_tables=-1):
+        y = []
+        for qrep in qreps:
+            # for node,data in qrep["subset_graph"].nodes(data=True):
+            for _,_,data in qrep["subset_graph"].edges(data=True):
+                cards = data["join_key_cardinality"]
+                for k,v in cards.items():
+                    y.append(v["actual"])
+
+        y = np.array(y)
+
+        if np.min(y) == 0:
+            y += 1
+
+        if self.ynormalization == "log":
+            y = np.log(y)
+
+        self.max_val = np.max(y)
+        self.min_val = np.min(y)
+
+        print("min y: {}, max y: {}".format(self.min_val, self.max_val))
+
+    def update_ystats(self, qreps, clamp_timeouts=False,
+            max_num_tables=-1):
 
         if clamp_timeouts:
             y0 = []
@@ -391,6 +474,9 @@ class Featurizer():
             for qrep in qreps:
                 jg = qrep["join_graph"]
                 for node,data in qrep["subset_graph"].nodes(data=True):
+                    if max_num_tables != -1 and len(node) > max_num_tables:
+                        continue
+
                     actual = data[self.ckey]["actual"]
                     if actual >= TIMEOUT_CARD:
                         continue
@@ -402,6 +488,9 @@ class Featurizer():
         for qrep in qreps:
             jg = qrep["join_graph"]
             for node,data in qrep["subset_graph"].nodes(data=True):
+                if max_num_tables != -1 and len(node) > max_num_tables:
+                    continue
+
                 actual = data[self.ckey]["actual"]
                 if clamp_timeouts:
                     if actual >= TIMEOUT_CARD:
@@ -644,6 +733,7 @@ class Featurizer():
             bitmap_dir = None,
             use_saved_feats = True,
             feat_onlyseen_maxy = False,
+            max_num_tables = -1,
             true_base_cards = False,
             loss_func = "mse",
             heuristic_features=True,
@@ -665,6 +755,7 @@ class Featurizer():
             embedding_pooling = None,
             num_tables_feature=False,
             featurization_type="combined",
+            card_type = "subplan",
             max_discrete_featurizing_buckets=10,
             max_like_featurizing_buckets=10,
             feat_num_paths= False, feat_flows=False,
@@ -866,10 +957,20 @@ class Featurizer():
         elif self.featurization_type == "set":
             self._init_pred_featurizer_set()
 
+        if self.card_type == "joinkey":
+            real_join_cols = list(set(JOIN_COL_MAP.values()))
+            real_join_cols.sort()
+            self.real_join_col_mapping = {}
+            for rci,rc in enumerate(real_join_cols):
+                self.real_join_col_mapping[rc] = rci
+
         self.PG_EST_BUCKETS = 7
         if self.flow_features:
             # num flow features: concat of 1-hot vectors
             self.num_flow_features = 0
+
+            if self.card_type == "joinkey":
+                self.num_flow_features += len(self.real_join_col_mapping)
 
             if self.flow_feat_degrees:
                 self.num_flow_features += self.max_in_degree+1
@@ -1328,7 +1429,8 @@ class Featurizer():
 
         return ret_feats
 
-    def get_subplan_features_set(self, qrep, subplan, bitmaps=None):
+    def get_subplan_features_set(self, qrep, subplan, bitmaps=None,
+            subset_edge=None):
         '''
         @ret: {}
             key: table,pred,join etc.
@@ -1347,6 +1449,8 @@ class Featurizer():
             ## table features
             # loop over each node, update the tfeats bitvector
             for alias in subplan:
+                if alias == SOURCE_NODE:
+                    continue
                 tfeats = np.zeros(self.table_features_len)
                 # need to find its real table name from the join_graph
                 table = joingraph.nodes()[alias]["real_name"]
@@ -1416,9 +1520,11 @@ class Featurizer():
         featdict["join"] = alljoinfeats
 
         allpredfeats = []
+
         for alias in subplan:
             if not self.pred_features:
                 continue
+
             aliasinfo = joingraph.nodes()[alias]
             if len(aliasinfo["pred_cols"]) == 0:
                 continue
@@ -1431,6 +1537,11 @@ class Featurizer():
                 alias_est = self._get_pg_est(subsetgraph.nodes()[node_key])
 
             subp_est = self._get_pg_est(subsetgraph.nodes()[subplan])
+
+            if self.card_type == "joinkey":
+                # TODO: find appropriate ones for this
+                alias_est = alias_est
+                subp_est = 0.0
 
             seencols = set()
             for ci, col in enumerate(aliasinfo["pred_cols"]):
@@ -1521,7 +1632,7 @@ class Featurizer():
         if self.flow_features:
             flow_features = self.get_flow_features(subplan,
                     qrep["subset_graph"], qrep["template_name"],
-                    qrep["join_graph"])
+                    qrep["join_graph"], subset_edge=subset_edge)
 
         featdict["flow"] = flow_features
 
@@ -1642,6 +1753,31 @@ class Featurizer():
         feat = np.concatenate(featvectors)
         return feat
 
+    def get_subplan_features_joinkey(self, qrep, subset_node, subset_edge,
+            bitmaps=None):
+
+        einfo = qrep["subset_graph"].edges()[subset_edge]
+        if "join_key_cardinality" not in einfo:
+            print("BAD!")
+            print(subset_edge, einfo)
+            pdb.set_trace()
+            assert False
+
+        joincols = list(einfo["join_key_cardinality"].keys())
+        # assumption: all joins on same column
+        joincol = joincols[0]
+
+        assert self.featurization_type == "set"
+        x = self.get_subplan_features_set(qrep,
+                subset_node, bitmaps=bitmaps,
+                subset_edge=subset_edge)
+
+        # y-stuff
+        true_val = einfo["join_key_cardinality"][joincol]["actual"]
+        y = self.normalize_val(true_val, None)
+
+        return x,y
+
     def get_subplan_features(self, qrep, node, bitmaps=None):
         '''
         @subsetg:
@@ -1662,6 +1798,7 @@ class Featurizer():
         else:
             assert False
 
+        ## choosing the y values
         cardinfo = qrep["subset_graph"].nodes()[node]
         if "actual" in cardinfo[self.ckey]:
             true_val = cardinfo[self.ckey]["actual"]
@@ -1687,11 +1824,29 @@ class Featurizer():
         return num_buckets
 
     def get_flow_features(self, node, subsetg,
-            template_name, join_graph):
+            template_name, join_graph, subset_edge=None):
+
         assert node != SOURCE_NODE
         ckey = "cardinality"
         flow_features = np.zeros(self.num_flow_features, dtype=np.float32)
         cur_idx = 0
+
+        if self.card_type == "joinkey":
+            assert subset_edge is not None
+            einfo = subsetg.edges()[subset_edge]
+            joincols = list(einfo["join_key_cardinality"].keys())
+            # assumption: all joins on same column
+            joincol = joincols[0]
+            pg_join_est = einfo["join_key_cardinality"][joincol]["expected"]
+
+            pg_join_est = self.normalize_val(pg_join_est, None)
+
+            joincol = "".join([jc for jc in joincol if not jc.isdigit()])
+
+            realcol = JOIN_COL_MAP[joincol]
+            jcol_idx = self.real_join_col_mapping[realcol]
+            flow_features[cur_idx + jcol_idx] = 1.0
+            cur_idx += len(self.real_join_col_mapping)
 
         # incoming edges
         if self.flow_feat_degrees:
@@ -1708,12 +1863,12 @@ class Featurizer():
 
         if self.flow_feat_tables:
             # # num tables
-            max_tables = len(self.aliases)
+            max_table_idx = len(self.aliases)-1
             nt = len(node)
             # assert nt <= max_tables
-            nt = min(nt, max_tables)
+            nt = min(nt, max_table_idx)
             flow_features[cur_idx + nt] = 1.0
-            cur_idx += max_tables
+            cur_idx += len(self.aliases)
 
         # precomputed based stuff
         if self.feat_num_paths:
@@ -1844,6 +1999,25 @@ class Featurizer():
                 flow_features[cur_idx+self.PG_EST_BUCKETS] = 1.0
             cur_idx += self.PG_EST_BUCKETS
 
+        if self.card_type == "subplan":
+            pg_est = subsetg.nodes()[node]["cardinality"]["expected"]
+            total = subsetg.nodes()[node]["cardinality"]["total"]
+            pg_est = self.normalize_val(pg_est, total)
+
+        elif self.card_type == "joinkey":
+            pg_est = pg_join_est
+        else:
+            assert False
+
+        # assert flow_features[-1] == 0.0
+        if flow_features[-1] != 0.0:
+            print("BAD last val")
+            print(flow_features)
+            pdb.set_trace()
+
+        if self.heuristic_features:
+            flow_features[-1] = pg_est
+
         return flow_features
 
     def unnormalize_torch(self, y, total):
@@ -1871,6 +2045,10 @@ class Featurizer():
         return est_card
 
     def normalize_val(self, val, total):
+
+        if val == 0:
+            val += 1
+
         if self.ynormalization == "log":
             ## TODO: should we add a flag for this? any other effects?
             # if val == 1:

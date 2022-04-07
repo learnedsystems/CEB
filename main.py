@@ -5,7 +5,7 @@ from evaluation.eval_fns import *
 from cardinality_estimation.featurizer import *
 from cardinality_estimation.algs import *
 from cardinality_estimation.fcnn import FCNN
-from cardinality_estimation.mscn import MSCN
+from cardinality_estimation.mscn import MSCN, MSCN_JoinKeyCards
 
 import glob
 import argparse
@@ -33,82 +33,38 @@ def eval_alg(alg, eval_funcs, qreps, samples_type, featurizer=None):
     exp_name = alg.get_exp_name()
     ests = alg.test(qreps)
 
-    # if args.correct_logical_constraints:
-        # featurizer = kwargs["featurizer"]
-
-        # for qi, qrep in enumerate(qreps):
-            # cur_errs = []
-
-            # cur_preds = preds[qi]
-            # sg = qrep["subset_graph"]
-            # jg = qrep["join_graph"]
-            # for node in sg.nodes():
-                # if node == SOURCE_NODE:
-                    # continue
-
-                # edges = sg.out_edges(node)
-                # nodepred = cur_preds[node]
-                # # calculating error per node instead of per edge
-                # error = 0
-
-                # for edge in edges:
-                    # prev_node = edge[1]
-                    # newt = list(set(edge[0]) - set(edge[1]))[0]
-                    # tab_pred = cur_preds[(newt,)]
-                    # for alias in edge[1]:
-                        # if (alias,newt) in jg.edges():
-                            # jdata = jg.edges[(alias,newt)]
-                        # elif (newt,alias) in jg.edges():
-                            # jdata = jg.edges[(newt,alias)]
-                        # else:
-                            # continue
-                        # if newt not in jdata or alias not in jdata:
-                            # continue
-
-                        # newjkey = jdata[newt]
-                        # otherjkey = jdata[alias]
-
-                        # if not featurizer.feat_separate_alias:
-                            # newjkey = ''.join([ck for ck in newjkey if not ck.isdigit()])
-                            # otherjkey = ''.join([ck for ck in otherjkey if not ck.isdigit()])
-
-                        # stats1 = featurizer.join_key_stats[newjkey]
-                        # stats2 = featurizer.join_key_stats[otherjkey]
-
-                        # newjcol = newjkey[newjkey.find(".")+1:]
-                        # if newjcol == "id":
-                            # card1 = cur_preds[(newt,)]
-                            # maxfkey = stats2["max_key"]
-                            # maxcard1 = maxfkey*card1
-
-                            # ## FIXME: not fully accurate
-                            # if cur_preds[node] > maxcard1:
-                                # fkey_errs.append(1.0)
-                            # else:
-                                # fkey_errs.append(0.0)
-
-                            # # could not have got bigger
-                            # if cur_preds[prev_node] < cur_preds[node]:
-                                # error = 1
-                                # id_errs.append(1)
-                            # else:
-                                # id_errs.append(0)
-
-                # cur_errs.append(error)
-            # errors.append(np.mean(cur_errs))
-
     rdir = None
     if args.result_dir is not None:
         rdir = os.path.join(args.result_dir, exp_name)
         make_dir(rdir)
-        if samples_type == "test":
-            preds_dir = os.path.join(rdir, "test_preds")
-            make_dir(preds_dir)
-            for i,qrep in enumerate(qreps):
-                predfn = os.path.join(preds_dir, qrep["name"])
-                cur_ests = ests[i]
-                with open(predfn, "wb") as f:
-                    pickle.dump(cur_ests, f)
+
+    if args.algs in ["mscn_joinkey"]:
+        qerrf = get_eval_fn("qerr_joinkey")
+        errors = qerrf.eval(qreps, ests, args=args, samples_type=samples_type,
+                result_dir=rdir, use_wandb=args.use_wandb)
+
+        print("{}, {}, {}, #samples: {}, {}: mean: {}, median: {}, 99p: {}"\
+                .format(args.db_name, samples_type, alg, len(errors),
+                    qerrf.__str__(),
+                    np.round(np.mean(errors),3),
+                    np.round(np.median(errors),3),
+                    np.round(np.percentile(errors,99),3)))
+        # def joinkey_cards_to_subplan_cards(samples, joinkey_cards):
+        # return
+        ests = joinkey_cards_to_subplan_cards(qreps, ests,
+                args.joinkey_basecard_type, args.joinkey_basecard_tables)
+        assert len(ests) == len(qreps)
+
+    if samples_type == "test" and args.save_test_preds:
+        preds_dir = os.path.join(rdir, "test_preds")
+        make_dir(preds_dir)
+        for i,qrep in enumerate(qreps):
+            predfn = os.path.join(preds_dir, qrep["name"])
+            cur_ests = ests[i]
+            with open(predfn, "wb") as f:
+                pickle.dump(cur_ests, f)
+
+
 
     for efunc in eval_funcs:
         errors = efunc.eval(qreps, ests, args=args, samples_type=samples_type,
@@ -205,6 +161,38 @@ def get_alg(alg):
                 hidden_layer_size = args.hidden_layer_size)
     elif alg == "mscn":
         return MSCN(max_epochs = args.max_epochs, lr=args.lr,
+                early_stopping = args.early_stopping,
+                inp_dropout = args.inp_dropout,
+                hl_dropout = args.hl_dropout,
+                comb_dropout = args.comb_dropout,
+                training_opt = args.training_opt,
+                opt_lr = args.opt_lr,
+                swa_start = args.swa_start,
+                mask_unseen_subplans = args.mask_unseen_subplans,
+                subplan_level_outputs=args.subplan_level_outputs,
+                normalize_flow_loss = args.normalize_flow_loss,
+                heuristic_unseen_preds = args.heuristic_unseen_preds,
+                cost_model = args.cost_model,
+                use_wandb = args.use_wandb,
+                eval_fns = args.eval_fns,
+                load_padded_mscn_feats = args.load_padded_mscn_feats,
+                mb_size = args.mb_size,
+                weight_decay = args.weight_decay,
+                load_query_together = args.load_query_together,
+                result_dir = args.result_dir,
+                onehot_dropout=args.onehot_dropout,
+                onehot_mask_truep=args.onehot_mask_truep,
+                onehot_reg=args.onehot_reg,
+                onehot_reg_decay=args.onehot_reg_decay,
+                # num_hidden_layers=args.num_hidden_layers,
+                eval_epoch = args.eval_epoch,
+                optimizer_name=args.optimizer_name,
+                clip_gradient=args.clip_gradient,
+                loss_func_name = args.loss_func_name,
+                hidden_layer_size = args.hidden_layer_size)
+
+    elif alg == "mscn_joinkey":
+        return MSCN_JoinKeyCards(max_epochs = args.max_epochs, lr=args.lr,
                 early_stopping = args.early_stopping,
                 inp_dropout = args.inp_dropout,
                 hl_dropout = args.hl_dropout,
@@ -411,16 +399,52 @@ def get_query_fns():
 
     return train_qfns, test_qfns, val_qfns, job_qfns
 
+def update_job_parsing(qrep):
+
+    for node,data in qrep["join_graph"].nodes(data=True):
+        if len(data["predicates"]) != len(data["pred_vals"]):
+            newvals = []
+            newcols = []
+            newtypes = []
+
+            for di,dpred in enumerate(data["predicates"]):
+                if "!=" in dpred:
+                    newtypes.append("not eq")
+                    dpreds = dpred.split("!=")
+                    assert len(dpreds) == 2
+                    newcols.append(dpreds[0])
+                    newvals.append(dpreds[1])
+
+            data["pred_vals"] += newvals
+            data["pred_cols"] += newcols
+            data["pred_types"] += newtypes
+
+    for node,data in qrep["subset_graph"].nodes(data=True):
+        if data["cardinality"]["actual"] == 0:
+            data["cardinality"]["actual"] = 1
+
+    # pdb.set_trace()
+
 def load_qdata(fns):
     qreps = []
     for qfn in fns:
         qrep = load_qrep(qfn)
-        # if args.algs in ["joinkeys", "postgres"]:
-        if args.algs in ["joinkeys"]:
+        # if "job" in qfn and args.set_column_feature == "debug":
+            # # TODO: need to fix the != case
+            # update_job_parsing(qrep)
+
+        if "job" in qfn:
+            # TODO: need to fix the != case
+            update_job_parsing(qrep)
+
+        # if args.algs in ["joinkeys", "mscn_joinkey"]:
+        if args.algs in ["joinkeys", "mscn_joinkey", "mscn"] \
+                and "job" in args.query_dir:
             skip = False
             sg = qrep["subset_graph"]
             for u,v,data in sg.edges(data=True):
-                if "join_key_cardinality" not in data:
+                if "join_key_cardinality" not in data or \
+                        len(data["join_key_cardinality"]) == 0:
                     # print(data)
                     # print(qfn)
                     # print(u, v)
@@ -474,10 +498,16 @@ def get_featurizer(trainqs, valqs, testqs, jobqs):
         f.close()
         featurizer.update_using_saved_stats(featdata)
 
-    if args.algs == "mscn":
+    if args.algs in ["mscn", "mscn_joinkey"]:
         feat_type = "set"
     else:
         feat_type = "combined"
+
+    if args.algs in ["mscn_joinkey"]:
+        card_type = "joinkey"
+    else:
+        card_type = "subplan"
+
     # Look at the various keyword arguments to setup() to change the
     # featurization behavior; e.g., include certain features etc.
     # these configuration properties do not influence the basic statistics
@@ -486,6 +516,7 @@ def get_featurizer(trainqs, valqs, testqs, jobqs):
 
     featurizer.setup(ynormalization=args.ynormalization,
             feat_onlyseen_maxy = args.feat_onlyseen_maxy,
+            max_num_tables = args.max_num_tables,
             like_char_features = args.like_char_features,
             flow_feat_tables = args.feat_tables,
             loss_func = args.loss_func_name,
@@ -499,6 +530,7 @@ def get_featurizer(trainqs, valqs, testqs, jobqs):
             feat_mcvs = args.feat_mcvs,
             heuristic_features = args.heuristic_features,
             featurization_type=feat_type,
+            card_type = card_type,
             table_features=args.table_features,
             flow_features = args.flow_features,
             join_features=args.join_features,
@@ -520,12 +552,17 @@ def get_featurizer(trainqs, valqs, testqs, jobqs):
 
     featurizer.init_feature_mapping()
 
-    if args.feat_onlyseen_maxy:
-        featurizer.update_ystats(trainqs,
-                clamp_timeouts=args.feat_clamp_timeouts)
+    if args.algs in ["mscn_joinkey"]:
+        featurizer.update_ystats_joinkey(trainqs)
     else:
-        featurizer.update_ystats(trainqs+valqs+testqs+jobqs,
-                clamp_timeouts=args.feat_clamp_timeouts)
+        if args.feat_onlyseen_maxy:
+            featurizer.update_ystats(trainqs,
+                    clamp_timeouts=args.feat_clamp_timeouts,
+                    max_num_tables=args.max_num_tables)
+        else:
+            featurizer.update_ystats(trainqs+valqs+testqs+jobqs,
+                    clamp_timeouts=args.feat_clamp_timeouts,
+                    max_num_tables = args.max_num_tables)
 
     # just do it always
     featurizer.update_seen_preds(trainqs)
@@ -576,10 +613,11 @@ def _get_distr(samples):
     return tabs,cols,consts,joins,subplans,joins2,subplans2
 
 def main():
-
     # set up wandb logging metrics
     if args.use_wandb:
-        wandb_tags = ["v16-job2"]
+        # job3 ==> fixed actual cardinalities
+        # wandb_tags = ["v16-job3"]
+        wandb_tags = ["v17"]
         if args.wandb_tags is not None:
             wandb_tags += args.wandb_tags.split(",")
         wandb.init("ceb", config={},
@@ -653,7 +691,7 @@ def main():
 
 
     # only needs featurizer for learned models
-    if args.algs in ["xgb", "fcnn", "mscn"]:
+    if args.algs in ["xgb", "fcnn", "mscn", "mscn_joinkey"]:
         featurizer = get_featurizer(trainqs, valqs, testqs, jobqs)
     else:
         featurizer = None
@@ -703,6 +741,12 @@ def read_flags():
     parser.add_argument("--bitmap_dir", type=str, required=False,
             default="./queries/sample_bitmaps_up/")
 
+
+    parser.add_argument("--joinkey_basecard_type", type=str, required=False,
+            default="actual")
+    parser.add_argument("--joinkey_basecard_tables", type=int, required=False,
+            default=1)
+
     ## db credentials
     parser.add_argument("--db_name", type=str, required=False,
             default="imdb")
@@ -719,6 +763,9 @@ def read_flags():
 
     parser.add_argument("--result_dir", type=str, required=False,
             default="results")
+    parser.add_argument("--save_test_preds", type=int, required=False,
+            default=0)
+
     parser.add_argument("--query_templates", type=str, required=False,
             default="all")
 
@@ -807,6 +854,8 @@ def read_flags():
             default=0)
     parser.add_argument("--feat_clamp_timeouts", type=int, required=False,
             default=0)
+    parser.add_argument("--max_num_tables", type=int, required=False,
+            default=-1)
 
     parser.add_argument("--feat_separate_like_ests", type=int, required=False,
             default=0)

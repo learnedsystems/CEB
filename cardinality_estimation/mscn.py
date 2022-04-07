@@ -68,3 +68,71 @@ class MSCN(NN):
                     use_sigmoid = use_sigmoid)
 
         return net
+
+class MSCN_JoinKeyCards(NN):
+
+    def init_dataset(self, samples, load_query_together):
+        ds = QueryDataset(samples, self.featurizer,
+                load_query_together,
+                load_padded_mscn_feats=self.load_padded_mscn_feats,
+                join_key_cards=True)
+
+        return ds
+
+    def _init_net(self, sample):
+        if self.load_query_together:
+            sample = sample[0]
+
+        if len(sample[0]["table"]) == 0:
+            sfeats = 0
+        else:
+            sfeats = len(sample[0]["table"][0])
+
+        if len(sample[0]["pred"]) == 0:
+            pfeats = 0
+        else:
+            pfeats = len(sample[0]["pred"][0])
+
+        if len(sample[0]["join"]) == 0:
+            jfeats = 0
+        else:
+            jfeats = len(sample[0]["join"][0])
+
+        if self.subplan_level_outputs:
+            n_out = 10
+        else:
+            n_out = 1
+
+        if self.featurizer.ynormalization == "selectivity-log":
+            use_sigmoid = False
+        else:
+            use_sigmoid = True
+
+        if self.loss_func_name == "flowloss":
+            net = SetConvFlow(sfeats,
+                    pfeats, jfeats,
+                    len(sample[0]["flow"]),
+                    self.hidden_layer_size,
+                    n_out=n_out,
+                    dropouts=[self.inp_dropout, self.hl_dropout,
+                        self.comb_dropout],
+                    use_sigmoid = use_sigmoid)
+        else:
+            net = SetConv(sfeats,
+                    pfeats, jfeats,
+                    len(sample[0]["flow"]),
+                    self.hidden_layer_size,
+                    n_out=n_out,
+                    dropouts=[self.inp_dropout, self.hl_dropout,
+                        self.comb_dropout],
+                    use_sigmoid = use_sigmoid)
+
+        return net
+
+    def test(self, test_samples, **kwargs):
+        testds = self.init_dataset(test_samples, False)
+
+        start = time.time()
+        preds, _ = self._eval_ds(testds, test_samples)
+
+        return format_model_test_output_joinkey(preds, test_samples, self.featurizer)

@@ -38,7 +38,7 @@ def eval_alg(alg, eval_funcs, qreps, samples_type, featurizer=None):
         rdir = os.path.join(args.result_dir, exp_name)
         make_dir(rdir)
 
-    if args.algs in ["mscn_joinkey"]:
+    if args.algs in ["mscn_joinkey", "joinkeys"]:
         qerrf = get_eval_fn("qerr_joinkey")
         errors = qerrf.eval(qreps, ests, args=args, samples_type=samples_type,
                 result_dir=rdir, use_wandb=args.use_wandb)
@@ -63,8 +63,6 @@ def eval_alg(alg, eval_funcs, qreps, samples_type, featurizer=None):
             cur_ests = ests[i]
             with open(predfn, "wb") as f:
                 pickle.dump(cur_ests, f)
-
-
 
     for efunc in eval_funcs:
         errors = efunc.eval(qreps, ests, args=args, samples_type=samples_type,
@@ -349,6 +347,10 @@ def get_query_fns():
                 cur_train_fns, cur_test_fns = train_test_split(qfns,
                         test_size=args.test_size,
                         random_state=args.diff_templates_seed)
+                # print("inverting things!")
+                # cur_test_fns, cur_train_fns = train_test_split(qfns,
+                        # test_size=args.test_size,
+                        # random_state=args.diff_templates_seed)
 
         train_qfns += cur_train_fns
         val_qfns += cur_val_fns
@@ -365,9 +367,14 @@ def get_query_fns():
         job_qfns += qfns
 
     if args.eval_on_job:
-        job_dir = "./queries/job/all_job"
+        job_dir = "./queries/job-joinkeys/all_job"
         qfns = list(glob.glob(job_dir+"/*.pkl"))
-        # test_qfns += qfns
+
+        if not args.eval_epoch <= 2:
+            job_dir2 = "./queries/job-joinkeys/job29"
+            qfns += list(glob.glob(job_dir2+"/*.pkl"))
+        else:
+            print("skipping job29")
         job_qfns += qfns
 
     if args.train_test_split_kind == "query":
@@ -402,6 +409,10 @@ def get_query_fns():
 def update_job_parsing(qrep):
 
     for node,data in qrep["join_graph"].nodes(data=True):
+        if "pred_vals" not in data:
+            print(data["predicates"])
+            continue
+
         if len(data["predicates"]) != len(data["pred_vals"]):
             newvals = []
             newcols = []
@@ -437,9 +448,9 @@ def load_qdata(fns):
             # TODO: need to fix the != case
             update_job_parsing(qrep)
 
-        # if args.algs in ["joinkeys", "mscn_joinkey"]:
-        if args.algs in ["joinkeys", "mscn_joinkey", "mscn"] \
-                and "job" in args.query_dir:
+        # if args.algs in ["joinkeys", "mscn_joinkey", "mscn"] \
+                # and "job" in args.query_dir:
+        if args.algs in ["joinkeys", "mscn_joinkey"]:
             skip = False
             sg = qrep["subset_graph"]
             for u,v,data in sg.edges(data=True):
@@ -522,7 +533,9 @@ def get_featurizer(trainqs, valqs, testqs, jobqs):
             loss_func = args.loss_func_name,
             use_saved_feats = args.use_saved_feats,
             bitmap_dir = args.bitmap_dir,
+            join_bitmap_dir = args.join_bitmap_dir,
             sample_bitmap = args.sample_bitmap,
+            join_bitmap = args.join_bitmap,
             true_base_cards = args.feat_true_base_cards,
             feat_separate_alias = args.feat_separate_alias,
             feat_separate_like_ests = args.feat_separate_like_ests,
@@ -740,7 +753,8 @@ def read_flags():
 
     parser.add_argument("--bitmap_dir", type=str, required=False,
             default="./queries/sample_bitmaps_up/")
-
+    parser.add_argument("--join_bitmap_dir", type=str, required=False,
+            default="./queries/join_bitmaps_up/")
 
     parser.add_argument("--joinkey_basecard_type", type=str, required=False,
             default="actual")
@@ -918,6 +932,9 @@ def read_flags():
 
     parser.add_argument("--sample_bitmap", type=int, required=False,
             default=0)
+    parser.add_argument("--join_bitmap", type=int, required=False,
+            default=0)
+
     parser.add_argument("--max_discrete_featurizing_buckets", type=int, required=False,
             default=10)
     parser.add_argument("--max_like_featurizing_buckets", type=int, required=False,

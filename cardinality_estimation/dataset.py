@@ -396,7 +396,9 @@ class QueryDataset(data.Dataset):
 
         return sample_info
 
-    def _get_query_features_joinkeys(self, qrep, sbitmaps, dataset_qidx,
+    def _get_query_features_joinkeys(self, qrep, sbitmaps,
+            jbitmaps,
+            dataset_qidx,
             query_idx):
         X = []
         Y = []
@@ -429,7 +431,8 @@ class QueryDataset(data.Dataset):
             assert len(larger_subset) > len(subset)
 
             x,y = self.featurizer.get_subplan_features_joinkey(qrep,
-                    subset, subset_edge, bitmaps=sbitmaps)
+                    subset, subset_edge, bitmaps=sbitmaps,
+                    join_bitmaps=jbitmaps)
 
             if self.featurizer.featurization_type == "set" \
                 and self.load_padded_mscn_feats:
@@ -461,7 +464,9 @@ class QueryDataset(data.Dataset):
 
         return X, Y, sample_info
 
-    def _get_query_features_nodes(self, qrep, sbitmaps, dataset_qidx,
+    def _get_query_features_nodes(self, qrep, sbitmaps,
+            jbitmaps,
+            dataset_qidx,
             query_idx):
         X = []
         Y = []
@@ -481,7 +486,8 @@ class QueryDataset(data.Dataset):
                 continue
 
             x,y = self.featurizer.get_subplan_features(qrep,
-                    node, bitmaps=sbitmaps)
+                    node, bitmaps=sbitmaps,
+                    join_bitmaps=jbitmaps)
 
             if self.featurizer.featurization_type == "set" \
                 and self.load_padded_mscn_feats:
@@ -529,7 +535,8 @@ class QueryDataset(data.Dataset):
             # node_names.remove(SOURCE_NODE)
         # node_names.sort()
 
-        if self.featurizer.sample_bitmap:
+        if self.featurizer.sample_bitmap or \
+                self.featurizer.join_bitmap:
             assert self.featurizer.bitmap_dir is not None
             if "jobm" in qrep["template_name"]:
                 bitdir = "./queries/jobm_bitmaps/"
@@ -550,51 +557,35 @@ class QueryDataset(data.Dataset):
         else:
             sbitmaps = None
 
+        if self.featurizer.join_bitmap:
+            assert self.featurizer.join_bitmap_dir is not None
+            if "jobm" in qrep["template_name"]:
+                bitdir = None
+            elif "job" in qrep["template_name"]:
+                bitdir = "./queries/job_joinbitmaps/"
+            else:
+                bitdir = self.featurizer.join_bitmap_dir
+
+            bitmapfn = os.path.join(bitdir, qrep["name"])
+
+            # assert os.path.exists(bitmapfn)
+            if not os.path.exists(bitmapfn):
+                print(bitmapfn)
+                pdb.set_trace()
+
+            with open(bitmapfn, "rb") as handle:
+                jbitmaps = pickle.load(handle)
+        else:
+            jbitmaps = None
+
         if self.join_key_cards:
-            return self._get_query_features_joinkeys(qrep, sbitmaps, dataset_qidx,
+            return self._get_query_features_joinkeys(qrep, sbitmaps, jbitmaps,
+                    dataset_qidx,
                     query_idx)
         else:
-            return self._get_query_features_nodes(qrep, sbitmaps, dataset_qidx,
+            return self._get_query_features_nodes(qrep, sbitmaps, jbitmaps,
+                    dataset_qidx,
                     query_idx)
-
-        # for node_idx, node in enumerate(node_names):
-            # if self.featurizer.max_num_tables != -1 \
-                    # and self.featurizer.max_num_tables < len(node):
-
-                # continue
-
-            # x,y = self.featurizer.get_subplan_features(qrep,
-                    # node, bitmaps=sbitmaps)
-
-            # if self.featurizer.featurization_type == "set" \
-                # and self.load_padded_mscn_feats:
-                # start = time.time()
-                # tf,pf,jf,tm,pm,jm = \
-                    # pad_sets([x["table"]], [x["pred"]], [x["join"]],
-                            # self.featurizer.max_tables,
-                            # self.featurizer.max_preds,
-                            # self.featurizer.max_joins)
-                # x["table"] = tf
-                # x["join"] = jf
-                # x["pred"] = pf
-                # # relevant masks
-                # x["tmask"] = tm
-                # x["pmask"] = pm
-                # x["jmask"] = jm
-
-            # x["flow"] = to_variable(x["flow"], requires_grad=False).float()
-
-            # X.append(x)
-            # Y.append(y)
-
-            # cur_info = {}
-            # cur_info["num_tables"] = len(node)
-            # cur_info["dataset_idx"] = dataset_qidx + node_idx
-            # cur_info["query_idx"] = query_idx
-            # cur_info["node"] = str(node)
-            # sample_info.append(cur_info)
-
-        # return X,Y,sample_info
 
     def _get_feature_vectors_par(self, samples):
 

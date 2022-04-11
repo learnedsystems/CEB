@@ -27,6 +27,7 @@ from torch.optim.swa_utils import AveragedModel, SWALR
 
 import wandb
 import random
+import pickle
 
 QERR_MIN_EPS=0.0
 def qloss_torch(yhat, ytrue):
@@ -289,8 +290,18 @@ class NN(CardinalityEstimationAlg):
             samples = self.samples[st]
 
             preds, _ = self._eval_ds(ds, samples)
-            preds = format_model_test_output(preds,
-                    samples, self.featurizer)
+
+            if self.featurizer.card_type == "joinkey":
+                preds1 = format_model_test_output_joinkey(preds,
+                        samples, self.featurizer)
+                preds = joinkey_cards_to_subplan_cards(samples, preds1,
+                        "actual", 2)
+                # def joinkey_cards_to_subplan_cards(samples, joinkey_cards,
+                        # basecard_type, basecard_tables):
+
+            else:
+                preds = format_model_test_output(preds,
+                        samples, self.featurizer)
 
             # do evaluations
             for efunc in self.eval_fn_handles:
@@ -993,8 +1004,8 @@ class NN(CardinalityEstimationAlg):
         start = time.time()
         preds, _ = self._eval_ds(testds, test_samples)
 
-        # print("samples: {}, _eval_ds took: {}".format(len(preds),
-            # (time.time()-start)*1000))
+        print("samples: {}, _eval_ds took: {}".format(len(preds),
+            (time.time()-start)))
 
         if self.featurizer.card_type == "joinkey":
             return format_model_test_output_joinkey(preds, test_samples, self.featurizer)
@@ -1353,121 +1364,139 @@ class RandomForest(CardinalityEstimationAlg):
 def joinkey_cards_to_subplan_cards(samples, joinkey_cards,
         basecard_type, basecard_tables):
 
+    def get_card_for_edge(cure, sample):
+        newtab = set(cure[0]) - set(cure[1])
+        newtab = list(newtab)[0]
+
+        rname = sample["join_graph"].nodes()[newtab]["real_name"]
+        penalty = 1.0
+
+        r1 = cur_jcards[cure]
+        jk = sg.edges()[cure]["join_key_cardinality"]
+        r1_join_col = list(jk.keys())[0]
+
+        if "." in r1_join_col:
+            r1_join_tab = r1_join_col[0:r1_join_col.find(".")]
+        else:
+            assert False
+
+        r1_total = cards_so_far[cure[1]]
+        newtab = set(cure[0]) - set(cure[1])
+        assert len(newtab) == 1
+        r2_alias = tuple(newtab)
+        r2_total = cards_so_far[r2_alias]
+
+        # how to find r2? ---> find an edge where it is from the first
+        # one
+
+        joinnode = [r1_join_tab, r2_alias[0]]
+        joinnode.sort()
+        joinnode = tuple(joinnode)
+
+        # find the distinct key values of r2 to get to this joinnode
+        r2_edges = list(sg.out_edges(joinnode))
+
+        r2 = None
+        for e in r2_edges:
+            if e[1] == r2_alias:
+                r2 = cur_jcards[e]
+                break
+        assert r2 is not None
+
+        if r1 == 0:
+            r1 += 1
+        if r2 == 0:
+            r2 += 1
+
+        # choosing this because we have more confidence in our r1 and r2
+        # measurements
+        if r1_total < r1:
+            r1_total = r1
+        if r2_total < r2:
+            r2_total = r2
+
+        card = min(r1,r2) * (r1_total/r1)*(r2_total/r2)
+
+        card *= penalty
+        return card
+
     assert isinstance(samples[0], dict)
     preds = []
+    qdir = "./results2/mscn_query_testpreds/"
+
     for si, sample in enumerate(samples):
         cur_jcards = joinkey_cards[si]
-
         sg = sample["subset_graph"]
         nodes = list(sample["subset_graph"].nodes())
         nodes.sort(key = len)
         cards_so_far = {}
         pred_dict = {}
+
         for node in nodes:
-            # FIXME:
             if len(node) <= basecard_tables:
-                cards_so_far[node] = sg.nodes()[node]["cardinality"][basecard_type]
-                pred_dict[(node)] = cards_so_far[node]
+                if basecard_type == "actual-err":
+                    curcard = sg.nodes()[node]["cardinality"]["actual"]
+                    if len(node) == 2:
+                        err = random.randint(1,10)
+                        curcard *= err
+                elif basecard_type == "mscn":
+                    qfn = os.path.basename(sample["name"])
+                    qfn = os.path.join(qdir, qfn)
+                    assert os.path.exists(qfn)
+                    with open(qfn, "rb") as f:
+                        mscncards = pickle.load(f)
+                    curcard = mscncards[node]
+                else:
+                    curcard = sg.nodes()[node]["cardinality"][basecard_type]
+
+                if curcard == 0:
+                    curcard += 1
+                cards_so_far[node] = curcard
+                pred_dict[(node)] = curcard
                 continue
 
             # find any incoming edge
             connedges = list(sg.out_edges(node))
-
-            # FIXME: maybe choose best one?
-            # cure = random.choice(connedges)
-
             mcard = 0
             mincard = 1e25
 
+            # print("Number of connected edges: ", len(connedges))
+            # for each possible edge we can assign a cardinality to the current
+            # node
             for e0 in connedges:
-                newtab = set(e0[0]) - set(e0[1])
-                newtab = list(newtab)[0]
+                curcard = get_card_for_edge(e0, sample)
+                if curcard > mcard:
+                    mcard = curcard
+
+                # if curcard < mincard:
+                    # mcard = curcard
+
+                ## simpler heuristics of choosing the best edge
+                # newtab = set(e0[0]) - set(e0[1])
+                # newtab = list(newtab)[0]
+
+                # if cards_so_far[(newtab,)] > mcard:
+                    # mcard = cards_so_far[(newtab,)]
+                    # cure = e0
 
                 # if cards_so_far[(newtab,)] < mincard:
                     # mincard = cards_so_far[(newtab,)]
                     # cure = e0
 
-                if cards_so_far[(newtab,)] > mcard:
-                    mcard = cards_so_far[(newtab,)]
-                    cure = e0
-
                 # if sg.nodes()[(newtab,)]["cardinality"]["total"] > mcard:
                     # mcard = sg.nodes()[(newtab,)]["cardinality"]["total"]
                     # cure = e0
 
-            r1 = cur_jcards[cure]
-            jk = sg.edges()[cure]["join_key_cardinality"]
-            r1_join_col = list(jk.keys())[0]
-            # r1 = jk[r1_join_col]["actual"]
+            ## simple heuristic
+            # mcard = get_card_for_edge(cure)
 
-            if "." in r1_join_col:
-                r1_join_tab = r1_join_col[0:r1_join_col.find(".")]
-            else:
-                assert False
-                r1_join_tab = r1_join_col
+            cards_so_far[node] = mcard
+            pred_dict[(node)] = mcard
 
-            r1_total = cards_so_far[cure[1]]
-
-            newtab = set(cure[0]) - set(cure[1])
-            assert len(newtab) == 1
-            r2_alias = tuple(newtab)
-            r2_total = cards_so_far[r2_alias]
-
-            # how to find r2? ---> find an edge where it is from the first
-            # one
-            # print(r2_total)
-
-            joinnode = [r1_join_tab, r2_alias[0]]
-            joinnode.sort()
-            joinnode = tuple(joinnode)
-
-            # print(joinnode in sg.nodes())
-            ## find the distinct key values of r2 to get to this joinnode
-            r2_edges = list(sg.out_edges(joinnode))
-
-            r2 = None
-            for e in r2_edges:
-                if e[1] == r2_alias:
-                    # should only have one key
-                    # for _,v in sg.edges()[e]["join_key_cardinality"].items():
-                        # r2 = v["actual"]
-                        # break
-                    r2 = cur_jcards[e]
-                    break
-
-            if r2 is None:
-                print(r2_alias)
-                print(r2_edges)
-                pdb.set_trace()
-
-            assert r2 is not None
-            # assert r2 <= r2_total
-            # assert r1 <= r1_total
-            if r1_total < r1:
-                r1_total = r1
-            if r2_total < r2:
-                r2_total = r2
-
-            # if r1 > r1_total:
-                # print(r1, r1_total)
-                # print(node, r1_alias)
-                # pdb.set_trace()
-
-            card = (r1_total*r2_total) / max(r1, r2)
-
-            cards_so_far[node] = card
-            pred_dict[(node)] = card
-
-            # print(node, card, sg.nodes()[node]["cardinality"]["actual"])
-
-            # if node == ('ci', 'cn', 'it1', 'it2', 'k', 'mc', 'mi',
-                    # 'mi_idx', 'mk', 'n', 't'):
-                # print(cure[1], r1, r1_total)
-                # print(r2_alias, r2, r2_total)
+            # if len(connedges) > 4:
                 # pdb.set_trace()
 
         preds.append(pred_dict)
-        # pdb.set_trace()
 
     return preds
 
@@ -1477,121 +1506,27 @@ class TrueJoinKeys(CardinalityEstimationAlg):
 
     def test(self, test_samples):
         assert isinstance(test_samples[0], dict)
-        preds = []
-        for sample in test_samples:
+        all_ests = []
+
+        for si, sample in enumerate(test_samples):
+            ests = {}
             sg = sample["subset_graph"]
-            nodes = list(sample["subset_graph"].nodes())
-            nodes.sort(key = len)
-            cards_so_far = {}
-            pred_dict = {}
-            for node in nodes:
-                if len(node) <= 1:
-                    cards_so_far[node] = sg.nodes()[node]["cardinality"]["actual"]
-                    # cards_so_far[node] = sg.nodes()[node]["cardinality"]["expected"]
-                    pred_dict[(node)] = cards_so_far[node]
-                    continue
+            edge_keys = list(sample["subset_graph"].edges())
+            edge_keys.sort(key = lambda x: str(x))
+            subq_idx = 0
+            for _, edge in enumerate(edge_keys):
+                # cards = sample["subset_graph"].nodes()[node]["cardinality"]
+                edgek = edge
+                # idx = query_idx + subq_idx
+                # est_card = featurizer.unnormalize(pred[idx], None)
+                # assert est_card >= 0
+                est_card = list(sg.edges()[edge]["join_key_cardinality"].values())[0]["actual"]
+                ests[edgek] = est_card
+                # subq_idx += 1
 
-                # pred_dict[(node)] = sg.nodes()[node]["cardinality"]["expected"]
-                # continue
-
-                # find any incoming edge
-                connedges = list(sg.out_edges(node))
-
-                # FIXME: maybe choose best one?
-                # cure = random.choice(connedges)
-
-                mcard = 0
-                mincard = 1e25
-
-                for e0 in connedges:
-                    newtab = set(e0[0]) - set(e0[1])
-                    newtab = list(newtab)[0]
-
-                    # if cards_so_far[(newtab,)] < mincard:
-                        # mincard = cards_so_far[(newtab,)]
-                        # cure = e0
-
-                    if cards_so_far[(newtab,)] > mcard:
-                        mcard = cards_so_far[(newtab,)]
-                        cure = e0
-
-                    # if sg.nodes()[(newtab,)]["cardinality"]["total"] > mcard:
-                        # mcard = sg.nodes()[(newtab,)]["cardinality"]["total"]
-                        # cure = e0
-
-                jk = sg.edges()[cure]["join_key_cardinality"]
-
-                r1_join_col = list(jk.keys())[0]
-
-                r1 = jk[r1_join_col]["actual"]
-                if "." in r1_join_col:
-                    r1_join_tab = r1_join_col[0:r1_join_col.find(".")]
-                else:
-                    assert False
-                    r1_join_tab = r1_join_col
-
-                r1_total = cards_so_far[cure[1]]
-
-                newtab = set(cure[0]) - set(cure[1])
-                assert len(newtab) == 1
-                r2_alias = tuple(newtab)
-                r2_total = cards_so_far[r2_alias]
-                # how to find r2? ---> find an edge where it is from the first
-                # one
-                # print(r2_total)
-
-                joinnode = [r1_join_tab, r2_alias[0]]
-                joinnode.sort()
-                joinnode = tuple(joinnode)
-
-                # print(joinnode in sg.nodes())
-                ## find the distinct key values of r2 to get to this joinnode
-                r2_edges = list(sg.out_edges(joinnode))
-
-                r2 = None
-                for e in r2_edges:
-                    if e[1] == r2_alias:
-                        # should only have one key
-                        for _,v in sg.edges()[e]["join_key_cardinality"].items():
-                            r2 = v["actual"]
-                            break
-                        break
-
-                # if r2 is None:
-                    # print(r2_alias)
-                    # print(r2_edges)
-                    # pdb.set_trace()
-
-                assert r2 is not None
-                # assert r2 <= r2_total
-                # assert r1 <= r1_total
-                if r1_total < r1:
-                    r1_total = r1
-                if r2_total < r2:
-                    r2_total = r2
-
-                # if r1 > r1_total:
-                    # print(r1, r1_total)
-                    # print(node, r1_alias)
-                    # pdb.set_trace()
-
-                card = (r1_total*r2_total) / max(r1, r2)
-
-                cards_so_far[node] = card
-                pred_dict[(node)] = card
-
-                # print(node, card, sg.nodes()[node]["cardinality"]["actual"])
-
-                # if node == ('ci', 'cn', 'it1', 'it2', 'k', 'mc', 'mi',
-                        # 'mi_idx', 'mk', 'n', 't'):
-                    # print(cure[1], r1, r1_total)
-                    # print(r2_alias, r2, r2_total)
-                    # pdb.set_trace()
-
-            preds.append(pred_dict)
-            # pdb.set_trace()
-
-        return preds
+            all_ests.append(ests)
+            # query_idx += subq_idx
+        return all_ests
 
     def get_exp_name(self):
         return self.__str__()

@@ -129,8 +129,12 @@ def _get_all_joinkeys(qreps, preds):
 
             if actual == 0:
                 actual += 1
+            if pred == 0:
+                pred += 1
+
             ytrue.append(float(actual))
             yhat.append(float(pred))
+
     return np.array(ytrue), np.array(yhat)
 
 class LogicalConstraints(EvalFunc):
@@ -263,8 +267,8 @@ class QErrorJoinKey(EvalFunc):
         ytrue, yhat = _get_all_joinkeys(qreps, preds)
 
         assert len(ytrue) == len(yhat)
-        assert 0.00 not in ytrue
-        assert 0.00 not in yhat
+        # assert 0.00 not in ytrue
+        # assert 0.00 not in yhat
 
         errors = np.maximum((ytrue / yhat), (yhat / ytrue))
 
@@ -332,12 +336,12 @@ class QError(EvalFunc):
                 didx += 1
 
         nts = list(num_table_errs.keys())
-
         nts.sort()
         for nt in nts:
-            print("{} Tables, QError mean: {}, 99p: {}".format(
-                nt, np.mean(num_table_errs[nt]),
-                np.percentile(num_table_errs[nt], 99)))
+            if nt <= 3:
+                print("{} Tables, QError mean: {}, 99p: {}".format(
+                    nt, np.mean(num_table_errs[nt]),
+                    np.percentile(num_table_errs[nt], 99)))
 
         self.save_logs(qreps, errors, **kwargs)
 

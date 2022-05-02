@@ -182,7 +182,7 @@ def get_alg(alg):
                 onehot_mask_truep=args.onehot_mask_truep,
                 onehot_reg=args.onehot_reg,
                 onehot_reg_decay=args.onehot_reg_decay,
-                # num_hidden_layers=args.num_hidden_layers,
+                num_hidden_layers=args.num_hidden_layers,
                 eval_epoch = args.eval_epoch,
                 optimizer_name=args.optimizer_name,
                 clip_gradient=args.clip_gradient,
@@ -630,7 +630,7 @@ def main():
     if args.use_wandb:
         # job3 ==> fixed actual cardinalities
         # wandb_tags = ["v16-job3"]
-        wandb_tags = ["v17"]
+        wandb_tags = ["v17b"]
         if args.wandb_tags is not None:
             wandb_tags += args.wandb_tags.split(",")
         wandb.init("ceb", config={},

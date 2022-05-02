@@ -51,6 +51,7 @@ class SetConv(nn.Module):
         self.predicate_feats = predicate_feats
         self.join_feats = join_feats
         self.flow_feats = flow_feats
+        self.num_hidden_layers = num_hidden_layers
         num_layer1_blocks = 0
 
         self.inp_drop = dropouts[0]
@@ -60,26 +61,46 @@ class SetConv(nn.Module):
         self.hl_drop_layer = nn.Dropout(p=self.hl_drop)
         self.combined_drop_layer = nn.Dropout(p=self.combined_drop)
 
+        # if self.sample_feats != 0:
+            # self.sample_mlp1 = nn.Linear(sample_feats, hid_units).to(device)
+            # self.sample_mlp2 = nn.Linear(hid_units, hid_units).to(device)
+            # num_layer1_blocks += 1
+
+        # if self.predicate_feats != 0:
+            # self.predicate_mlp1 = nn.Linear(predicate_feats, hid_units).to(device)
+            # self.predicate_mlp2 = nn.Linear(hid_units, hid_units).to(device)
+            # num_layer1_blocks += 1
+
+        # if self.join_feats != 0:
+            # self.join_mlp1 = nn.Linear(join_feats, hid_units).to(device)
+            # self.join_mlp2 = nn.Linear(hid_units, hid_units).to(device)
+            # num_layer1_blocks += 1
+
+        # # if flow_feats != 0:
+            # # self.flow_mlp1 = nn.Linear(flow_feats, hid_units).to(device)
+            # # self.flow_mlp2 = nn.Linear(hid_units, hid_units).to(device)
+            # # num_layer1_blocks += 1
+
         if self.sample_feats != 0:
             self.sample_mlp1 = nn.Linear(sample_feats, hid_units).to(device)
-            self.sample_mlp2 = nn.Linear(hid_units, hid_units).to(device)
+            if self.num_hidden_layers == 2:
+                self.sample_mlp2 = nn.Linear(hid_units, hid_units).to(device)
             num_layer1_blocks += 1
 
         if self.predicate_feats != 0:
             self.predicate_mlp1 = nn.Linear(predicate_feats, hid_units).to(device)
-            self.predicate_mlp2 = nn.Linear(hid_units, hid_units).to(device)
+            if self.num_hidden_layers == 2:
+                self.predicate_mlp2 = nn.Linear(hid_units, hid_units).to(device)
             num_layer1_blocks += 1
 
         if self.join_feats != 0:
             self.join_mlp1 = nn.Linear(join_feats, hid_units).to(device)
-            self.join_mlp2 = nn.Linear(hid_units, hid_units).to(device)
+            if self.num_hidden_layers == 2:
+                self.join_mlp2 = nn.Linear(hid_units, hid_units).to(device)
             num_layer1_blocks += 1
 
-        # if flow_feats != 0:
-            # self.flow_mlp1 = nn.Linear(flow_feats, hid_units).to(device)
-            # self.flow_mlp2 = nn.Linear(hid_units, hid_units).to(device)
-            # num_layer1_blocks += 1
-
+        # Note: flow_feats is just used to concatenate global features, such as
+        # pg_est at end of layer outputs
         combined_hid_size = hid_units + flow_feats
 
         comb_size = (hid_units * num_layer1_blocks) + flow_feats
@@ -112,7 +133,9 @@ class SetConv(nn.Module):
             hid_sample = F.relu(self.sample_mlp1(samples))
             hid_sample = self.hl_drop_layer(hid_sample)
 
-            hid_sample = F.relu(self.sample_mlp2(hid_sample))
+            if self.num_hidden_layers == 2:
+                hid_sample = F.relu(self.sample_mlp2(hid_sample))
+
             hid_sample = hid_sample * sample_mask
             hid_sample = torch.sum(hid_sample, dim=1, keepdim=False)
 
@@ -132,8 +155,8 @@ class SetConv(nn.Module):
 
             hid_predicate = F.relu(self.predicate_mlp1(predicates))
             hid_predicate = self.hl_drop_layer(hid_predicate)
-
-            hid_predicate = F.relu(self.predicate_mlp2(hid_predicate))
+            if self.num_hidden_layers == 2:
+                hid_predicate = F.relu(self.predicate_mlp2(hid_predicate))
             hid_predicate = hid_predicate * predicate_mask
             hid_predicate = torch.sum(hid_predicate, dim=1, keepdim=False)
             predicate_norm = predicate_mask.sum(1, keepdim=False)
@@ -149,7 +172,8 @@ class SetConv(nn.Module):
             hid_join = F.relu(self.join_mlp1(joins))
             hid_join = self.hl_drop_layer(hid_join)
 
-            hid_join = F.relu(self.join_mlp2(hid_join))
+            if self.num_hidden_layers == 2:
+                hid_join = F.relu(self.join_mlp2(hid_join))
             hid_join = hid_join * join_mask
             hid_join = torch.sum(hid_join, dim=1, keepdim=False)
 
@@ -194,6 +218,8 @@ class SetConvFlow(nn.Module):
         self.predicate_feats = predicate_feats
         self.join_feats = join_feats
         self.flow_feats = flow_feats
+        self.num_hidden_layers = num_hidden_layers
+
         num_layer1_blocks = 0
 
         self.inp_drop = dropouts[0]
@@ -203,24 +229,33 @@ class SetConvFlow(nn.Module):
         self.hl_drop_layer = nn.Dropout(p=self.hl_drop)
         self.combined_drop_layer = nn.Dropout(p=self.combined_drop)
 
+        if self.num_hidden_layers > 2:
+            assert False, "need to implement"
+
         if self.sample_feats != 0:
             self.sample_mlp1 = nn.Linear(sample_feats, hid_units).to(device)
-            self.sample_mlp2 = nn.Linear(hid_units, hid_units).to(device)
+            if self.num_hidden_layers == 2:
+                self.sample_mlp2 = nn.Linear(hid_units, hid_units).to(device)
+
             num_layer1_blocks += 1
 
         if self.predicate_feats != 0:
             self.predicate_mlp1 = nn.Linear(predicate_feats, hid_units).to(device)
-            self.predicate_mlp2 = nn.Linear(hid_units, hid_units).to(device)
+            if self.num_hidden_layers == 2:
+                self.predicate_mlp2 = nn.Linear(hid_units, hid_units).to(device)
+
             num_layer1_blocks += 1
 
         if self.join_feats != 0:
             self.join_mlp1 = nn.Linear(join_feats, hid_units).to(device)
-            self.join_mlp2 = nn.Linear(hid_units, hid_units).to(device)
+            if self.num_hidden_layers == 2:
+                self.join_mlp2 = nn.Linear(hid_units, hid_units).to(device)
             num_layer1_blocks += 1
 
         if flow_feats != 0:
             self.flow_mlp1 = nn.Linear(flow_feats, hid_units).to(device)
-            self.flow_mlp2 = nn.Linear(hid_units, hid_units).to(device)
+            if self.num_hidden_layers == 2:
+                self.flow_mlp2 = nn.Linear(hid_units, hid_units).to(device)
             num_layer1_blocks += 1
 
         comb_size = (hid_units * num_layer1_blocks)
@@ -251,7 +286,9 @@ class SetConvFlow(nn.Module):
             hid_sample = F.relu(self.sample_mlp1(samples))
             hid_sample = self.hl_drop_layer(hid_sample)
 
-            hid_sample = F.relu(self.sample_mlp2(hid_sample))
+            if self.num_hidden_layers == 2:
+                hid_sample = F.relu(self.sample_mlp2(hid_sample))
+
             hid_sample = hid_sample * sample_mask
             hid_sample = torch.sum(hid_sample, dim=1, keepdim=False)
 
@@ -272,7 +309,9 @@ class SetConvFlow(nn.Module):
             hid_predicate = F.relu(self.predicate_mlp1(predicates))
             hid_predicate = self.hl_drop_layer(hid_predicate)
 
-            hid_predicate = F.relu(self.predicate_mlp2(hid_predicate))
+            if self.num_hidden_layers == 2:
+                hid_predicate = F.relu(self.predicate_mlp2(hid_predicate))
+
             hid_predicate = hid_predicate * predicate_mask
             hid_predicate = torch.sum(hid_predicate, dim=1, keepdim=False)
             predicate_norm = predicate_mask.sum(1, keepdim=False)
@@ -288,7 +327,9 @@ class SetConvFlow(nn.Module):
             hid_join = F.relu(self.join_mlp1(joins))
             hid_join = self.hl_drop_layer(hid_join)
 
-            hid_join = F.relu(self.join_mlp2(hid_join))
+            if self.num_hidden_layers == 2:
+                hid_join = F.relu(self.join_mlp2(hid_join))
+
             hid_join = hid_join * join_mask
             hid_join = torch.sum(hid_join, dim=1, keepdim=False)
 
@@ -307,7 +348,9 @@ class SetConvFlow(nn.Module):
             flows = self.inp_drop_layer(flows)
             hid_flow = F.relu(self.flow_mlp1(flows))
             hid_flow = self.hl_drop_layer(hid_flow)
-            hid_flow = F.relu(self.flow_mlp2(hid_flow))
+            if self.num_hidden_layers == 2:
+                hid_flow = F.relu(self.flow_mlp2(hid_flow))
+
             tocat.append(hid_flow)
 
         hid = torch.cat(tocat, 1)

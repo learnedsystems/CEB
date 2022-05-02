@@ -6,11 +6,36 @@
 #BITMAP=$5
 #JOINBITMAP=$6
 
-bash run_default.sh mse 1 2 2 0 1
-bash run_default.sh flowloss 1 2 2 0 1
-bash run_default.sh mse 0 0 0 1 0
-bash run_default.sh mse 1 2 0 0 1
-bash run_default.sh mse 1 0 0 0 1
+#MAX_EPOCHS="${7:-20}"
+#SKIP7a="${8:-0}"
+#BUCKETS="${9:-1}"
+#HLS="${10:-128}"
+#NH="${11:-2}"
+
+#bash run_default.sh mse 1 2 2 0 1 20 0 10 32 1
+#bash run_default.sh mse 1 2 2 0 1 20 0 10 32 1
+#bash run_default.sh mse 1 2 2 0 1 20 0 10 64 1
+
+bash run_default.sh mse 1 2 0 0 1 20 0 10 32 1
+bash run_default.sh mse 1 2 0 0 1 20 0 10 32 1
+bash run_default.sh mse 1 2 0 0 1 20 0 10 64 1
+
+#bash run_default.sh flowloss 1 2 2 0 1
+#bash run_default.sh mse 0 0 0 1 0
+#bash run_default.sh mse 1 0 0 0 1
+
+#bash run_default.sh flowloss 1 0 0 0 0 10
+#bash run_default.sh mse 0 0 0 0 0
+
+# no dropout, no early stopping
+#bash run_default.sh mse 1 0 2 0 1 20 1
+
+# no early stopping
+#bash run_default.sh mse 1 2 0 0 1 20 1
+
+# flow-loss w/o dropout
+#bash run_default.sh flowloss 1 0 2 0 1 10 1
+
 
 #bash run_all_diff.sh 1
 #bash run_all_diff.sh 0

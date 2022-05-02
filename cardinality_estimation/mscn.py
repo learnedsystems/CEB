@@ -54,6 +54,7 @@ class MSCN(NN):
                     len(sample[0]["flow"]),
                     self.hidden_layer_size,
                     n_out=n_out,
+                    num_hidden_layers = self.num_hidden_layers,
                     dropouts=[self.inp_dropout, self.hl_dropout,
                         self.comb_dropout],
                     use_sigmoid = use_sigmoid)
@@ -63,6 +64,7 @@ class MSCN(NN):
                     len(sample[0]["flow"]),
                     self.hidden_layer_size,
                     n_out=n_out,
+                    num_hidden_layers = self.num_hidden_layers,
                     dropouts=[self.inp_dropout, self.hl_dropout,
                         self.comb_dropout],
                     use_sigmoid = use_sigmoid)

@@ -49,8 +49,6 @@ def eval_alg(alg, eval_funcs, qreps, samples_type, featurizer=None):
                     np.round(np.mean(errors),3),
                     np.round(np.median(errors),3),
                     np.round(np.percentile(errors,99),3)))
-        # def joinkey_cards_to_subplan_cards(samples, joinkey_cards):
-        # return
         ests = joinkey_cards_to_subplan_cards(qreps, ests,
                 args.joinkey_basecard_type, args.joinkey_basecard_tables)
         assert len(ests) == len(qreps)
@@ -358,24 +356,52 @@ def get_query_fns():
 
     print("Skipped templates: ", " ".join(skipped_templates))
 
-    job_qfns = []
-    if args.eval_on_jobm:
-        jobm_dir = "./queries/jobm/all_jobm"
-        qfns = list(glob.glob(jobm_dir+"/*.pkl"))
-        # print(qfns)
-        # test_qfns += qfns
-        job_qfns += qfns
+    # job_qfns = []
+    # if args.eval_on_jobm:
+        # jobm_dir = "./queries/jobm/all_jobm"
+        # qfns = list(glob.glob(jobm_dir+"/*.pkl"))
+        # # print(qfns)
+        # # test_qfns += qfns
+        # job_qfns += qfns
 
-    if args.eval_on_job:
-        job_dir = "./queries/job-joinkeys/all_job"
-        qfns = list(glob.glob(job_dir+"/*.pkl"))
+    # if args.eval_on_job:
+        # job_dir = "./queries/job-joinkeys/all_job"
+        # qfns = list(glob.glob(job_dir+"/*.pkl"))
 
-        if not args.eval_epoch <= 2:
-            job_dir2 = "./queries/job-joinkeys/job29"
-            qfns += list(glob.glob(job_dir2+"/*.pkl"))
-        else:
-            print("skipping job29")
-        job_qfns += qfns
+        # if not args.eval_epoch <= 2:
+            # job_dir2 = "./queries/job-joinkeys/job29"
+            # qfns += list(glob.glob(job_dir2+"/*.pkl"))
+        # else:
+            # print("skipping job29")
+        # job_qfns += qfns
+
+    eval_qfns = []
+    eval_qdirs = args.eval_query_dir.split(",")
+    for qdir in eval_qdirs:
+        cur_eval_qfns = []
+        fns = list(glob.glob(qdir + "/*"))
+        fns = [fn for fn in fns if os.path.isdir(fn)]
+
+        for qi,qdir in enumerate(fns):
+            if ".json" in qdir:
+                continue
+            # let's first select all the qfns we are going to load
+            qfns = list(glob.glob(qdir+"/*.pkl"))
+            qfns.sort()
+            if args.num_samples_per_template == -1 \
+                    or args.num_samples_per_template >= len(qfns):
+                qfns = qfns
+            elif args.num_samples_per_template < len(qfns):
+                qfns = qfns[0:args.num_samples_per_template]
+            else:
+                assert False
+            cur_eval_qfns += qfns
+
+        random.shuffle(cur_eval_qfns)
+        eval_qfns.append(cur_eval_qfns)
+
+    # print(cur_eval_qfns)
+    # pdb.set_trace()
 
     if args.train_test_split_kind == "query":
         print("""Selected {} train queries, {} test queries, and {} val queries"""\
@@ -383,14 +409,14 @@ def get_query_fns():
     else:
         train_tmp_names = [os.path.basename(tfn) for tfn in train_tmps]
         test_tmp_names = [os.path.basename(tfn) for tfn in test_tmps]
-        if args.eval_on_jobm:
-            test_tmp_names.append("jobm")
-        if args.eval_on_job:
-            test_tmp_names.append("job")
+        # if args.eval_on_jobm:
+            # test_tmp_names.append("jobm")
+        # if args.eval_on_job:
+            # test_tmp_names.append("job")
 
         print("""Selected {} train queries, {} test queries, {} val queries,{} job queries"""\
                 .format(len(train_qfns), len(test_qfns), len(val_qfns),
-                    len(job_qfns)))
+                    len(eval_qfns[0])))
         print("""Selected {} train templates, {} test templates"""\
                 .format(len(train_tmp_names), len(test_tmp_names)))
         print("""Training templates: {}\nEvaluation templates: {}""".\
@@ -403,8 +429,9 @@ def get_query_fns():
     random.shuffle(train_qfns)
     random.shuffle(test_qfns)
     random.shuffle(val_qfns)
+    # random.shuffle(eval_qfns)
 
-    return train_qfns, test_qfns, val_qfns, job_qfns
+    return train_qfns, test_qfns, val_qfns, eval_qfns
 
 def update_job_parsing(qrep):
 
@@ -474,7 +501,7 @@ def load_qdata(fns):
 
     return qreps
 
-def get_featurizer(trainqs, valqs, testqs, jobqs):
+def get_featurizer(trainqs, valqs, testqs, eval_qs):
     featurizer = Featurizer(args.user, args.pwd, args.db_name,
             args.db_host, args.port)
     featdata_fn = os.path.join(args.query_dir, "dbdata.json")
@@ -525,6 +552,10 @@ def get_featurizer(trainqs, valqs, testqs, jobqs):
     # collected in the featurizer.update_column_stats call; Therefore, we don't
     # include this in the cached version
 
+    all_evalqs = []
+    for e0 in eval_qs:
+        all_evalqs += e0
+
     featurizer.setup(ynormalization=args.ynormalization,
             feat_onlyseen_maxy = args.feat_onlyseen_maxy,
             max_num_tables = args.max_num_tables,
@@ -556,12 +587,12 @@ def get_featurizer(trainqs, valqs, testqs, jobqs):
             feat_onlyseen_preds = args.feat_onlyseen_preds
             )
 
-    featurizer.update_max_sets(trainqs+valqs+testqs+jobqs)
+    featurizer.update_max_sets(trainqs+valqs+testqs+all_evalqs)
 
     if False:
         featurizer.update_workload_stats(trainqs)
     else:
-        featurizer.update_workload_stats(trainqs+valqs+testqs+jobqs)
+        featurizer.update_workload_stats(trainqs+valqs+testqs+all_evalqs)
 
     featurizer.init_feature_mapping()
 
@@ -573,7 +604,7 @@ def get_featurizer(trainqs, valqs, testqs, jobqs):
                     clamp_timeouts=args.feat_clamp_timeouts,
                     max_num_tables=args.max_num_tables)
         else:
-            featurizer.update_ystats(trainqs+valqs+testqs+jobqs,
+            featurizer.update_ystats(trainqs+valqs+testqs+all_evalqs,
                     clamp_timeouts=args.feat_clamp_timeouts,
                     max_num_tables = args.max_num_tables)
 
@@ -630,24 +661,30 @@ def main():
     if args.use_wandb:
         # job3 ==> fixed actual cardinalities
         # wandb_tags = ["v16-job3"]
-        wandb_tags = ["v17b"]
+        wandb_tags = ["v18"]
         if args.wandb_tags is not None:
             wandb_tags += args.wandb_tags.split(",")
         wandb.init("ceb", config={},
                 tags=wandb_tags)
         wandb.config.update(vars(args))
 
-    train_qfns, test_qfns, val_qfns, job_qfns = get_query_fns()
+    # train_qfns, test_qfns, val_qfns, job_qfns = get_query_fns()
+    train_qfns, test_qfns, val_qfns, eval_qfns = get_query_fns()
 
     trainqs = load_qdata(train_qfns)
     # Note: can be quite memory intensive to load them all; might want to just
     # keep around the qfns and load them as needed
     valqs = load_qdata(val_qfns)
     testqs = load_qdata(test_qfns)
-    jobqs = load_qdata(job_qfns)
 
-    print("""Selected {} train qdata, {} test qdata, and {} val qdata"""\
-            .format(len(trainqs), len(testqs), len(valqs)))
+    eval_qdirs = args.eval_query_dir.split(",")
+    print(eval_qdirs)
+    evalqs = []
+    for eval_qfn in eval_qfns:
+        evalqs.append(load_qdata(eval_qfn))
+
+    print("""Selected {} train qdata, {} test qdata, {} val qdata, {} eval qdata"""\
+            .format(len(trainqs), len(testqs), len(valqs), len(evalqs[0])))
 
     if args.onehot_dropout == -1:
         # traintabs = set()
@@ -705,7 +742,7 @@ def main():
 
     # only needs featurizer for learned models
     if args.algs in ["xgb", "fcnn", "mscn", "mscn_joinkey"]:
-        featurizer = get_featurizer(trainqs, valqs, testqs, jobqs)
+        featurizer = get_featurizer(trainqs, valqs, testqs, evalqs)
     else:
         featurizer = None
 
@@ -719,7 +756,8 @@ def main():
 
     for alg in algs:
         alg.train(trainqs, valqs=valqs, testqs=testqs,
-                jobqs = jobqs,
+                evalqs = evalqs,
+                eval_qdirs = eval_qdirs,
                 featurizer=featurizer, result_dir=args.result_dir)
 
         # if args.eval_epoch < args.max_epochs:
@@ -734,8 +772,9 @@ def main():
         if len(testqs) > 0:
             eval_alg(alg, eval_fns, testqs, "test", featurizer=featurizer)
 
-        if len(jobqs) > 0:
-            eval_alg(alg, eval_fns, jobqs, "job", featurizer=featurizer)
+        if len(evalqs) > 0:
+            for ei, evalq in enumerate(evalqs):
+                eval_alg(alg, eval_fns, evalq, eval_qdirs[ei], featurizer=featurizer)
 
 # def check_logical_constraints(alg, qreps):
     # for qrep in qreps:
@@ -746,6 +785,9 @@ def read_flags():
     parser = argparse.ArgumentParser()
     parser.add_argument("--query_dir", type=str, required=False,
             default="./queries/imdb/")
+    parser.add_argument("--eval_query_dir", type=str, required=False,
+            default="")
+
     parser.add_argument("--eval_on_jobm", type=int, required=False,
             default=0)
     parser.add_argument("--eval_on_job", type=int, required=False,
@@ -857,7 +899,7 @@ def read_flags():
             default="log")
 
     parser.add_argument("--feat_tables", type=int, required=False,
-            default=1)
+            default=0)
     parser.add_argument("--feat_onlyseen_preds", type=int, required=False,
             default=1)
     parser.add_argument("--feat_onlyseen_cols", type=int, required=False,

@@ -11,14 +11,23 @@
 #BUCKETS="${9:-1}"
 #HLS="${10:-128}"
 #NH="${11:-2}"
+#EVAL_QDIR="${13:-queries/job-joinkeys-tebow-temps/}"
 
-#bash run_default.sh mse 1 2 2 0 1 20 0 10 32 1
+## default joinbitmap + dropout run
+bash run_default.sh mse 1 2 0 0 1 40 0 10 128 2 5433 queries/job-joinkeys-tebow-temps
+bash run_default.sh mse 1 2 0 0 1 40 0 10 128 2 5433 queries/job-joinkeys-tebow-temps
+
+#bash run_default.sh mse 1 0 0 1 0 20 0 10 128 2 5433 queries/job-joinkeys-tebow-temps
+#bash run_default.sh mse 1 0 0 1 0 20 0 10 128 2 5433 queries/job-joinkeys-tebow-temps
+
+#bash run_default.sh mse 1 2 2 0 1 20 0 10 128 2 5431
+
 #bash run_default.sh mse 1 2 2 0 1 20 0 10 32 1
 #bash run_default.sh mse 1 2 2 0 1 20 0 10 64 1
 
-bash run_default.sh mse 1 2 0 0 1 20 0 10 32 1
-bash run_default.sh mse 1 2 0 0 1 20 0 10 32 1
-bash run_default.sh mse 1 2 0 0 1 20 0 10 64 1
+#bash run_default.sh mse 1 2 0 0 1 20 0 10 32 1
+#bash run_default.sh mse 1 2 0 0 1 20 0 10 32 1
+#bash run_default.sh mse 1 2 0 0 1 20 0 10 64 1
 
 #bash run_default.sh flowloss 1 2 2 0 1
 #bash run_default.sh mse 0 0 0 1 0

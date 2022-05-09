@@ -560,7 +560,7 @@ class QueryDataset(data.Dataset):
         if self.featurizer.join_bitmap:
             assert self.featurizer.join_bitmap_dir is not None
             if "jobm" in qrep["template_name"]:
-                bitdir = None
+                bitdir = "./queries/jobm_joinbitmaps/"
             elif "job" in qrep["template_name"]:
                 bitdir = "./queries/job_joinbitmaps/"
             else:

@@ -10,6 +10,7 @@ ESTOP=2
 VAL=0.2
 FLOW_FEATS=1
 BITMAP=1
+PORT=5433
 
 MAXY=1
 CLAMPT=1
@@ -20,7 +21,7 @@ SEP=0
 LOAD_PADDED=1
 
 JOB=1
-JOBM=1
+JOBM=0
 
 LOSS_FUNC=mse
 ONEHOT_REG=0
@@ -65,6 +66,7 @@ for i in "${!SEEDS[@]}";
   do
   CMD="time python3 main.py --algs $ALG \
    -n $N \
+   --port $PORT \
    --onehot_dropout $ONEHOT_DROPOUT \
    --feat_onlyseen_maxy $MAXY \
    --flow_features $FLOW_FEATS \

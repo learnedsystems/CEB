@@ -440,8 +440,8 @@ class NN(CardinalityEstimationAlg):
         self.true_costs = {}
         self.true_costs["val"] = 0.0
         self.true_costs["test"] = 0.0
-        self.true_costs["job"] = 0.0
-        self.true_costs["jobm"] = 0.0
+        # self.true_costs["job"] = 0.0
+        # self.true_costs["jobm"] = 0.0
 
         assert isinstance(training_samples[0], dict)
         self.featurizer = kwargs["featurizer"]
@@ -485,30 +485,26 @@ class NN(CardinalityEstimationAlg):
                         False)
                 self.samples["test"] = testqs
 
-            if "jobqs" in kwargs and len(kwargs["jobqs"]) > 0:
-                if len(kwargs["jobqs"]) > 400:
-                    ns = int(len(kwargs["jobqs"]) / 10)
-                    random.seed(42)
-                    jobqs = random.sample(kwargs["jobqs"], ns)
-                else:
-                    jobqs = kwargs["jobqs"]
+            if "evalqs" in kwargs and len(kwargs["eval_qdirs"]) > 0:
+                eval_qdirs = kwargs["eval_qdirs"]
 
-                self.eval_ds["job"] = self.init_dataset(jobqs,
-                        False)
-                self.samples["job"] = jobqs
+                for ei, cur_evalqs in enumerate(kwargs["evalqs"]):
+                    evalqname = eval_qdirs[ei]
+                    if "job" in evalqname:
+                        evalqname = "JOB"
+                    elif "imdb" in evalqname:
+                        evalqname = "CEB-IMDb"
 
-            if "jobmqs" in kwargs and len(kwargs["jobmqs"]) > 0:
-                if len(kwargs["jobmqs"]) > 400:
-                    ns = int(len(kwargs["jobmqs"]) / 10)
-                    random.seed(42)
-                    jobmqs = random.sample(kwargs["jobmqs"], ns)
-                else:
-                    jobmqs = kwargs["jobmqs"]
+                    if len(cur_evalqs) > 400:
+                        ns = int(len(cur_evalqs) / 10)
+                        random.seed(42)
+                        cur_evalqs = random.sample(cur_evalqs, ns)
+                    self.eval_ds[evalqname] = self.init_dataset(cur_evalqs,
+                            False)
+                    self.true_costs[evalqname] = 0.0
+                    self.samples[evalqname] = cur_evalqs
 
-                self.eval_ds["jobm"] = self.init_dataset(jobmqs,
-                        False)
-                self.samples["jobm"] = jobmqs
-
+        # self.true_costs["jobm"] = 0.0
 
         # TODO: initialize self.num_features
         self.net, self.optimizer = self.init_net(self.trainds[0])

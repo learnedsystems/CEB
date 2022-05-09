@@ -164,6 +164,7 @@ def _get_pg_plancost(query, est_cardinalities, true_cardinalities,
     # ops, and other pg hints  in the sql string -- thus if the exact same
     # string is repeated, then its PostgreSQL cost would be the same too.
     cost_sql_key = deterministic_hash(cost_sql)
+
     if sql_costs is not None:
         if cost_sql_key in sql_costs.archive:
             try:
@@ -178,6 +179,11 @@ def _get_pg_plancost(query, est_cardinalities, true_cardinalities,
     else:
         # without caching
         est_cost, est_explain = get_pg_cost_from_sql(cost_sql, cursor)
+
+        leading_hint2 = get_leading_hint(join_graph, est_explain)
+        if leading_hint != leading_hint2:
+            print("leading hint NOT matches!")
+            assert False
 
     # set this to sql to be executed, as pg_hint_plan will enforce the
     # estimated cardinalities, and let postgres make decisions for join order
@@ -305,6 +311,7 @@ class PPC():
 
         if pool is None:
             # single threaded case, useful for debugging
+            # assert False
             all_costs = [compute_cost_pg_single(sqls, join_graphs,
                     true_cardinalities, est_cardinalities, opt_costs,
                     self.user,
@@ -327,6 +334,7 @@ class PPC():
                     self.user, self.pwd, self.db_host,
                     self.port, self.db_name, use_qplan_cache, self.cost_model))
 
+            # pdb.set_trace()
             all_costs = pool.starmap(compute_cost_pg_single, par_args)
 
         new_seen = False

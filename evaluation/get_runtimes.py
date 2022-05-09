@@ -21,8 +21,10 @@ def read_flags():
     parser.add_argument("--result_dir", type=str, required=False,
             default="./results")
     parser.add_argument("--cost_model", type=str, required=False,
-            default="cm1")
+            default="C")
     parser.add_argument("--explain", type=int, required=False,
+            default=1)
+    parser.add_argument("--reps", type=int, required=False,
             default=1)
     parser.add_argument("--timeout", type=int, required=False,
             default=900000)
@@ -30,8 +32,8 @@ def read_flags():
             default=0)
     parser.add_argument("--db_name", type=str, required=False,
             default="imdb")
-    parser.add_argument("--costs_fn", type=str, required=False,
-            default="PostgresPlanCost.csv")
+    parser.add_argument("--costs_fn_tmp", type=str, required=False,
+            default="PostgresPlanCost-{}.csv")
 
     parser.add_argument("--db_host", type=str, required=False,
             default="localhost")
@@ -121,7 +123,8 @@ def main():
         cur_runtimes["exp_analyze"].append(exp_analyze)
 
     cost_model = args.cost_model
-    costs_fn = os.path.join(args.result_dir, args.costs_fn)
+    costs_fn = args.costs_fn_tmp.format(args.cost_model)
+    costs_fn = os.path.join(args.result_dir, costs_fn)
 
     assert os.path.exists(costs_fn)
 
@@ -141,30 +144,40 @@ def main():
         runtimes = pd.DataFrame(columns=columns)
 
     cur_runtimes = defaultdict(list)
+    total_rt = 0.0
 
-    for i,row in costs.iterrows():
-        if row["qname"] in runtimes["qname"].values:
-            # what is the stored value for this key?
-            rt_df = runtimes[runtimes["qname"] == row["qname"]]
-            stored_rt = rt_df["runtime"].values[0]
-            if stored_rt == TIMEOUT_CONSTANT and args.rerun_timeouts:
-                print("going to rerun timed out query")
-            else:
-                print("skipping {} with stored runtime".format(row["qname"]))
-                continue
+    print("Going to execute {} queries, {} reps each".format(
+        len(costs), args.reps))
 
-        exp_analyze, rt = execute_sql(row["exec_sql"],
-                cost_model=cost_model,
-                explain=args.explain,
-                timeout=args.timeout)
+    for rep in range(args.reps):
+        costs = costs.sample(frac=1.0)
+        for i,row in costs.iterrows():
+            if row["qname"] in runtimes["qname"].values:
+                # what is the stored value for this key?
+                rt_df = runtimes[runtimes["qname"] == row["qname"]]
+                stored_rt = rt_df["runtime"].values[0]
+                if stored_rt == TIMEOUT_CONSTANT and args.rerun_timeouts:
+                    print("going to rerun timed out query")
+                else:
+                    print("skipping {} with stored runtime".format(row["qname"]))
+                    continue
 
-        add_runtime_row(row["qname"], rt, exp_analyze)
+            exp_analyze, rt = execute_sql(row["exec_sql"],
+                    cost_model=cost_model,
+                    explain=args.explain,
+                    timeout=args.timeout)
 
-        rts = cur_runtimes["runtime"]
-        print("#Queries:{}, AvgRt: {}".format(len(rts),
-            sum(rts) / len(rts)))
-        df = pd.concat([runtimes, pd.DataFrame(cur_runtimes)], ignore_index=True)
-        df.to_csv(rt_fn, index=False)
+            total_rt += rt
+            add_runtime_row(row["qname"], rt, exp_analyze)
+
+            rts = cur_runtimes["runtime"]
+            print("Rep: {}, TotalRT: {}, #Queries:{}, AvgRt: {}".format(
+                rep, round(total_rt,2), len(rts),
+                round(sum(rts) / len(rts), 2)))
+            df = pd.concat([runtimes, pd.DataFrame(cur_runtimes)], ignore_index=True)
+            df.to_csv(rt_fn, index=False)
+
+    print("Total runtime was: ", total_rt)
 
 if __name__ == "__main__":
     args = read_flags()

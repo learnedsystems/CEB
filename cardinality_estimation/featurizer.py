@@ -808,7 +808,7 @@ class Featurizer():
             feat_pg_costs = False, feat_tolerance=False,
             feat_pg_path=False,
             flow_feat_degrees = False,
-            flow_feat_tables = True,
+            flow_feat_tables = False,
             feat_rel_pg_ests=False, feat_join_graph_neighbors=False,
             feat_rel_pg_ests_onehot=False,
             feat_pg_est_one_hot=False,
@@ -1088,6 +1088,10 @@ class Featurizer():
                 # upto 10^7
                 self.num_flow_features += self.PG_EST_BUCKETS
 
+            print("flow feat tables: ", self.flow_feat_tables)
+            print("num flow features: ", self.num_flow_features)
+
+
     def _handle_continuous_feature(self, pfeats, pred_idx_start,
             col, val):
         '''
@@ -1285,8 +1289,17 @@ class Featurizer():
                     if ".id" in c:
                         if bitmaps is None:
                             continue
-                        sb = bitmaps[(curalias,)][self.sample_bitmap_key]
-                        bitmap = set(sb)
+                        if (curalias,) not in bitmaps:
+                            continue
+                        if self.sample_bitmap_key not in bitmaps[(curalias,)]:
+                            continue
+                        try:
+                            sb = bitmaps[(curalias,)][self.sample_bitmap_key]
+                            bitmap = set(sb)
+                        except Exception as e:
+                            print(bitmaps)
+                            print(curalias)
+                            pdb.set_trace()
                     else:
                         bitmap_key = NEW_JOIN_TABLE_TEMPLATE.format(
                                 TABLE=tabname,

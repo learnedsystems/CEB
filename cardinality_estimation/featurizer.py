@@ -1162,6 +1162,9 @@ class Featurizer():
                     # unseen column
                     return
 
+            if not isinstance(val, list):
+                val = [val]
+
             for v in val:
                 if self.feat_onlyseen_preds:
                     if isinstance(v, dict):
@@ -2365,11 +2368,13 @@ class Featurizer():
 
         for join in joins:
             join = join.replace(" ", "")
-            join = self.join_str_to_real_join(join)
-
             keys = join.split("=")
             keys.sort()
-            keystr = ",".join(keys)
+
+            # join = self.join_str_to_real_join(join)
+            # print(join)
+
+            # keystr = ",".join(keys)
             for jkey in keys:
                 if jkey in self.join_key_stats:
                     continue

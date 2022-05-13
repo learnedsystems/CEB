@@ -190,7 +190,11 @@ def format_model_test_output(pred, samples, featurizer):
             cards = sample["subset_graph"].nodes()[node]["cardinality"]
             alias_key = node
             idx = query_idx + subq_idx
-            est_card = featurizer.unnormalize(pred[idx], cards["total"])
+            if "total" in cards:
+                est_card = featurizer.unnormalize(pred[idx], cards["total"])
+            else:
+                est_card = featurizer.unnormalize(pred[idx], None)
+
             assert est_card > 0
             ests[alias_key] = est_card
             subq_idx += 1

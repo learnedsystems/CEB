@@ -268,6 +268,10 @@ def nodes_to_sql(nodes, join_graph):
     return sql_str
 
 def nx_graph_to_query(G, from_clause=None):
+    '''
+    @G: join_graph in the query_represntation format
+    '''
+
     froms = []
     conds = []
     for nd in G.nodes(data=True):
@@ -293,8 +297,15 @@ def nx_graph_to_query(G, from_clause=None):
     if len(conds) > 0:
         wheres = ' AND '.join(conds)
         from_clause += " WHERE " + wheres
-    count_query = COUNT_SIZE_TEMPLATE.format(FROM_CLAUSE=from_clause)
-    return count_query
+
+    if "aggr_cmd" not in G.graph or G.graph["aggr_cmd"] == "":
+        ret_query = COUNT_SIZE_TEMPLATE.format(FROM_CLAUSE=from_clause)
+    else:
+        SQL_TMP = "{} FROM {}"
+        ret_query = SQL_TMP.format(G.graph["aggr_cmd"],
+                        from_clause)
+
+    return ret_query
 
 def extract_join_clause(query):
     '''

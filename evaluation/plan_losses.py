@@ -132,11 +132,17 @@ def get_pghint_modified_sql(sql, cardinalities, join_ops,
     sql = pg_hint_str + sql
     return sql
 
-def _get_pg_plancost(query, est_cardinalities, true_cardinalities,
+def _get_pg_plancost(query, est_cardinalities,
+        true_cardinalities,
         join_graph, cursor, sql_costs):
     '''
     Main function for computing Postgres Plan Costs.
     '''
+    # if "COUNT(*)" in query:
+        # print(query[0:100])
+        # print("COUNT* in query!")
+        # pdb.set_trace()
+
     est_card_sql = get_pghint_modified_sql(query, est_cardinalities, None,
             None, None)
     assert "explain" in est_card_sql.lower()
@@ -150,6 +156,12 @@ def _get_pg_plancost(query, est_cardinalities, true_cardinalities,
 
     est_opt_sql = nx_graph_to_query(join_graph,
             from_clause=est_join_order_sql)
+
+    # if "COUNT(*)" in est_opt_sql:
+        # print(est_opt_sql[0:100])
+        # print("COUNT* in est_opt_sql!")
+        # pdb.set_trace()
+    # return "", 0.0, ""
 
     # add the join ops etc. information
     cost_sql = get_pghint_modified_sql(est_opt_sql, true_cardinalities,

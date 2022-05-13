@@ -37,6 +37,7 @@ def eval_alg(alg, eval_funcs, qreps, samples_type, featurizer=None):
     if args.result_dir is not None:
         rdir = os.path.join(args.result_dir, exp_name)
         make_dir(rdir)
+        print("Going to store results at: ", rdir)
 
     if args.algs in ["mscn_joinkey", "joinkeys"]:
         qerrf = get_eval_fn("qerr_joinkey")
@@ -772,7 +773,7 @@ def main():
         if len(testqs) > 0:
             eval_alg(alg, eval_fns, testqs, "test", featurizer=featurizer)
 
-        if len(evalqs) > 0:
+        if len(evalqs) > 0 and len(evalqs[0]) > 0:
             for ei, evalq in enumerate(evalqs):
                 eval_alg(alg, eval_fns, evalq, eval_qdirs[ei], featurizer=featurizer)
 
@@ -899,7 +900,7 @@ def read_flags():
             default="log")
 
     parser.add_argument("--feat_tables", type=int, required=False,
-            default=0)
+            default=1)
     parser.add_argument("--feat_onlyseen_preds", type=int, required=False,
             default=1)
     parser.add_argument("--feat_onlyseen_cols", type=int, required=False,

@@ -343,7 +343,8 @@ class QError(EvalFunc):
                     nt, np.mean(num_table_errs[nt]),
                     np.percentile(num_table_errs[nt], 99)))
 
-        self.save_logs(qreps, errors, **kwargs)
+        if kwargs["result_dir"] is not None:
+            self.save_logs(qreps, errors, **kwargs)
 
         return errors
 

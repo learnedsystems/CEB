@@ -43,7 +43,9 @@ class MSCN(NN):
         else:
             n_out = 1
 
-        if self.featurizer.ynormalization == "selectivity-log":
+        if self.featurizer.ynormalization in ["selectivity-log"]:
+            use_sigmoid = False
+        elif "whitening" in self.featurizer.ynormalization:
             use_sigmoid = False
         else:
             use_sigmoid = True

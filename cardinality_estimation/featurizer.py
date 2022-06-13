@@ -256,6 +256,59 @@ class Featurizer():
         self.max_preds = 0
         self.max_pred_vals = 0
 
+    def update_workload_means(self, qreps):
+        '''
+        this is called for a particular set of samples; calculate mean / std of
+        cardinalities so we can scale estimates based on that.
+        TODO: handle pg ests and true cards differently?
+        '''
+        if self.clamp_timeouts:
+            y0 = []
+            # get max value, so we can replace timeout values with it
+            for qrep in qreps:
+                jg = qrep["join_graph"]
+                for node,data in qrep["subset_graph"].nodes(data=True):
+                    # if max_num_tables != -1 and len(node) > max_num_tables:
+                        # continue
+                    actual = data[self.ckey]["actual"]
+                    if actual >= TIMEOUT_CARD:
+                        continue
+                    y0.append(actual)
+            maxval = np.max(y0)
+
+        y = []
+        yhats = []
+
+        for qrep in qreps:
+            jg = qrep["join_graph"]
+            for node,data in qrep["subset_graph"].nodes(data=True):
+                actual = data[self.ckey]["actual"]
+                pg = data[self.ckey]["expected"]
+                if self.clamp_timeouts:
+                    if actual >= TIMEOUT_CARD:
+                        y.append(maxval)
+                        yhats.append(maxval)
+                    else:
+                        y.append(actual)
+                        yhats.append(pg)
+                else:
+                    y.append(actual)
+                    yhats.append(pg)
+
+        y = np.array(y)
+        yhats = np.array(yhats)
+
+        if "log" in self.ynormalization:
+            y = np.log(y)
+            yhats = np.log(yhats)
+
+        self.meany = np.mean(y)
+        self.stdy = np.std(y)
+
+        print("mean y: {}, std y: {}".format(self.meany, self.stdy))
+        print("PG Estimates: mean y: {}, std y: {}".format(np.mean(yhats),
+            np.std(yhats)))
+
     def update_column_stats(self, qreps):
         for qrep in qreps:
             self._update_stats(qrep)
@@ -314,6 +367,8 @@ class Featurizer():
                 assert self.bitmap_dir is not None
                 if "jobm" in qrep["template_name"]:
                     bitdir = "./queries/jobm_bitmaps/"
+                elif "joblight" in qrep["template_name"]:
+                    bitdir = "./queries/bitmaps/joblight_bitmaps/"
                 elif "job" in qrep["template_name"]:
                     bitdir = "./queries/job_bitmaps/"
                 else:
@@ -321,19 +376,22 @@ class Featurizer():
 
                 bitmapfn = os.path.join(bitdir, qrep["name"])
 
-                assert os.path.exists(bitmapfn)
+                # assert os.path.exists(bitmapfn)
                 # if not os.path.exists(bitmapfn):
                     # print(bitmapfn)
                     # pdb.set_trace()
-
-                with open(bitmapfn, "rb") as handle:
-                    sbitmaps = pickle.load(handle)
+                if not os.path.exists(bitmapfn):
+                    print(bitmapfn)
+                    sbitmaps = None
+                else:
+                    with open(bitmapfn, "rb") as handle:
+                        sbitmaps = pickle.load(handle)
 
             for node, info in qrep["join_graph"].nodes(data=True):
                 self.seen_tabs.add(info["real_name"])
                 real_name = info["real_name"]
 
-                if self.sample_bitmap:
+                if self.sample_bitmap and sbitmaps is not None:
                     if real_name not in self.seen_bitmaps:
                         self.seen_bitmaps[real_name] = set()
                     assert sbitmaps is not None
@@ -494,6 +552,7 @@ class Featurizer():
     def update_ystats(self, qreps, clamp_timeouts=False,
             max_num_tables=-1):
 
+        self.clamp_timeouts = clamp_timeouts
         if clamp_timeouts:
             y0 = []
             # get max value, so we can replace timeout values with it
@@ -528,7 +587,7 @@ class Featurizer():
 
         y = np.array(y)
 
-        if self.ynormalization == "log":
+        if "log" in self.ynormalization:
             y = np.log(y)
 
         self.max_val = np.max(y)
@@ -1251,8 +1310,11 @@ class Featurizer():
         TODO: need to enforce that joins actually there between all tables
         mapping to same join real col: e.g., mi <-> mi; might not have joins.
         '''
-        assert join_bitmaps is not None
-        assert bitmaps is not None
+        # assert join_bitmaps is not None
+        # assert bitmaps is not None
+        if bitmaps is None and join_bitmaps is None:
+            return [np.zeros(self.join_features_len)]
+
         join_features = []
 
         start_idx, end_idx = self.featurizer_type_idxs["join_bitmap"]
@@ -1666,8 +1728,8 @@ class Featurizer():
                 # Note: same table might be set to 1.0 twice, in case of aliases
                 tfeats[self.table_featurizer[table]] = 1.00
 
-                if self.sample_bitmap:
-                    assert bitmaps is not None
+                if self.sample_bitmap and bitmaps is not None:
+                    # assert bitmaps is not None
                     startidx = len(self.table_featurizer)
                     sb = bitmaps[(alias,)]
                     if self.sample_bitmap_key in sb:
@@ -2246,32 +2308,43 @@ class Featurizer():
         return est_cards
 
     def unnormalize(self, y, total):
-        if self.ynormalization == "log":
-            est_card = np.exp((y + \
-                self.min_val)*(self.max_val-self.min_val))
+        if self.ynormalization == "logwhitening":
+            est_card = np.exp((y*self.stdy) + self.meany)
+        elif self.ynormalization == "whitening":
+            est_card = (y*self.stdy) + self.meany
+            if est_card <= 0:
+                est_card = 1
+
+        elif self.ynormalization == "log":
+            est_card = np.exp((y*(self.max_val-self.min_val) + self.min_val))
         elif self.ynormalization == "minmax":
-            return (float(y) + self.min_val) * (self.max_val-self.min_val)
+            est_card = (float(y) * (self.max_val-self.min_val)) + self.min_val
         elif self.ynormalization == "selectivity":
             est_card = y*total
         elif self.ynormalization == "selectivity-log":
             est_card = (np.exp(y)) * total
         else:
             assert False
+
+        # if est_card == 0:
+            # est_card += 1
+        # print(est_card)
+
         return est_card
 
     def normalize_val(self, val, total):
-
         if val == 0:
             val += 1
 
-        if self.ynormalization == "log":
-            ## TODO: should we add a flag for this? any other effects?
-            # if val == 1:
-                # val += 1
+        if self.ynormalization == "logwhitening":
+            return (np.log(float(val)) - self.meany) / self.stdy
+        elif self.ynormalization == "whitening":
+            return (float(val) - self.meany) / self.stdy
+        elif self.ynormalization == "log":
             return (np.log(float(val)) - self.min_val) / (self.max_val-self.min_val)
         elif self.ynormalization == "minmax":
-            return (float(val) - self.min_val) / (self.max_val-self.min_val)
-
+            ret =  (float(val) - self.min_val) / (self.max_val-self.min_val)
+            return ret
         elif self.ynormalization == "selectivity":
             return float(val) / total
         elif self.ynormalization == "selectivity-log":

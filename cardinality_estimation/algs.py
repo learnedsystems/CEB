@@ -29,9 +29,12 @@ import wandb
 import random
 import pickle
 
-QERR_MIN_EPS=0.0
+QERR_MIN_EPS=0.0000001
+
 def qloss_torch(yhat, ytrue):
     assert yhat.shape == ytrue.shape
+    # yhat = yhat + 1
+    # ytrue = ytrue + 1
 
     epsilons = to_variable([QERR_MIN_EPS]*len(yhat)).float()
 
@@ -496,6 +499,10 @@ class NN(CardinalityEstimationAlg):
                     evalqname = eval_qdirs[ei]
                     if "job" in evalqname:
                         evalqname = "JOB"
+                    elif "imdb-regex" in evalqname:
+                        evalqname = "CEB-IMDb-Regex"
+                    elif "imdb-noregex" in evalqname:
+                        evalqname = "CEB-IMDb-NoRegex"
                     elif "imdb" in evalqname:
                         evalqname = "CEB-IMDb"
 
@@ -539,6 +546,9 @@ class NN(CardinalityEstimationAlg):
             if self.epoch % self.eval_epoch == 0 \
                     and self.epoch != 0:
                 self.periodic_eval()
+
+            # if self.epoch % self.eval_epoch == 0:
+                # self.periodic_eval()
 
             self.train_one_epoch()
             self.model_weights.append(copy.deepcopy(self.net.state_dict()))

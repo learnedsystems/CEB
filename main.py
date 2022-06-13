@@ -64,6 +64,10 @@ def eval_alg(alg, eval_funcs, qreps, samples_type, featurizer=None):
                 pickle.dump(cur_ests, f)
 
     for efunc in eval_funcs:
+        if "plan" in str(efunc).lower() and "joblight" in qreps[0]["template_name"]:
+            print("skipping joblight eval_alg")
+            continue
+
         errors = efunc.eval(qreps, ests, args=args, samples_type=samples_type,
                 result_dir=rdir, user = args.user, db_name = args.db_name,
                 db_host = args.db_host, port = args.port,
@@ -389,11 +393,12 @@ def get_query_fns():
             # let's first select all the qfns we are going to load
             qfns = list(glob.glob(qdir+"/*.pkl"))
             qfns.sort()
-            if args.num_samples_per_template == -1 \
-                    or args.num_samples_per_template >= len(qfns):
+            if args.num_samples_evalq == -1 \
+                    or args.num_samples_evalq >= len(qfns) or \
+                    "job" in qdir:
                 qfns = qfns
-            elif args.num_samples_per_template < len(qfns):
-                qfns = qfns[0:args.num_samples_per_template]
+            elif args.num_samples_evalq < len(qfns):
+                qfns = qfns[0:args.num_samples_evalq]
             else:
                 assert False
             cur_eval_qfns += qfns
@@ -755,6 +760,10 @@ def main():
     for efn in args.eval_fns.split(","):
         eval_fns.append(get_eval_fn(efn))
 
+    evalq_eval_fns = []
+    for efn in args.evalq_eval_fns.split(","):
+        evalq_eval_fns.append(get_eval_fn(efn))
+
     for alg in algs:
         alg.train(trainqs, valqs=valqs, testqs=testqs,
                 evalqs = evalqs,
@@ -775,7 +784,7 @@ def main():
 
         if len(evalqs) > 0 and len(evalqs[0]) > 0:
             for ei, evalq in enumerate(evalqs):
-                eval_alg(alg, eval_fns, evalq, eval_qdirs[ei], featurizer=featurizer)
+                eval_alg(alg, evalq_eval_fns, evalq, eval_qdirs[ei], featurizer=featurizer)
 
 # def check_logical_constraints(alg, qreps):
     # for qrep in qreps:
@@ -788,6 +797,8 @@ def read_flags():
             default="./queries/imdb/")
     parser.add_argument("--eval_query_dir", type=str, required=False,
             default="")
+    # parser.add_argument("--save_logs", type=int, required=False,
+            # default=0)
 
     parser.add_argument("--eval_on_jobm", type=int, required=False,
             default=0)
@@ -819,7 +830,7 @@ def read_flags():
             default=5431)
 
     parser.add_argument("--result_dir", type=str, required=False,
-            default="results")
+            default=None)
     parser.add_argument("--save_test_preds", type=int, required=False,
             default=0)
 
@@ -848,6 +859,10 @@ def read_flags():
 
     parser.add_argument("-n", "--num_samples_per_template", type=int,
             required=False, default=-1)
+
+    parser.add_argument("-ne", "--num_samples_evalq", type=int,
+            required=False, default=-1)
+
     parser.add_argument("--test_size", type=float, required=False,
             default=0.5)
     parser.add_argument("--val_size", type=float, required=False,
@@ -855,6 +870,8 @@ def read_flags():
     parser.add_argument("--algs", type=str, required=False,
             default="postgres")
     parser.add_argument("--eval_fns", type=str, required=False,
+            default="qerr,ppc")
+    parser.add_argument("--evalq_eval_fns", type=str, required=False,
             default="qerr,ppc")
 
     parser.add_argument("--cost_model", type=str, required=False,
@@ -896,11 +913,12 @@ def read_flags():
             default=1)
     parser.add_argument("--like_char_features", type=int, required=False,
             default=0)
+
     parser.add_argument("--ynormalization", type=str, required=False,
             default="log")
 
     parser.add_argument("--feat_tables", type=int, required=False,
-            default=1)
+            default=0)
     parser.add_argument("--feat_onlyseen_preds", type=int, required=False,
             default=1)
     parser.add_argument("--feat_onlyseen_cols", type=int, required=False,
@@ -971,7 +989,7 @@ def read_flags():
     parser.add_argument("--set_column_feature", type=str, required=False,
             default="onehot")
     parser.add_argument("--flow_features", type=int, required=False,
-            default=0)
+            default=1)
 
     parser.add_argument("--sample_bitmap", type=int, required=False,
             default=0)

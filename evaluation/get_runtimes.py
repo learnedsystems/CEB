@@ -1,4 +1,5 @@
 import pickle
+import numpy as np
 import argparse
 import glob
 import pdb
@@ -18,6 +19,8 @@ TIMEOUT_CONSTANT = 909
 
 def read_flags():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--samples_type", type=str, required=False,
+            default=None)
     parser.add_argument("--result_dir", type=str, required=False,
             default="./results")
     parser.add_argument("--cost_model", type=str, required=False,
@@ -25,7 +28,7 @@ def read_flags():
     parser.add_argument("--explain", type=int, required=False,
             default=1)
     parser.add_argument("--reps", type=int, required=False,
-            default=1)
+            default=3)
     parser.add_argument("--timeout", type=int, required=False,
             default=900000)
     parser.add_argument("--rerun_timeouts", type=int, required=False,
@@ -38,11 +41,11 @@ def read_flags():
     parser.add_argument("--db_host", type=str, required=False,
             default="localhost")
     parser.add_argument("--user", type=str, required=False,
-            default="imdb")
+            default="ceb")
     parser.add_argument("--pwd", type=str, required=False,
             default="password")
     parser.add_argument("--port", type=str, required=False,
-            default=5432)
+            default=5434)
 
     return parser.parse_args()
 
@@ -79,39 +82,41 @@ def execute_sql(sql, cost_model="cm1",
     try:
         cursor.execute(sql)
     except Exception as e:
-        cursor.execute("ROLLBACK")
-        con.commit()
+        print(e)
+        # cursor.execute("ROLLBACK")
+        # con.commit()
         if not "timeout" in str(e):
             print("failed to execute for reason other than timeout")
             print(e)
-            print(sql)
-            cursor.close()
+            # print(sql)
+            # cursor.close()
             con.close()
-            return None, timeout/1000 + 9.0
+            time.sleep(6)
+            return None, -1.0
         else:
             print("failed because of timeout!")
             end = time.time()
-            print("took {} seconds".format(end-start))
+            # print("took {} seconds".format(end-start))
 
-            if explain:
-                sql = sql.replace("explain (analyze,costs, format json)",
-                "explain (format json)")
-            else:
-                sql = "explain (format json) " + sql
+            # if explain:
+                # sql = sql.replace("explain (analyze,costs, format json)",
+                # "explain (format json)")
+            # else:
+                # sql = "explain (format json) " + sql
 
-            set_cost_model(cursor, cost_model, materialize)
-            cursor.execute("SET join_collapse_limit = {}".format(1))
-            cursor.execute("SET from_collapse_limit = {}".format(1))
-            cursor.execute(sql)
-            explain_output = cursor.fetchall()
+            # set_cost_model(cursor, cost_model, materialize)
+            # cursor.execute("SET join_collapse_limit = {}".format(1))
+            # cursor.execute("SET from_collapse_limit = {}".format(1))
+            # cursor.execute(sql)
+            # explain_output = cursor.fetchall()
             cursor.close()
             con.close()
-            return explain_output, (timeout/1000) + 9.0
+            return None, (timeout/1000) + 9.0
 
     explain_output = cursor.fetchall()
     end = time.time()
 
-    print("took {} seconds".format(end-start))
+    # print("took {} seconds".format(end-start))
     sys.stdout.flush()
 
     return explain_output, end-start
@@ -146,12 +151,29 @@ def main():
     cur_runtimes = defaultdict(list)
     total_rt = 0.0
 
+    if args.samples_type is not None:
+        if args.samples_type == "debug":
+            costs = costs[costs.qname.str.len() <= 7]
+            costs = costs[~costs.qname.str.contains("6a")]
+            costs = costs[~costs.qname.str.contains("7a")]
+            costs = costs[~costs.qname.str.contains("2b")]
+            costs = costs[~costs.qname.str.contains("2a")]
+            costs = costs[~costs.qname.str.contains("2c")]
+        else:
+            costs = costs[costs.samples_type.str.contains(args.samples_type)]
+
+
     print("Going to execute {} queries, {} reps each".format(
         len(costs), args.reps))
 
     for rep in range(args.reps):
         costs = costs.sample(frac=1.0)
         for i,row in costs.iterrows():
+            # if "samples_type" in list(row.keys()) and \
+                    # args.samples_type is not None:
+                # if args.samples_type not in row["samples_type"]:
+                    # continue
+
             if row["qname"] in runtimes["qname"].values:
                 # what is the stored value for this key?
                 rt_df = runtimes[runtimes["qname"] == row["qname"]]
@@ -167,13 +189,26 @@ def main():
                     explain=args.explain,
                     timeout=args.timeout)
 
-            total_rt += rt
+            if rt >= 0.0:
+                total_rt += rt
+
             add_runtime_row(row["qname"], rt, exp_analyze)
 
-            rts = cur_runtimes["runtime"]
-            print("Rep: {}, TotalRT: {}, #Queries:{}, AvgRt: {}".format(
-                rep, round(total_rt,2), len(rts),
-                round(sum(rts) / len(rts), 2)))
+            # cur_runtimes = pd.DataFrame(cur_runtimes)
+            # tmp = cur_runtimes[cur_runtimes["runtime"] >= 0.0]
+
+            rts = np.array(cur_runtimes["runtime"])
+            rts = rts[rts >= 0.0]
+            num_fails = len(cur_runtimes["runtime"]) - len(rts)
+
+            print("{}, Rep: {}, Cur: {}, CurRT: {}, TotalRT: {}, #Queries:{}, AvgRt: {}, #Fails: {}"\
+                .format(
+                args.result_dir,
+                rep,
+                row["qname"], rts[-1],
+                round(total_rt,2), len(rts),
+                round(sum(rts) / len(rts), 2), num_fails))
+
             df = pd.concat([runtimes, pd.DataFrame(cur_runtimes)], ignore_index=True)
             df.to_csv(rt_fn, index=False)
 

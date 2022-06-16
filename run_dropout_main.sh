@@ -55,7 +55,7 @@ REPS=(1 1 1)
 #REPS=(1)
 
 EVAL_FNS=qerr,ppc,ppc2
-RES_DIR=final_results/mscn/dropout2
+RES_DIR=final_results2/mscn/dropout2
 
 HLS=128
 LOAD_QUERY_TOGTHER=0

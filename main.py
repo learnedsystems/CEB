@@ -336,7 +336,7 @@ def get_query_fns():
                 continue
 
         elif args.train_test_split_kind == "query":
-            if args.val_size == 0:
+            if args.val_size == 0.0:
                 cur_val_fns = []
             else:
                 cur_val_fns, qfns = train_test_split(qfns,
@@ -827,10 +827,10 @@ def read_flags():
     parser.add_argument("--pwd", type=str, required=False,
             default="password")
     parser.add_argument("--port", type=int, required=False,
-            default=5431)
+            default=5433)
 
     parser.add_argument("--result_dir", type=str, required=False,
-            default=None)
+            default="./results")
     parser.add_argument("--save_test_preds", type=int, required=False,
             default=0)
 
@@ -872,7 +872,7 @@ def read_flags():
     parser.add_argument("--eval_fns", type=str, required=False,
             default="qerr,ppc")
     parser.add_argument("--evalq_eval_fns", type=str, required=False,
-            default="qerr,ppc")
+            default="qerr,ppc,ppc2")
 
     parser.add_argument("--cost_model", type=str, required=False,
             default="C")

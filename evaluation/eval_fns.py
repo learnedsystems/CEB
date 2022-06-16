@@ -403,6 +403,7 @@ class PostgresPlanCost(EvalFunc):
             samples_type = kwargs["samples_type"]
         else:
             samples_type = ""
+
         if "alg_name" in kwargs:
             alg_name = kwargs["alg_name"]
         else:
@@ -414,7 +415,8 @@ class PostgresPlanCost(EvalFunc):
             if os.path.exists(costs_fn):
                 costs_df = pd.read_csv(costs_fn)
             else:
-                columns = ["qname", "join_order", "exec_sql", "cost"]
+                columns = ["qname", "join_order", "exec_sql", "cost",
+                        "samples_type"]
                 costs_df = pd.DataFrame(columns=columns)
 
             cur_costs = defaultdict(list)
@@ -430,6 +432,7 @@ class PostgresPlanCost(EvalFunc):
 
                 cur_costs["exec_sql"].append(sqls[i])
                 cur_costs["cost"].append(costs[i])
+                cur_costs["samples_type"].append(samples_type)
 
             cur_df = pd.DataFrame(cur_costs)
             combined_df = pd.concat([costs_df, cur_df], ignore_index=True)

@@ -59,21 +59,20 @@ def execute_sql(sql, cost_model="cm1",
         ):
     '''
     '''
-
     if explain:
         sql = sql.replace("explain (format json)", "explain (analyze,costs, format json)")
     else:
         sql = sql.replace("explain (format json)", "")
 
-     if drop_cache:
+    if drop_cache:
         drop_cache_cmd = "./drop_cache_docker.sh > /dev/null"
         p = sp.Popen(drop_cache_cmd, shell=True)
         p.wait()
         time.sleep(0.1)
         for ri in range(30):
             try:
-				con = pg.connect(port=args.port,dbname=args.db_name,
-						user=args.user,password=args.pwd,host="localhost")
+                con = pg.connect(port=args.port,dbname=args.db_name,
+                        user=args.user,password=args.pwd,host="localhost")
                 print("succeeded in try: ", ri)
                 break
             except:
@@ -82,8 +81,8 @@ def execute_sql(sql, cost_model="cm1",
                 continue
 
     else:
-		con = pg.connect(port=args.port,dbname=args.db_name,
-				user=args.user,password=args.pwd,host="localhost")
+        con = pg.connect(port=args.port,dbname=args.db_name,
+                user=args.user,password=args.pwd,host="localhost")
 
     # TODO: clear cache
 

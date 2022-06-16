@@ -255,7 +255,7 @@ class NN(CardinalityEstimationAlg):
 
         self.eval_fn_handles = []
         for efn in self.eval_fns.split(","):
-            if efn in ["planloss", "ppc2"]:
+            if efn in ["planloss"]:
                 print("skipping eval fn: ", efn)
                 continue
             self.eval_fn_handles.append(get_eval_fn(efn))

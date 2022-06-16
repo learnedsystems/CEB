@@ -11,7 +11,7 @@ import pandas as pd
 from collections import defaultdict
 import sys
 sys.path.append(".")
-from query_representation.utils import *
+# from query_representation.utils import *
 import pdb
 from cost_model import *
 
@@ -21,6 +21,8 @@ def read_flags():
     parser = argparse.ArgumentParser()
     parser.add_argument("--samples_type", type=str, required=False,
             default=None)
+    parser.add_argument("--drop_cache", type=int, required=False,
+            default=0)
     parser.add_argument("--result_dir", type=str, required=False,
             default="./results")
     parser.add_argument("--cost_model", type=str, required=False,
@@ -51,7 +53,10 @@ def read_flags():
 
 def execute_sql(sql, cost_model="cm1",
         explain=False,
-        materialize=False, timeout=900000):
+        materialize=False,
+        timeout=900000,
+        drop_cache=False
+        ):
     '''
     '''
 
@@ -60,8 +65,25 @@ def execute_sql(sql, cost_model="cm1",
     else:
         sql = sql.replace("explain (format json)", "")
 
-    con = pg.connect(port=args.port,dbname=args.db_name,
-            user=args.user,password=args.pwd,host="localhost")
+     if drop_cache:
+        drop_cache_cmd = "./drop_cache_docker.sh > /dev/null"
+        p = sp.Popen(drop_cache_cmd, shell=True)
+        p.wait()
+        time.sleep(0.1)
+        for ri in range(30):
+            try:
+				con = pg.connect(port=args.port,dbname=args.db_name,
+						user=args.user,password=args.pwd,host="localhost")
+                print("succeeded in try: ", ri)
+                break
+            except:
+                print("failed in try: ", ri)
+                time.sleep(0.1)
+                continue
+
+    else:
+		con = pg.connect(port=args.port,dbname=args.db_name,
+				user=args.user,password=args.pwd,host="localhost")
 
     # TODO: clear cache
 
@@ -117,7 +139,9 @@ def execute_sql(sql, cost_model="cm1",
     end = time.time()
 
     # print("took {} seconds".format(end-start))
-    sys.stdout.flush()
+    # sys.stdout.flush()
+    cursor.close()
+    con.close()
 
     return explain_output, end-start
 
@@ -187,7 +211,8 @@ def main():
             exp_analyze, rt = execute_sql(row["exec_sql"],
                     cost_model=cost_model,
                     explain=args.explain,
-                    timeout=args.timeout)
+                    timeout=args.timeout,
+                    drop_cache=args.drop_cache)
 
             if rt >= 0.0:
                 total_rt += rt

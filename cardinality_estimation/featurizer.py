@@ -876,6 +876,7 @@ class Featurizer():
             cost_model=None,
             sample_bitmap=False,
             join_bitmap = False,
+            bitmap_onehotmask=False,
             sample_bitmap_num=1000,
             sample_bitmap_buckets=1000,
             featkey=None):
@@ -1040,14 +1041,23 @@ class Featurizer():
             bitmap_feat_len += self.max_tables
             # for which tables are there
             bitmap_feat_len += len(self.tables)
-            self.featurizer_type_idxs["join_onehot"] = (0, bitmap_feat_len)
 
             # for real col
             bitmap_feat_len += len(set(JOIN_COL_MAP.values()))
+
+            if not self.bitmap_onehotmask:
+                self.featurizer_type_idxs["join_onehot"] = (0, bitmap_feat_len)
+
             # for bitmap
+
+            ## because we were not using it, and it should be fixed
+            # self.featurizer_type_idxs["join_bitmap"] = (bitmap_feat_len,
+                    # bitmap_feat_len+self.sample_bitmap_buckets)
+
             bitmap_feat_len += self.sample_bitmap_buckets
-            self.featurizer_type_idxs["join_bitmap"] = (self.join_features_len,
-                    bitmap_feat_len)
+            ## includes everything for the onehot-mask
+            if self.bitmap_onehotmask:
+                self.featurizer_type_idxs["join_onehot"] = (0, bitmap_feat_len)
 
             self.join_features_len += bitmap_feat_len
 
@@ -1317,7 +1327,8 @@ class Featurizer():
 
         join_features = []
 
-        start_idx, end_idx = self.featurizer_type_idxs["join_bitmap"]
+        # start_idx, end_idx = self.featurizer_type_idxs["join_bitmap"]
+
         real_join_cols = defaultdict(list)
         real_join_tabs = defaultdict(list)
 

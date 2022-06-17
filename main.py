@@ -572,7 +572,10 @@ def get_featurizer(trainqs, valqs, testqs, eval_qs):
             bitmap_dir = args.bitmap_dir,
             join_bitmap_dir = args.join_bitmap_dir,
             sample_bitmap = args.sample_bitmap,
+            sample_bitmap_num = args.sample_bitmap_num,
+            sample_bitmap_buckets = args.sample_bitmap_buckets,
             join_bitmap = args.join_bitmap,
+            bitmap_onehotmask = args.bitmap_onehotmask,
             true_base_cards = args.feat_true_base_cards,
             feat_separate_alias = args.feat_separate_alias,
             feat_separate_like_ests = args.feat_separate_like_ests,
@@ -667,7 +670,9 @@ def main():
     if args.use_wandb:
         # job3 ==> fixed actual cardinalities
         # wandb_tags = ["v16-job3"]
-        wandb_tags = ["v18"]
+
+        ## includes join_real_col in onehot
+        wandb_tags = ["v19b"]
         if args.wandb_tags is not None:
             wandb_tags += args.wandb_tags.split(",")
         wandb.init("ceb", config={},
@@ -806,9 +811,11 @@ def read_flags():
             default=0)
 
     parser.add_argument("--bitmap_dir", type=str, required=False,
-            default="./queries/sample_bitmaps_up/")
+            default="./queries/allbitmaps/imdb_bitmaps/sample_bitmap")
+    # parser.add_argument("--join_bitmap_dir", type=str, required=False,
+            # default="./queries/join_bitmaps_up/")
     parser.add_argument("--join_bitmap_dir", type=str, required=False,
-            default="./queries/join_bitmaps_up/")
+            default="./queries/allbitmaps/imdb_bitmaps/join_bitmap")
 
     parser.add_argument("--joinkey_basecard_type", type=str, required=False,
             default="actual")
@@ -969,7 +976,7 @@ def read_flags():
 
     parser.add_argument("--num_hidden_layers", type=int,
             required=False, default=2)
-    parser.add_argument("--hidden_layer_size", type=int,
+    parser.add_argument("--hidden_layer_size", type=float,
             required=False, default=128)
     parser.add_argument("--load_query_together", type=int, required=False,
             default=0)
@@ -995,6 +1002,13 @@ def read_flags():
             default=0)
     parser.add_argument("--join_bitmap", type=int, required=False,
             default=0)
+    parser.add_argument("--bitmap_onehotmask", type=int, required=False,
+            default=0)
+
+    parser.add_argument("--sample_bitmap_num", type=int, required=False,
+            default=1000)
+    parser.add_argument("--sample_bitmap_buckets", type=int, required=False,
+            default=1000)
 
     parser.add_argument("--max_discrete_featurizing_buckets", type=int, required=False,
             default=10)

@@ -304,7 +304,7 @@ class QueryDataset(data.Dataset):
         self.featurizer = featurizer
 
         if "whitening" in self.featurizer.ynormalization:
-            self.featurizer.update_workload_means(samples)
+            self.featurizer.update_means(samples)
 
         self.join_key_cards = join_key_cards
 
@@ -543,20 +543,17 @@ class QueryDataset(data.Dataset):
                 self.featurizer.join_bitmap:
             assert self.featurizer.bitmap_dir is not None
             if "jobm" in qrep["template_name"]:
+                assert False
                 bitdir = "./queries/jobm_bitmaps/"
             elif "joblight" in qrep["template_name"]:
-                bitdir = "./queries/bitmaps/joblight_bitmaps/"
+                # bitdir = "./queries/bitmaps/joblight_bitmaps/"
+                bitdir = "./queries/allbitmaps/joblight_bitmaps/sample_bitmap"
             elif "job" in qrep["template_name"]:
-                bitdir = "./queries/job_bitmaps/"
+                bitdir = "./queries/allbitmaps/job_bitmaps/sample_bitmap"
             else:
                 bitdir = self.featurizer.bitmap_dir
 
             bitmapfn = os.path.join(bitdir, qrep["name"])
-
-            # assert os.path.exists(bitmapfn)
-            # if not os.path.exists(bitmapfn):
-                # print(bitmapfn)
-                # pdb.set_trace()
 
             if not os.path.exists(bitmapfn):
                 print(bitmapfn)
@@ -564,27 +561,25 @@ class QueryDataset(data.Dataset):
             else:
                 with open(bitmapfn, "rb") as handle:
                     sbitmaps = pickle.load(handle)
+
         else:
             sbitmaps = None
 
+        # old code
         if self.featurizer.join_bitmap:
-            assert self.featurizer.join_bitmap_dir is not None
+            # assert self.featurizer.join_bitmap_dir is not None
             if "jobm" in qrep["template_name"]:
+                assert False
                 bitdir = "./queries/jobm_joinbitmaps/"
             elif "joblight" in qrep["template_name"]:
-                bitdir = "./queries/bitmaps/joblight_joinbitmaps/"
+                bitdir = "./queries/allbitmaps/joblight_bitmaps/join_bitmap/"
             elif "job" in qrep["template_name"]:
-                bitdir = "./queries/job_joinbitmaps/"
+                bitdir = "./queries/allbitmaps/job_bitmaps/join_bitmap/"
             else:
                 # assert "imdb" in qrep["template_name"]
                 bitdir = self.featurizer.join_bitmap_dir
 
             bitmapfn = os.path.join(bitdir, qrep["name"])
-
-            # assert os.path.exists(bitmapfn)
-            # if not os.path.exists(bitmapfn):
-                # print(bitmapfn)
-                # pdb.set_trace()
 
             if not os.path.exists(bitmapfn):
                 print(bitmapfn)
@@ -596,11 +591,15 @@ class QueryDataset(data.Dataset):
             jbitmaps = None
 
         if self.join_key_cards:
-            return self._get_query_features_joinkeys(qrep, sbitmaps, jbitmaps,
+            return self._get_query_features_joinkeys(qrep,
+                    sbitmaps,
+                    jbitmaps,
                     dataset_qidx,
                     query_idx)
         else:
-            return self._get_query_features_nodes(qrep, sbitmaps, jbitmaps,
+            return self._get_query_features_nodes(qrep,
+                    sbitmaps,
+                    jbitmaps,
                     dataset_qidx,
                     query_idx)
 

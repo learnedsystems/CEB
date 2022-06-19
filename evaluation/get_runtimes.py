@@ -30,7 +30,7 @@ def read_flags():
     parser.add_argument("--explain", type=int, required=False,
             default=1)
     parser.add_argument("--reps", type=int, required=False,
-            default=3)
+            default=1)
     parser.add_argument("--timeout", type=int, required=False,
             default=900000)
     parser.add_argument("--rerun_timeouts", type=int, required=False,
@@ -65,7 +65,7 @@ def execute_sql(sql, cost_model="cm1",
         sql = sql.replace("explain (format json)", "")
 
     if drop_cache:
-        drop_cache_cmd = "./drop_cache_docker.sh > /dev/null"
+        drop_cache_cmd = "bash drop_cache_docker.sh > /dev/null"
         p = sp.Popen(drop_cache_cmd, shell=True)
         p.wait()
         time.sleep(0.1)

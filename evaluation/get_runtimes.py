@@ -102,6 +102,9 @@ def execute_sql(sql, cost_model="cm1",
 
     try:
         cursor.execute(sql)
+    except KeyboardInterrupt:
+        print("killed because of ctrl+c")
+        sys.exit(-1)
     except Exception as e:
         print(e)
         # cursor.execute("ROLLBACK")
@@ -232,6 +235,7 @@ def main():
                 row["qname"], rts[-1],
                 round(total_rt,2), len(rts),
                 round(sum(rts) / len(rts), 2), num_fails))
+            sys.stdout.flush()
 
             df = pd.concat([runtimes, pd.DataFrame(cur_runtimes)], ignore_index=True)
             df.to_csv(rt_fn, index=False)

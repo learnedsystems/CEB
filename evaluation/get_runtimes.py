@@ -30,7 +30,7 @@ def read_flags():
     parser.add_argument("--explain", type=int, required=False,
             default=1)
     parser.add_argument("--reps", type=int, required=False,
-            default=3)
+            default=1)
     parser.add_argument("--timeout", type=int, required=False,
             default=900000)
     parser.add_argument("--rerun_timeouts", type=int, required=False,
@@ -65,7 +65,7 @@ def execute_sql(sql, cost_model="cm1",
         sql = sql.replace("explain (format json)", "")
 
     if drop_cache:
-        drop_cache_cmd = "./drop_cache_docker.sh > /dev/null"
+        drop_cache_cmd = "bash drop_cache_docker.sh"
         p = sp.Popen(drop_cache_cmd, shell=True)
         p.wait()
         time.sleep(0.1)
@@ -102,6 +102,9 @@ def execute_sql(sql, cost_model="cm1",
 
     try:
         cursor.execute(sql)
+    except KeyboardInterrupt:
+        print("killed because of ctrl+c")
+        sys.exit(-1)
     except Exception as e:
         print(e)
         # cursor.execute("ROLLBACK")
@@ -232,6 +235,7 @@ def main():
                 row["qname"], rts[-1],
                 round(total_rt,2), len(rts),
                 round(sum(rts) / len(rts), 2), num_fails))
+            sys.stdout.flush()
 
             df = pd.concat([runtimes, pd.DataFrame(cur_runtimes)], ignore_index=True)
             df.to_csv(rt_fn, index=False)

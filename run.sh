@@ -13,18 +13,24 @@
 #NH="${11:-2}"
 #EVAL_QDIR="${13:-queries/job-joinkeys-tebow-temps/}"
 
-HLS=256
+HLS=512
 ## default joinbitmap + dropout run
 
-bash run_default.sh mse 1 2 0 0 1 20 0 1 $HLS 2 5433 queries/job-joinkeys-tebow-temps
-bash run_default.sh mse 1 2 0 0 1 20 0 1 $HLS 2 5433 queries/job-joinkeys-tebow-temps
+bash run_default.sh mse 1 2 0 0 1 10 0 1 $HLS 2 5433 queries/job-joinkeys-tebow-temps 1
+bash run_default.sh mse 1 2 0 0 1 10 0 1 $HLS 2 5433 queries/job-joinkeys-tebow-temps 0
+bash run_default.sh mse 1 2 0 0 1 5 0 1 $HLS 2 5433 queries/job-joinkeys-tebow-temps 0
 
-bash run_default.sh mse 1 2 0 0 1 10 0 1 $HLS 2 5433 queries/job-joinkeys-tebow-temps
-bash run_default.sh mse 1 2 0 0 1 10 0 1 $HLS 2 5433 queries/job-joinkeys-tebow-temps
+#bash run_default.sh mse 1 2 0 0 1 20 0 1 $HLS 2 5433 queries/job-joinkeys-tebow-temps
+
+#bash run_default.sh mse 1 2 0 0 1 10 0 1 $HLS 2 5433 queries/job-joinkeys-tebow-temps
+#bash run_default.sh mse 1 2 0 0 1 10 0 1 $HLS 2 5433 queries/job-joinkeys-tebow-temps
 
 ## default, samplebitmap approach
-bash run_default.sh mse 1 0 0 1 0 10 0 1 $HLS 2 5433 queries/job-joinkeys-tebow-temps
-bash run_default.sh mse 1 0 0 1 0 10 0 1 $HLS 2 5433 queries/job-joinkeys-tebow-temps
+#bash run_default.sh mse 1 0 0 1 0 10 0 1 $HLS 2 5433 queries/job-joinkeys-tebow-temps
+## default + no flow-feats
+#bash run_default.sh mse 0 0 0 1 0 10 0 1 $HLS 2 5433 queries/job-joinkeys-tebow-temps
+
+#bash run_default.sh mse 1 0 0 1 0 10 0 1 $HLS 2 5433 queries/job-joinkeys-tebow-temps
 
 #bash run_default.sh mse 1 2 2 0 1 20 0 10 128 2 5431
 

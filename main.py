@@ -31,6 +31,7 @@ def eval_alg(alg, eval_funcs, qreps, samples_type, featurizer=None):
     start = time.time()
     alg_name = alg.__str__()
     exp_name = alg.get_exp_name()
+
     ests = alg.test(qreps)
 
     rdir = None
@@ -38,6 +39,9 @@ def eval_alg(alg, eval_funcs, qreps, samples_type, featurizer=None):
         rdir = os.path.join(args.result_dir, exp_name)
         make_dir(rdir)
         print("Going to store results at: ", rdir)
+        args_fn = os.path.join(rdir, "args.pkl")
+        with open(args_fn, "wb") as f:
+            pickle.dump(args, f)
 
     if args.algs in ["mscn_joinkey", "joinkeys"]:
         qerrf = get_eval_fn("qerr_joinkey")
@@ -563,6 +567,7 @@ def get_featurizer(trainqs, valqs, testqs, eval_qs):
         all_evalqs += e0
 
     featurizer.setup(ynormalization=args.ynormalization,
+            random_bitmap_idx = args.random_bitmap_idx,
             feat_onlyseen_maxy = args.feat_onlyseen_maxy,
             max_num_tables = args.max_num_tables,
             like_char_features = args.like_char_features,
@@ -879,7 +884,7 @@ def read_flags():
     parser.add_argument("--eval_fns", type=str, required=False,
             default="qerr,ppc")
     parser.add_argument("--evalq_eval_fns", type=str, required=False,
-            default="qerr,ppc,ppc2")
+            default="qerr,ppc")
 
     parser.add_argument("--cost_model", type=str, required=False,
             default="C")
@@ -909,6 +914,8 @@ def read_flags():
             default=0)
 
     # featurizer arguments
+    parser.add_argument("--random_bitmap_idx", type=int, required=False,
+            default=0)
     parser.add_argument("--regen_featstats", type=int, required=False,
             default=0)
     parser.add_argument("--save_featstats", type=int, required=False,
@@ -1003,7 +1010,7 @@ def read_flags():
     parser.add_argument("--join_bitmap", type=int, required=False,
             default=0)
     parser.add_argument("--bitmap_onehotmask", type=int, required=False,
-            default=0)
+            default=1)
 
     parser.add_argument("--sample_bitmap_num", type=int, required=False,
             default=1000)

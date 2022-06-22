@@ -606,7 +606,11 @@ class PostgresPlanCost(EvalFunc):
                 # pgs[alias_key] = node_info["cardinality"]["expected"]
                 if est_card == 0:
                     est_card += 1
+                # if est_card >= TIMEOUT_CARD:
+                    # pdb.set_trace()
+
                 ests[alias_key] = est_card
+
             est_cardinalities.append(ests)
             true_cardinalities.append(trues)
 

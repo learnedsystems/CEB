@@ -835,6 +835,7 @@ class Featurizer():
 
     def setup(self,
             bitmap_dir = None,
+            random_bitmap_idx = False,
             join_bitmap_dir = None,
             use_saved_feats = True,
             feat_onlyseen_maxy = False,
@@ -1396,6 +1397,7 @@ class Featurizer():
                             continue
 
                         bitmap = set(alias_bm[bitmap_key])
+
                     real_join_cols[rcol].append(bitmap)
 
         for rc in real_join_cols:
@@ -1429,8 +1431,13 @@ class Featurizer():
 
             for val in bitmap_int:
                 # TODO: check if seen condition or no
-                bitmapidx = val % self.sample_bitmap_buckets
-                features[cur_idx+bitmapidx] = 1.0
+                if self.random_bitmap_idx:
+                    # more robust?
+                    bitmapidx = random.randint(0, self.sample_bitmap_num-1)
+                    features[cur_idx+bitmapidx] = 1.0
+                else:
+                    bitmapidx = val % self.sample_bitmap_buckets
+                    features[cur_idx+bitmapidx] = 1.0
 
             join_features.append(features)
 

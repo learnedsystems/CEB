@@ -138,10 +138,6 @@ def _get_pg_plancost(query, est_cardinalities,
     '''
     Main function for computing Postgres Plan Costs.
     '''
-    # if "COUNT(*)" in query:
-        # print(query[0:100])
-        # print("COUNT* in query!")
-        # pdb.set_trace()
 
     est_card_sql = get_pghint_modified_sql(query, est_cardinalities, None,
             None, None)
@@ -191,11 +187,11 @@ def _get_pg_plancost(query, est_cardinalities,
     else:
         # without caching
         est_cost, est_explain = get_pg_cost_from_sql(cost_sql, cursor)
-
         leading_hint2 = get_leading_hint(join_graph, est_explain)
-        if leading_hint != leading_hint2:
-            print("leading hint NOT matches!")
-            assert False
+
+        # if leading_hint != leading_hint2:
+            # print("leading hint NOT matches!")
+            # assert False
 
     # set this to sql to be executed, as pg_hint_plan will enforce the
     # estimated cardinalities, and let postgres make decisions for join order

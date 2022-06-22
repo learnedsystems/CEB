@@ -11,6 +11,7 @@
 For creating join bitmap tables, use:
 * scripts/create_sampling_join_bitmaps.py
 * bash
+
 ```
 python3 scripts/create_sampling_tables_bitmaps.py --sample_num 1000
 python3 scripts/create_sampling_join_bitmaps.py --sample_num 1000

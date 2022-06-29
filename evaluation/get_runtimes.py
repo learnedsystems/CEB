@@ -34,7 +34,7 @@ def read_flags():
     parser.add_argument("--timeout", type=int, required=False,
             default=900000*8)
     parser.add_argument("--rerun_timeouts", type=int, required=False,
-            default=0)
+            default=1)
     parser.add_argument("--db_name", type=str, required=False,
             default="imdb")
     parser.add_argument("--costs_fn_tmp", type=str, required=False,

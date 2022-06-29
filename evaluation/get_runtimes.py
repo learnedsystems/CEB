@@ -32,7 +32,7 @@ def read_flags():
     parser.add_argument("--reps", type=int, required=False,
             default=1)
     parser.add_argument("--timeout", type=int, required=False,
-            default=900000)
+            default=900000*8)
     parser.add_argument("--rerun_timeouts", type=int, required=False,
             default=0)
     parser.add_argument("--db_name", type=str, required=False,
@@ -206,6 +206,8 @@ def main():
                 stored_rt = rt_df["runtime"].values[0]
                 if stored_rt == TIMEOUT_CONSTANT and args.rerun_timeouts:
                     print("going to rerun timed out query")
+                elif stored_rt == -1 and args.rerun_timeouts:
+                    print("going to rerun failed query")
                 else:
                     print("skipping {} with stored runtime".format(row["qname"]))
                     continue

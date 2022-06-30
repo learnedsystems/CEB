@@ -27,6 +27,8 @@ def read_flags():
             default="./results")
     parser.add_argument("--cost_model", type=str, required=False,
             default="C")
+    parser.add_argument("--materialize", type=int, required=False,
+            default=0)
     parser.add_argument("--explain", type=int, required=False,
             default=1)
     parser.add_argument("--reps", type=int, required=False,
@@ -91,6 +93,9 @@ def execute_sql(sql, cost_model="cm1",
     cursor.execute("SET geqo_threshold = {}".format(32))
     set_cost_model(cursor, cost_model)
 
+    if materialize:
+        cursor.execute("SET enable_material = on")
+
     # the idea is that we inject the #rows using the pg_hint_plan into
     # postgresql; then the join orders etc. are computed the postgresql engine
     # using the given cardinalities
@@ -122,19 +127,7 @@ def execute_sql(sql, cost_model="cm1",
         else:
             print("failed because of timeout!")
             end = time.time()
-            # print("took {} seconds".format(end-start))
 
-            # if explain:
-                # sql = sql.replace("explain (analyze,costs, format json)",
-                # "explain (format json)")
-            # else:
-                # sql = "explain (format json) " + sql
-
-            # set_cost_model(cursor, cost_model, materialize)
-            # cursor.execute("SET join_collapse_limit = {}".format(1))
-            # cursor.execute("SET from_collapse_limit = {}".format(1))
-            # cursor.execute(sql)
-            # explain_output = cursor.fetchall()
             cursor.close()
             con.close()
             return None, (timeout/1000) + 9.0
@@ -218,6 +211,7 @@ def main():
                     cost_model=cost_model,
                     explain=args.explain,
                     timeout=args.timeout,
+                    materialize = args.materialize,
                     drop_cache=args.drop_cache)
 
             if rt >= 0.0:

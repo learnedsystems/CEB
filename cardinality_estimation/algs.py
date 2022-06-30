@@ -640,7 +640,7 @@ class NN(CardinalityEstimationAlg):
         # also, assuming we are not loading everything in memory for
         # evaluation stuff, therefore collate_fn set
         loader = data.DataLoader(ds,
-                batch_size=5000, shuffle=False,
+                batch_size=self.mb_size, shuffle=False,
                 collate_fn = self.collate_fn
                 )
 

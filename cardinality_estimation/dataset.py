@@ -667,7 +667,7 @@ class QueryDataset(data.Dataset):
                     except Exception as e:
                         print(e)
                         print("features could not be loaded in try")
-                        pdb.set_trace()
+                        # pdb.set_trace()
                         x,y,cur_info = self._get_query_features(qrep, qidx, i)
                         self._save_mscn_features(x,y,featfn)
                 else:

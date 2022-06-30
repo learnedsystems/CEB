@@ -437,10 +437,11 @@ class CardSetTransformer(nn.Module):
             sample_hid_units = int(min(hid_units, int(2*sample_feats)))
             pred_hid_units = int(min(hid_units, int(2*predicate_feats)))
             join_hid_units = int(min(hid_units, int(2*join_feats)))
-            ## need to make these multiples of NUM_HEAD
-            sample_hid_units = int(round(sample_hid_units / float(NUM_HEADS))*NUM_HEADS)
-            pred_hid_units = int(round(pred_hid_units / float(NUM_HEADS))*NUM_HEADS)
-            join_hid_units = int(round(join_hid_units / float(NUM_HEADS))*NUM_HEADS)
+
+            ## need to make these multiples of NUM_HEADS
+            # sample_hid_units = int(round(sample_hid_units / float(NUM_HEADS))*NUM_HEADS)
+            # pred_hid_units = int(round(pred_hid_units / float(NUM_HEADS))*NUM_HEADS)
+            # join_hid_units = int(round(join_hid_units / float(NUM_HEADS))*NUM_HEADS)
 
             # sample_hid_units = hid_units
             # pred_hid_units = hid_units

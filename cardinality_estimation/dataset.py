@@ -22,72 +22,6 @@ def to_variable(arr, use_cuda=True, requires_grad=False):
         arr = Variable(arr, requires_grad=requires_grad)
     return arr
 
-# def get_query_features(qrep, dataset_qidx,
-        # query_idx, featurizer, load_padded_mscn_feats):
-    # '''
-    # Parallelizable function.
-    # @qrep: qrep dict.
-    # '''
-    # X = []
-    # Y = []
-    # sample_info = []
-    # # now, we will generate the actual feature vectors over all the
-    # # subplans. Order matters --- dataset idx will be specified based on
-    # # order.
-    # node_names = list(qrep["subset_graph"].nodes())
-    # if SOURCE_NODE in node_names:
-        # node_names.remove(SOURCE_NODE)
-    # node_names.sort()
-
-    # for node_idx, node in enumerate(node_names):
-        # x,y = featurizer.get_subplan_features(qrep,
-                # node)
-
-        # if featurizer.featurization_type == "set" \
-            # and load_padded_mscn_feats:
-            # start = time.time()
-            # tf,pf,jf,tm,pm,jm = \
-                # pad_sets([x["table"]], [x["pred"]], [x["join"]],
-                        # featurizer.max_tables,
-                        # featurizer.max_preds,
-                        # featurizer.max_joins)
-            # x["table"] = tf
-            # x["join"] = jf
-            # x["pred"] = pf
-            # # relevant masks
-            # x["tmask"] = tm
-            # x["pmask"] = pm
-            # x["jmask"] = jm
-            # x["flow"] = to_variable(x["flow"], requires_grad=False).float()
-
-        # X.append(x)
-        # Y.append(y)
-
-        # cur_info = {}
-        # cur_info["num_tables"] = len(node)
-        # cur_info["dataset_idx"] = dataset_qidx + node_idx
-        # cur_info["query_idx"] = query_idx
-        # sample_info.append(cur_info)
-
-    # return X,Y,sample_info
-
-# def get_queries_features(samples, dataset_qidx,
-        # start_query_idx, featurizer, load_padded_mscn_feats):
-    # X = []
-    # Y = []
-    # sample_info = []
-
-    # qidx = dataset_qidx
-    # for i, qrep in enumerate(samples):
-        # x,y,cur_info = get_query_features(qrep, qidx, start_query_idx+i,
-                # featurizer, load_padded_mscn_feats)
-        # qidx += len(y)
-        # X += x
-        # Y += y
-        # sample_info += cur_info
-
-    # return X,Y,sample_info
-
 def mscn_collate_fn_together(data):
     start = time.time()
     alldata = defaultdict(list)
@@ -183,7 +117,7 @@ def mscn_collate_fn(data):
 
     # print(flows)
     # pdb.set_trace()
-    print(flows)
+    # print(flows)
     # flows = to_variable(flows, requires_grad=False).float()
     flows = torch.stack(flows).float()
 
@@ -213,6 +147,9 @@ def _handle_set_padding(features, max_set_vals):
     mask = np.pad(mask, ((0, num_pad), (0, 0)), 'constant')
     features = np.expand_dims(features, 0)
     mask = np.expand_dims(mask, 0)
+
+    # if max_set_vals == 1:
+        # mask = mask.unsqueeze(1)
 
     return features, mask
 
@@ -284,11 +221,21 @@ def pad_sets(all_table_features, all_pred_features,
     jm = to_variable(jm,
             requires_grad=False).byte().squeeze().unsqueeze(extra_dim)
 
+    if maxtabs == 1:
+        tm = tm.unsqueeze(1)
+
+    if maxjoins == 1:
+        jm = jm.unsqueeze(1)
+
+    if maxpreds == 1:
+        pm = pm.unsqueeze(1)
+
     return tf, pf, jf, tm, pm, jm
 
 class QueryDataset(data.Dataset):
     def __init__(self, samples, featurizer,
             load_query_together, load_padded_mscn_feats=False,
+            max_num_tables = -1,
             join_key_cards=False):
         '''
         @samples: [] sqlrep query dictionaries, which represent a query and all
@@ -302,6 +249,7 @@ class QueryDataset(data.Dataset):
 
         self.load_padded_mscn_feats = load_padded_mscn_feats
         self.featurizer = featurizer
+        self.max_num_tables = max_num_tables
 
         if "whitening" in self.featurizer.ynormalization:
             self.featurizer.update_means(samples)
@@ -321,6 +269,7 @@ class QueryDataset(data.Dataset):
                     attrs += str(k) + str(attrvals) + ";"
 
             attrs += "padded"+str(self.load_padded_mscn_feats)
+            # print(attrs)
             self.feathash = deterministic_hash(attrs)
             self.featdir = "./mscn_features/" + str(self.feathash)
             if os.path.exists(self.featdir):
@@ -338,7 +287,7 @@ class QueryDataset(data.Dataset):
                 make_dir("./mscn_features")
                 make_dir(self.featdir)
 
-        if self.featurizer.max_num_tables != -1:
+        if self.max_num_tables != -1:
             self.save_mscn_feats = False
             self.featurizer.use_saved_feats = False
 
@@ -422,8 +371,8 @@ class QueryDataset(data.Dataset):
 
         for edge_idx, subset_edge in enumerate(edges):
 
-            # if self.featurizer.max_num_tables != -1 \
-                    # and self.featurizer.max_num_tables < len(node):
+            # if self.max_num_tables != -1 \
+                    # and self.max_num_tables < len(node):
                 # continue
 
             # find the appropriate node from which this edge starts
@@ -472,6 +421,7 @@ class QueryDataset(data.Dataset):
             jbitmaps,
             dataset_qidx,
             query_idx):
+
         X = []
         Y = []
         sample_info = []
@@ -485,8 +435,8 @@ class QueryDataset(data.Dataset):
         node_names.sort()
 
         for node_idx, node in enumerate(node_names):
-            if self.featurizer.max_num_tables != -1 \
-                    and self.featurizer.max_num_tables < len(node):
+            if self.max_num_tables != -1 \
+                    and self.max_num_tables < len(node):
                 continue
 
             x,y = self.featurizer.get_subplan_features(qrep,
@@ -550,14 +500,19 @@ class QueryDataset(data.Dataset):
                 bitdir = "./queries/allbitmaps/joblight_bitmaps/sample_bitmap"
             elif "job" in qrep["template_name"]:
                 bitdir = "./queries/allbitmaps/job_bitmaps/sample_bitmap"
+            elif "stats_train" in qrep["template_name"]:
+                bitdir = "./queries/allbitmaps/stats_train_bitmaps/sample_bitmap/"
+            elif "stats" in qrep["template_name"]:
+                bitdir = "./queries/allbitmaps/stats_bitmaps/sample_bitmap/"
             else:
                 bitdir = self.featurizer.bitmap_dir
 
             bitmapfn = os.path.join(bitdir, qrep["name"])
 
             if not os.path.exists(bitmapfn):
-                print(bitmapfn)
+                print(bitmapfn, " not found")
                 sbitmaps = None
+                # pdb.set_trace()
             else:
                 with open(bitmapfn, "rb") as handle:
                     sbitmaps = pickle.load(handle)
@@ -575,6 +530,10 @@ class QueryDataset(data.Dataset):
                 bitdir = "./queries/allbitmaps/joblight_bitmaps/join_bitmap/"
             elif "job" in qrep["template_name"]:
                 bitdir = "./queries/allbitmaps/job_bitmaps/join_bitmap/"
+            elif "stats_train" in qrep["template_name"]:
+                bitdir = "./queries/allbitmaps/stats_train_bitmaps/sample_bitmap/"
+            elif "stats" in qrep["template_name"]:
+                bitdir = "./queries/allbitmaps/stats_bitmaps/join_bitmap/"
             else:
                 # assert "imdb" in qrep["template_name"]
                 bitdir = self.featurizer.join_bitmap_dir
@@ -582,7 +541,8 @@ class QueryDataset(data.Dataset):
             bitmapfn = os.path.join(bitdir, qrep["name"])
 
             if not os.path.exists(bitmapfn):
-                print(bitmapfn)
+                print(bitmapfn, " not found")
+                # pdb.set_trace()
                 jbitmaps = None
             else:
                 with open(bitmapfn, "rb") as handle:
@@ -609,7 +569,6 @@ class QueryDataset(data.Dataset):
         X = []
         Y = []
         sample_info = []
-
 
         nump = 16
 
@@ -706,6 +665,9 @@ class QueryDataset(data.Dataset):
                         x,y = self._load_mscn_features(featfn)
                         cur_info = self._get_sample_info(qrep, qidx, i)
                     except Exception as e:
+                        print(e)
+                        print("features could not be loaded in try")
+                        pdb.set_trace()
                         x,y,cur_info = self._get_query_features(qrep, qidx, i)
                         self._save_mscn_features(x,y,featfn)
                 else:

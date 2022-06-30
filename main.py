@@ -6,6 +6,7 @@ from cardinality_estimation.featurizer import *
 from cardinality_estimation.algs import *
 from cardinality_estimation.fcnn import FCNN
 from cardinality_estimation.mscn import MSCN, MSCN_JoinKeyCards
+from cardinality_estimation.mstn import MSTN
 
 import glob
 import argparse
@@ -22,6 +23,8 @@ import wandb
 import logging
 logger = logging.getLogger("wandb")
 logger.setLevel(logging.ERROR)
+
+TIMEOUT_CARD = 150001000000
 
 def eval_alg(alg, eval_funcs, qreps, samples_type, featurizer=None):
     '''
@@ -68,15 +71,20 @@ def eval_alg(alg, eval_funcs, qreps, samples_type, featurizer=None):
                 pickle.dump(cur_ests, f)
 
     for efunc in eval_funcs:
-        if "plan" in str(efunc).lower() and "joblight" in qreps[0]["template_name"]:
+        if "plan" in str(efunc).lower() and "train" in qreps[0]["template_name"]:
             print("skipping joblight eval_alg")
             continue
+
+        # if "plan" in str(efunc).lower() and "joblight" in qreps[0]["template_name"]:
+            # print("skipping JOB eval_alg")
+            # continue
 
         errors = efunc.eval(qreps, ests, args=args, samples_type=samples_type,
                 result_dir=rdir, user = args.user, db_name = args.db_name,
                 db_host = args.db_host, port = args.port,
                 num_processes = args.num_eval_processes,
                 alg_name = alg_name,
+                pwd = args.pwd,
                 save_pdf_plans=args.save_pdf_plans,
                 query_dir = args.query_dir,
                 use_wandb=args.use_wandb, featurizer=featurizer,
@@ -166,6 +174,40 @@ def get_alg(alg):
                 hidden_layer_size = args.hidden_layer_size)
     elif alg == "mscn":
         return MSCN(max_epochs = args.max_epochs, lr=args.lr,
+                max_num_tables = args.max_num_tables,
+                early_stopping = args.early_stopping,
+                inp_dropout = args.inp_dropout,
+                hl_dropout = args.hl_dropout,
+                comb_dropout = args.comb_dropout,
+                training_opt = args.training_opt,
+                opt_lr = args.opt_lr,
+                swa_start = args.swa_start,
+                mask_unseen_subplans = args.mask_unseen_subplans,
+                subplan_level_outputs=args.subplan_level_outputs,
+                normalize_flow_loss = args.normalize_flow_loss,
+                heuristic_unseen_preds = args.heuristic_unseen_preds,
+                cost_model = args.cost_model,
+                use_wandb = args.use_wandb,
+                eval_fns = args.eval_fns,
+                load_padded_mscn_feats = args.load_padded_mscn_feats,
+                mb_size = args.mb_size,
+                weight_decay = args.weight_decay,
+                load_query_together = args.load_query_together,
+                result_dir = args.result_dir,
+                onehot_dropout=args.onehot_dropout,
+                onehot_mask_truep=args.onehot_mask_truep,
+                onehot_reg=args.onehot_reg,
+                onehot_reg_decay=args.onehot_reg_decay,
+                num_hidden_layers=args.num_hidden_layers,
+                eval_epoch = args.eval_epoch,
+                optimizer_name=args.optimizer_name,
+                clip_gradient=args.clip_gradient,
+                loss_func_name = args.loss_func_name,
+                hidden_layer_size = args.hidden_layer_size)
+
+    elif alg == "mstn":
+        return MSTN(max_epochs = args.max_epochs, lr=args.lr,
+                max_num_tables = args.max_num_tables,
                 early_stopping = args.early_stopping,
                 inp_dropout = args.inp_dropout,
                 hl_dropout = args.hl_dropout,
@@ -365,28 +407,17 @@ def get_query_fns():
 
     print("Skipped templates: ", " ".join(skipped_templates))
 
-    # job_qfns = []
-    # if args.eval_on_jobm:
-        # jobm_dir = "./queries/jobm/all_jobm"
-        # qfns = list(glob.glob(jobm_dir+"/*.pkl"))
-        # # print(qfns)
-        # # test_qfns += qfns
-        # job_qfns += qfns
-
-    # if args.eval_on_job:
-        # job_dir = "./queries/job-joinkeys/all_job"
-        # qfns = list(glob.glob(job_dir+"/*.pkl"))
-
-        # if not args.eval_epoch <= 2:
-            # job_dir2 = "./queries/job-joinkeys/job29"
-            # qfns += list(glob.glob(job_dir2+"/*.pkl"))
-        # else:
-            # print("skipping job29")
-        # job_qfns += qfns
 
     eval_qfns = []
     eval_qdirs = args.eval_query_dir.split(",")
     for qdir in eval_qdirs:
+        if "imdb" in qdir:
+            with open("ceb_runtime_qnames.pkl", "rb") as f:
+                qkeys = pickle.load(f)
+            print("going to read only {} CEB queries".format(len(qkeys)))
+        else:
+            qkeys = None
+
         cur_eval_qfns = []
         fns = list(glob.glob(qdir + "/*"))
         fns = [fn for fn in fns if os.path.isdir(fn)]
@@ -405,6 +436,10 @@ def get_query_fns():
                 qfns = qfns[0:args.num_samples_evalq]
             else:
                 assert False
+
+            if qkeys is not None:
+                qfns = [qf for qf in qfns if os.path.basename(qf) in qkeys]
+
             cur_eval_qfns += qfns
 
         random.shuffle(cur_eval_qfns)
@@ -477,31 +512,53 @@ def load_qdata(fns):
     qreps = []
     for qfn in fns:
         qrep = load_qrep(qfn)
-        # if "job" in qfn and args.set_column_feature == "debug":
-            # # TODO: need to fix the != case
-            # update_job_parsing(qrep)
 
         if "job" in qfn:
             # TODO: need to fix the != case
             update_job_parsing(qrep)
 
-        # if args.algs in ["joinkeys", "mscn_joinkey", "mscn"] \
-                # and "job" in args.query_dir:
         if args.algs in ["joinkeys", "mscn_joinkey"]:
             skip = False
             sg = qrep["subset_graph"]
             for u,v,data in sg.edges(data=True):
                 if "join_key_cardinality" not in data or \
                         len(data["join_key_cardinality"]) == 0:
-                    # print(data)
-                    # print(qfn)
-                    # print(u, v)
-                    # pdb.set_trace()
                     skip = True
                     break
 
             if skip:
                 continue
+
+        skip = False
+        for node in qrep["subset_graph"].nodes():
+            if "cardinality" not in qrep["subset_graph"].nodes()[node]:
+                skip = True
+                break
+            if "actual" not in qrep["subset_graph"].nodes()[node]["cardinality"]:
+                skip = True
+                break
+
+            if qrep["subset_graph"].nodes()[node]["cardinality"]["actual"] \
+                    >= TIMEOUT_CARD:
+                skip = True
+                break
+
+            if qrep["subset_graph"].nodes()[node]["cardinality"]["actual"] \
+                    < 1:
+                skip = True
+                break
+
+            if "expected" not in qrep["subset_graph"].nodes()[node]["cardinality"]:
+                skip = True
+                break
+
+            if qrep["subset_graph"].nodes()[node]["cardinality"]["expected"] \
+                    == 0:
+                skip = True
+                break
+
+        if skip:
+            continue
 
         # TODO: can do checks like no queries with zero cardinalities etc.
         qreps.append(qrep)
@@ -546,7 +603,7 @@ def get_featurizer(trainqs, valqs, testqs, eval_qs):
         f.close()
         featurizer.update_using_saved_stats(featdata)
 
-    if args.algs in ["mscn", "mscn_joinkey"]:
+    if args.algs in ["mscn", "mscn_joinkey", "mstn"]:
         feat_type = "set"
     else:
         feat_type = "combined"
@@ -569,7 +626,7 @@ def get_featurizer(trainqs, valqs, testqs, eval_qs):
     featurizer.setup(ynormalization=args.ynormalization,
             random_bitmap_idx = args.random_bitmap_idx,
             feat_onlyseen_maxy = args.feat_onlyseen_maxy,
-            max_num_tables = args.max_num_tables,
+            # max_num_tables = args.max_num_tables,
             like_char_features = args.like_char_features,
             flow_feat_tables = args.feat_tables,
             loss_func = args.loss_func_name,
@@ -695,6 +752,7 @@ def main():
 
     eval_qdirs = args.eval_query_dir.split(",")
     print(eval_qdirs)
+
     evalqs = []
     for eval_qfn in eval_qfns:
         evalqs.append(load_qdata(eval_qfn))
@@ -757,7 +815,7 @@ def main():
 
 
     # only needs featurizer for learned models
-    if args.algs in ["xgb", "fcnn", "mscn", "mscn_joinkey"]:
+    if args.algs in ["xgb", "fcnn", "mscn", "mscn_joinkey", "mstn"]:
         featurizer = get_featurizer(trainqs, valqs, testqs, evalqs)
     else:
         featurizer = None
@@ -775,14 +833,17 @@ def main():
         evalq_eval_fns.append(get_eval_fn(efn))
 
     for alg in algs:
-        alg.train(trainqs, valqs=valqs, testqs=testqs,
-                evalqs = evalqs,
-                eval_qdirs = eval_qdirs,
-                featurizer=featurizer, result_dir=args.result_dir)
+        if args.eval_epoch < args.max_epochs:
+            alg.train(trainqs, valqs=valqs, testqs=testqs,
+                    evalqs = evalqs,
+                    eval_qdirs = eval_qdirs,
+                    featurizer=featurizer, result_dir=args.result_dir)
+        else:
+            alg.train(trainqs, valqs=valqs, testqs=None,
+                    evalqs = None,
+                    eval_qdirs = eval_qdirs,
+                    featurizer=featurizer, result_dir=args.result_dir)
 
-        # if args.eval_epoch < args.max_epochs:
-            # print("skipping evaluation!")
-            # exit(-1)
 
         eval_alg(alg, eval_fns, trainqs, "train", featurizer=featurizer)
 
@@ -839,7 +900,7 @@ def read_flags():
     parser.add_argument("--pwd", type=str, required=False,
             default="password")
     parser.add_argument("--port", type=int, required=False,
-            default=5433)
+            default=5432)
 
     parser.add_argument("--result_dir", type=str, required=False,
             default="./results")

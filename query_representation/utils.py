@@ -1,7 +1,7 @@
 import sqlparse
 from sqlparse.sql import IdentifierList, Identifier
 from sqlparse.tokens import Keyword, DML
-from moz_sql_parser import parse
+# from moz_sql_parser import parse
 import time
 # from networkx.drawing.nx_agraph import graphviz_layout, to_agraph
 # from networkx.algorithms import bipartite
@@ -307,6 +307,49 @@ def nx_graph_to_query(G, from_clause=None):
 
     return ret_query
 
+# def extract_join_clause(query):
+    # '''
+    # FIXME: this can be optimized further / or made to handle more cases
+    # '''
+    # parsed = sqlparse.parse(query)[0]
+    # # let us go over all the where clauses
+    # start = time.time()
+    # where_clauses = None
+    # for token in parsed.tokens:
+        # if (type(token) == sqlparse.sql.Where):
+            # where_clauses = token
+    # if where_clauses is None:
+        # return []
+    # join_clauses = []
+
+    # froms, aliases, table_names = extract_from_clause(query)
+    # if len(aliases) > 0:
+        # tables = [k for k in aliases]
+    # else:
+        # tables = table_names
+    # matches = find_all_clauses(tables, where_clauses)
+
+    # for match in matches:
+        # if "=" not in match or match.count("=") > 1:
+            # continue
+        # if "<=" in match or ">=" in match:
+            # continue
+        # match = match.replace(";", "")
+        # if "!" in match:
+            # left, right = match.split("!=")
+            # if "." in right:
+                # # must be a join, so add it.
+                # join_clauses.append(left.strip() + " != " + right.strip())
+            # continue
+        # left, right = match.split("=")
+
+        # # ugh dumb hack
+        # if "." in right:
+            # # must be a join, so add it.
+            # join_clauses.append(left.strip() + " = " + right.strip())
+
+    # return join_clauses
+
 def extract_join_clause(query):
     '''
     FIXME: this can be optimized further / or made to handle more cases
@@ -335,15 +378,25 @@ def extract_join_clause(query):
         if "<=" in match or ">=" in match:
             continue
         match = match.replace(";", "")
-        if "!" in match:
+
+        if "!=" in match:
             left, right = match.split("!=")
-            if "." in right:
+
+            if not ("id" in left.lower() and "id" in right.lower()):
+                continue
+
+            if right.count(".") == 1 and "'" not in right:
                 # must be a join, so add it.
                 join_clauses.append(left.strip() + " != " + right.strip())
             continue
+
         left, right = match.split("=")
+
+        if not ("id" in left.lower() and "id" in right.lower()):
+            continue
+
         # ugh dumb hack
-        if "." in right:
+        if right.count(".") == 1 and "'" not in right:
             # must be a join, so add it.
             join_clauses.append(left.strip() + " = " + right.strip())
 

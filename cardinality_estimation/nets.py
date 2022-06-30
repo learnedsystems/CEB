@@ -1,6 +1,9 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
+import torch.nn.functional as F
+import math
+from .set_transformer import SetTransformer
 import pdb
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -205,7 +208,6 @@ class SetConv(nn.Module):
 
             tocat.append(hid_join)
 
-
         if self.flow_feats:
             flows = flows.to(device, non_blocking=True)
             flows = self.inp_drop_layer(flows)
@@ -214,7 +216,13 @@ class SetConv(nn.Module):
             # hid_flow = F.relu(self.flow_mlp2(hid_flow))
             tocat.append(flows)
 
-        hid = torch.cat(tocat, 1)
+        try:
+            hid = torch.cat(tocat, 1)
+        except Exception as e:
+            print(e)
+            print("forward pass torch.cat failed")
+            pdb.set_trace()
+
         hid = self.combined_drop_layer(hid)
 
         # print(hid.shape)
@@ -382,6 +390,157 @@ class SetConvFlow(nn.Module):
 
         # if self.flow_feats:
             # hid = torch.cat([hid, flows], 1)
+
+        if self.use_sigmoid:
+            out = torch.sigmoid(self.out_mlp2(hid))
+        else:
+            out = self.out_mlp2(hid)
+        return out
+
+NUM_HEADS=4
+class CardSetTransformer(nn.Module):
+    def __init__(self, sample_feats, predicate_feats,
+            join_feats,
+            flow_feats,
+            hid_units,
+            num_hidden_layers=2, n_out=1,
+            dropouts=[0.0, 0.0, 0.0], use_sigmoid=True):
+        super(CardSetTransformer, self).__init__()
+        self.use_sigmoid = use_sigmoid
+
+        self.sample_feats = sample_feats
+        self.predicate_feats = predicate_feats
+        self.join_feats = join_feats
+        self.flow_feats = flow_feats
+        self.num_hidden_layers = num_hidden_layers
+        num_layer1_blocks = 0
+
+        self.inp_drop = dropouts[0]
+        self.hl_drop = dropouts[1]
+        self.combined_drop = dropouts[2]
+        self.inp_drop_layer = nn.Dropout(p=self.inp_drop)
+        self.hl_drop_layer = nn.Dropout(p=self.hl_drop)
+        self.combined_drop_layer = nn.Dropout(p=self.combined_drop)
+
+        # self.sample_mlps = nn.ModuleList()
+        # self.predicate_mlps = nn.ModuleList()
+        # self.join_mlps = nn.ModuleList()
+
+        if hid_units < 4:
+            # gonna treat this as a multiple
+            sample_hid_units = int(sample_feats * hid_units)
+            pred_hid_units = int(predicate_feats * hid_units)
+            join_hid_units = int(join_feats * hid_units)
+            combined_size = sample_hid_units + pred_hid_units + join_hid_units
+            combined_hid_units = int(combined_size * hid_units)
+        else:
+            sample_hid_units = int(min(hid_units, int(2*sample_feats)))
+            pred_hid_units = int(min(hid_units, int(2*predicate_feats)))
+            join_hid_units = int(min(hid_units, int(2*join_feats)))
+            ## need to make these multiples of NUM_HEAD
+            sample_hid_units = int(round(sample_hid_units / float(NUM_HEADS))*NUM_HEADS)
+            pred_hid_units = int(round(pred_hid_units / float(NUM_HEADS))*NUM_HEADS)
+            join_hid_units = int(round(join_hid_units / float(NUM_HEADS))*NUM_HEADS)
+
+            # sample_hid_units = hid_units
+            # pred_hid_units = hid_units
+            # join_hid_units = hid_units
+            combined_size = sample_hid_units + pred_hid_units + join_hid_units
+            combined_hid_units = int(hid_units)
+
+        if self.sample_feats != 0:
+            self.sample_transformer = SetTransformer(sample_feats,
+                                                  1,
+                                                  sample_hid_units,
+                                                  dim_hidden=sample_hid_units,
+                                                  num_heads=NUM_HEADS,
+                                                  ln=False).to(device)
+
+        if self.predicate_feats != 0:
+            print(predicate_feats)
+            self.predicate_transformer = SetTransformer(predicate_feats,
+                                                        1,
+                                                        pred_hid_units,
+                                                        dim_hidden=pred_hid_units,
+                                                        num_heads=NUM_HEADS,
+                                                        ln=False).to(device)
+
+        if self.join_feats != 0:
+            self.join_transformer = SetTransformer(join_feats,
+                                                        1,
+                                                        join_hid_units,
+                                                        dim_hidden=join_hid_units,
+                                                        num_heads=NUM_HEADS,
+                                                        ln=False).to(device)
+
+        # Note: flow_feats is just used to concatenate global features, such as
+        # pg_est at end of layer outputs
+
+        comb_size = combined_size + flow_feats
+        combined_hid_size = combined_hid_units + flow_feats
+
+        self.out_mlp1 = nn.Linear(comb_size,
+                combined_hid_size).to(device)
+
+        # unless flow_feats is 0
+        combined_hid_size += flow_feats
+        self.out_mlp2 = nn.Linear(combined_hid_size, n_out).to(device)
+
+    def forward(self, xbatch):
+        '''
+        #TODO: describe shapes
+        '''
+        samples = xbatch["table"]
+        predicates = xbatch["pred"]
+        joins = xbatch["join"]
+        flows = xbatch["flow"]
+
+        sample_mask = xbatch["tmask"]
+        predicate_mask = xbatch["pmask"]
+        join_mask = xbatch["jmask"]
+
+        tocat = []
+        if self.sample_feats != 0:
+            samples = samples.to(device, non_blocking=True)
+            samples = self.inp_drop_layer(samples)
+            hid_sample = self.sample_transformer(samples)
+            hid_sample = hid_sample.squeeze(1)
+            tocat.append(hid_sample)
+
+        if self.predicate_feats != 0:
+            predicates = predicates.to(device, non_blocking=True)
+            predicates = self.inp_drop_layer(predicates)
+            hid_predicate = self.predicate_transformer(predicates)
+            hid_predicate = hid_predicate.squeeze(1)
+            tocat.append(hid_predicate)
+
+        if self.join_feats != 0:
+            joins = joins.to(device, non_blocking=True)
+            joins = self.inp_drop_layer(joins)
+            hid_join = self.join_transformer(joins)
+            hid_join = hid_join.squeeze(1)
+            tocat.append(hid_join)
+
+        if self.flow_feats:
+            flows = flows.to(device, non_blocking=True)
+            flows = self.inp_drop_layer(flows)
+            tocat.append(flows)
+
+        try:
+            hid = torch.cat(tocat, 1)
+        except Exception as e:
+            print(e)
+            print("forward pass torch.cat failed")
+            pdb.set_trace()
+
+        hid = self.combined_drop_layer(hid)
+
+        # print(hid.shape)
+        # pdb.set_trace()
+
+        hid = F.relu(self.out_mlp1(hid))
+        if self.flow_feats:
+            hid = torch.cat([hid, flows], 1)
 
         if self.use_sigmoid:
             out = torch.sigmoid(self.out_mlp2(hid))

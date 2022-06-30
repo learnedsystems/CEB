@@ -20,6 +20,7 @@ import pickle
 import pdb
 
 TIMEOUT_CARD = 15000100000
+# TIMEOUT_CARD = 15000100000
 
 def get_eval_fn(loss_name):
     if loss_name == "qerr":
@@ -101,13 +102,16 @@ def _get_all_cardinalities(qreps, preds):
     yhat = []
     for i, pred_subsets in enumerate(preds):
         qrep = qreps[i]["subset_graph"].nodes()
+        assert len(qrep) == len(pred_subsets)
         keys = list(pred_subsets.keys())
         keys.sort()
         for alias in keys:
             pred = pred_subsets[alias]
             actual = qrep[alias]["cardinality"]["actual"]
             if actual == 0:
+                assert False
                 actual += 1
+
             ytrue.append(float(actual))
             yhat.append(float(pred))
     return np.array(ytrue), np.array(yhat)
@@ -311,6 +315,7 @@ class QError(EvalFunc):
         assert 0.00 not in yhat
 
         errors = np.maximum((ytrue / yhat), (yhat / ytrue))
+        # print(len(errors), np.max(errors), np.min(errors))
 
         num_table_errs = defaultdict(list)
         didx = 0
@@ -323,6 +328,8 @@ class QError(EvalFunc):
             # qidx = 0
             for qi, node in enumerate(nodes):
                 numt = len(node)
+                if didx >= len(errors):
+                    continue
                 curerr = errors[didx]
 
                 ## debug code!
@@ -337,11 +344,11 @@ class QError(EvalFunc):
 
         nts = list(num_table_errs.keys())
         nts.sort()
-        for nt in nts:
-            if nt <= 3:
-                print("{} Tables, QError mean: {}, 99p: {}".format(
-                    nt, np.mean(num_table_errs[nt]),
-                    np.percentile(num_table_errs[nt], 99)))
+        # for nt in nts:
+            # if nt <= 3:
+                # print("{} Tables, QError mean: {}, 99p: {}".format(
+                    # nt, np.mean(num_table_errs[nt]),
+                    # np.percentile(num_table_errs[nt], 99)))
 
         if kwargs["result_dir"] is not None:
             self.save_logs(qreps, errors, **kwargs)
@@ -533,7 +540,8 @@ class PostgresPlanCost(EvalFunc):
                                                        suffix, tmp)
                 wandb.run.summary[loss_key] = tmpcost
 
-    def eval(self, qreps, preds, user="imdb",pwd="password",
+    def eval(self, qreps, preds, user="imdb",
+            pwd="password",
             db_name="imdb", db_host="localhost", port=5432, num_processes=-1,
             result_dir=None, **kwargs):
         ''''

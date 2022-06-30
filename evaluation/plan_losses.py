@@ -217,6 +217,9 @@ def compute_cost_pg_single(queries, join_graphs, true_cardinalities,
         con = pg.connect(port=port,dbname=db_name,
                 user=user,password=pwd, host=db_host)
     except:
+        print("connection failed")
+
+        pdb.set_trace()
         con = pg.connect(port=port,dbname=db_name,
                 user=user,password=pwd)
 

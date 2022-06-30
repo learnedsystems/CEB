@@ -38,10 +38,11 @@ def qloss_torch(yhat, ytrue):
 
     epsilons = to_variable([QERR_MIN_EPS]*len(yhat)).float()
 
-    ytrue = torch.max(ytrue, epsilons)
-    yhat = torch.max(yhat, epsilons)
+    # ytrue = torch.max(ytrue, epsilons)
+    # yhat = torch.max(yhat, epsilons)
 
     errors = torch.max( (ytrue / yhat), (yhat / ytrue))
+
     return errors
 
 def mse_pos(yhat, ytrue):
@@ -184,11 +185,11 @@ def format_model_test_output(pred, samples, featurizer):
 
         subq_idx = 0
         for _, node in enumerate(node_keys):
-            if featurizer.max_num_tables != -1 and \
-                featurizer.max_num_tables < len(node):
-                # dummy estimate
-                ests[node] = 1.0
-                continue
+            # if featurizer.max_num_tables != -1 and \
+                # featurizer.max_num_tables < len(node):
+                # # dummy estimate
+                # ests[node] = 1.0
+                # continue
 
             cards = sample["subset_graph"].nodes()[node]["cardinality"]
             alias_key = node
@@ -292,8 +293,8 @@ class NN(CardinalityEstimationAlg):
         curerrs = {}
 
         for st, ds in self.eval_ds.items():
-            if st == "train":
-                continue
+            # if st == "train":
+                # continue
             samples = self.samples[st]
 
             preds, _ = self._eval_ds(ds, samples)
@@ -309,6 +310,7 @@ class NN(CardinalityEstimationAlg):
             else:
                 preds = format_model_test_output(preds,
                         samples, self.featurizer)
+                assert len(preds) == len(samples)
 
             # do evaluations
             for efunc in self.eval_fn_handles:
@@ -325,6 +327,7 @@ class NN(CardinalityEstimationAlg):
                                 db_name = self.featurizer.db_name,
                                 db_host = self.featurizer.db_host,
                                 port = self.featurizer.port,
+                                pwd = self.featurizer.pwd,
                                 num_processes = 16,
                                 alg_name = self.__str__(),
                                 save_pdf_plans=False,
@@ -341,6 +344,7 @@ class NN(CardinalityEstimationAlg):
                         query_dir = None,
                         db_name = self.featurizer.db_name,
                         db_host = self.featurizer.db_host,
+                        pwd = self.featurizer.pwd,
                         port = self.featurizer.port,
                         num_processes = 16,
                         alg_name = self.__str__(),
@@ -460,7 +464,9 @@ class NN(CardinalityEstimationAlg):
                 self.seen_subplans.add(str(node))
 
         self.trainds = self.init_dataset(training_samples,
-                self.load_query_together)
+                self.load_query_together,
+                max_num_tables = self.max_num_tables,
+                load_padded_mscn_feats=self.load_padded_mscn_feats)
         self.trainloader = data.DataLoader(self.trainds,
                 batch_size=self.mb_size, shuffle=True,
                 collate_fn=self.collate_fn,
@@ -470,10 +476,16 @@ class NN(CardinalityEstimationAlg):
         self.eval_ds = {}
         self.samples = {}
 
-        self.eval_ds["train"] = self.trainds
+        # if self.eval_epoch < self.max_epochs:
+            # self.samples["train"] = training_samples
+            # self.eval_ds["train"] = self.init_dataset(training_samples,
+                    # self.load_query_together,
+                    # max_num_tables = -1,
+                    # load_padded_mscn_feats=self.load_padded_mscn_feats)
 
         if "valqs" in kwargs and len(kwargs["valqs"]) > 0:
-            self.eval_ds["val"] = self.init_dataset(kwargs["valqs"], False)
+            self.eval_ds["val"] = self.init_dataset(kwargs["valqs"], False,
+                    load_padded_mscn_feats=self.load_padded_mscn_feats)
             self.samples["val"] = kwargs["valqs"]
 
         if self.eval_epoch < self.max_epochs:
@@ -489,7 +501,8 @@ class NN(CardinalityEstimationAlg):
                     testqs = kwargs["testqs"]
 
                 self.eval_ds["test"] = self.init_dataset(testqs,
-                        False)
+                        False,
+                        load_padded_mscn_feats=self.load_padded_mscn_feats)
                 self.samples["test"] = testqs
 
             if "evalqs" in kwargs and len(kwargs["eval_qdirs"]) > 0:
@@ -505,13 +518,22 @@ class NN(CardinalityEstimationAlg):
                         evalqname = "CEB-IMDb-NoRegex"
                     elif "imdb" in evalqname:
                         evalqname = "CEB-IMDb"
+                    elif "stats" in evalqname:
+                        evalqname = "Stats-CEB"
 
-                    if len(cur_evalqs) > 400:
+                    if len(cur_evalqs) > 300:
                         ns = int(len(cur_evalqs) / 10)
                         random.seed(42)
                         cur_evalqs = random.sample(cur_evalqs, ns)
+
+                    print("{}, num eval queries: {}".format(evalqname,
+                        len(cur_evalqs)))
+                    if len(cur_evalqs) == 0:
+                        continue
+
                     self.eval_ds[evalqname] = self.init_dataset(cur_evalqs,
-                            False)
+                            False,
+                            load_padded_mscn_feats=self.load_padded_mscn_feats)
                     self.true_costs[evalqname] = 0.0
                     self.samples[evalqname] = cur_evalqs
 
@@ -543,14 +565,13 @@ class NN(CardinalityEstimationAlg):
 
         for self.epoch in range(0,total_epochs):
 
-            if self.epoch % self.eval_epoch == 0 \
-                    and self.epoch != 0:
+            # if self.epoch % self.eval_epoch == 0 \
+                    # and self.epoch != 0:
+            if self.epoch % self.eval_epoch == 0:
                 self.periodic_eval()
 
-            # if self.epoch % self.eval_epoch == 0:
-                # self.periodic_eval()
-
             self.train_one_epoch()
+
             self.model_weights.append(copy.deepcopy(self.net.state_dict()))
 
             # TODO: needs to decide if we should stop training
@@ -594,6 +615,8 @@ class NN(CardinalityEstimationAlg):
                     self.best_model_epoch = self.epoch-1
                     break
 
+        self.periodic_eval()
+
         if self.training_opt == "swa":
             torch.optim.swa_utils.update_bn(self.trainloader, self.swa_net)
 
@@ -614,9 +637,11 @@ class NN(CardinalityEstimationAlg):
             net = self.net
 
         # important to not shuffle the data so correct order preserved!
+        # also, assuming we are not loading everything in memory for
+        # evaluation stuff, therefore collate_fn set
         loader = data.DataLoader(ds,
                 batch_size=5000, shuffle=False,
-                # collate_fn=self.collate_fn
+                collate_fn = self.collate_fn
                 )
 
         allpreds = []
@@ -841,7 +866,7 @@ class NN(CardinalityEstimationAlg):
         ftimes = []
         epoch_losses = []
 
-        for idx, (xbatch, ybatch,info) in enumerate(self.trainloader):
+        for idx, (xbatch, ybatch, info) in enumerate(self.trainloader):
             # TODO: load_query_together things
             ybatch = ybatch.to(device, non_blocking=True)
 
@@ -994,8 +1019,10 @@ class NN(CardinalityEstimationAlg):
                 self.optimizer.step()
 
         curloss = round(float(sum(epoch_losses))/len(epoch_losses),6)
-        print("Epoch {} took {}, Avg Loss: {}".format(self.epoch,
-            round(time.time()-start, 2), curloss))
+        print("Epoch {} took {}, Avg Loss: {}, #samples: {}".format(self.epoch,
+            round(time.time()-start, 2), curloss, len(self.trainds)))
+        # print(np.mean(epoch_losses), np.max(epoch_losses),
+                # np.min(epoch_losses))
         # print("Backward avg time: {}, Forward avg time: {}".format(\
                 # np.mean(backtimes), np.mean(ftimes)))
 
@@ -1009,7 +1036,8 @@ class NN(CardinalityEstimationAlg):
         for each subset graph node (subplan). Each key should be ' ' separated
         list of aliases / table names
         '''
-        testds = self.init_dataset(test_samples, False)
+        testds = self.init_dataset(test_samples, False,
+                load_padded_mscn_feats=self.load_padded_mscn_feats)
 
         start = time.time()
         preds, _ = self._eval_ds(testds, test_samples)
@@ -1025,6 +1053,8 @@ class NN(CardinalityEstimationAlg):
     def get_exp_name(self):
         name = self.__str__()
         if not hasattr(self, "rand_id"):
+            t = 1000 * time.time() # current time in milliseconds
+            random.seed(int(t) % 2**32)
             self.rand_id = str(random.getrandbits(32))
             print("Experiment name will be: ", name + self.rand_id)
 
@@ -1100,6 +1130,8 @@ class Postgres(CardinalityEstimationAlg):
                 info = sample["subset_graph"].nodes()[alias_key]
                 true_card = info["cardinality"]["actual"]
                 if "expected" not in info["cardinality"]:
+                    print("expected not in Postgres!")
+                    pdb.set_trace()
                     continue
                 est = info["cardinality"]["expected"]
                 pred_dict[(alias_key)] = est

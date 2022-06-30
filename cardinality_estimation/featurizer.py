@@ -16,70 +16,159 @@ import torch
 
 NEW_JOIN_TABLE_TEMPLATE = "{TABLE}_{JOINKEY}_{SS}{NUM}"
 
-JOIN_COL_MAP = {}
-JOIN_COL_MAP["title.id"] = "movie_id"
-JOIN_COL_MAP["movie_info.movie_id"] = "movie_id"
-JOIN_COL_MAP["cast_info.movie_id"] = "movie_id"
-JOIN_COL_MAP["movie_keyword.movie_id"] = "movie_id"
-JOIN_COL_MAP["movie_companies.movie_id"] = "movie_id"
-JOIN_COL_MAP["movie_link.movie_id"] = "movie_id"
-JOIN_COL_MAP["movie_info_idx.movie_id"] = "movie_id"
-JOIN_COL_MAP["movie_link.linked_movie_id"] = "movie_id"
+JOIN_MAP_IMDB = {}
+JOIN_MAP_IMDB["title.id"] = "movie_id"
+JOIN_MAP_IMDB["movie_info.movie_id"] = "movie_id"
+JOIN_MAP_IMDB["cast_info.movie_id"] = "movie_id"
+JOIN_MAP_IMDB["movie_keyword.movie_id"] = "movie_id"
+JOIN_MAP_IMDB["movie_companies.movie_id"] = "movie_id"
+JOIN_MAP_IMDB["movie_link.movie_id"] = "movie_id"
+JOIN_MAP_IMDB["movie_info_idx.movie_id"] = "movie_id"
+JOIN_MAP_IMDB["movie_link.linked_movie_id"] = "movie_id"
 ## TODO: handle it so same columns map to same table+col
-# JOIN_COL_MAP["miidx.movie_id"] = "movie_id"
-JOIN_COL_MAP["aka_title.movie_id"] = "movie_id"
-JOIN_COL_MAP["complete_cast.movie_id"] = "movie_id"
+# JOIN_MAP_IMDB["miidx.movie_id"] = "movie_id"
+JOIN_MAP_IMDB["aka_title.movie_id"] = "movie_id"
+JOIN_MAP_IMDB["complete_cast.movie_id"] = "movie_id"
 
-JOIN_COL_MAP["movie_keyword.keyword_id"] = "keyword"
-JOIN_COL_MAP["keyword.id"] = "keyword"
+JOIN_MAP_IMDB["movie_keyword.keyword_id"] = "keyword"
+JOIN_MAP_IMDB["keyword.id"] = "keyword"
 
-JOIN_COL_MAP["name.id"] = "person_id"
-JOIN_COL_MAP["person_info.person_id"] = "person_id"
-JOIN_COL_MAP["cast_info.person_id"] = "person_id"
-JOIN_COL_MAP["aka_name.person_id"] = "person_id"
+JOIN_MAP_IMDB["name.id"] = "person_id"
+JOIN_MAP_IMDB["person_info.person_id"] = "person_id"
+JOIN_MAP_IMDB["cast_info.person_id"] = "person_id"
+JOIN_MAP_IMDB["aka_name.person_id"] = "person_id"
 # TODO: handle cases
-# JOIN_COL_MAP["a.person_id"] = "person_id"
+# JOIN_MAP_IMDB["a.person_id"] = "person_id"
 
-JOIN_COL_MAP["title.kind_id"] = "kind_id"
-JOIN_COL_MAP["kind_type.id"] = "kind_id"
+JOIN_MAP_IMDB["title.kind_id"] = "kind_id"
+JOIN_MAP_IMDB["kind_type.id"] = "kind_id"
 
-JOIN_COL_MAP["cast_info.role_id"] = "role_id"
-JOIN_COL_MAP["role_type.id"] = "role_id"
+JOIN_MAP_IMDB["cast_info.role_id"] = "role_id"
+JOIN_MAP_IMDB["role_type.id"] = "role_id"
 
-JOIN_COL_MAP["cast_info.person_role_id"] = "char_id"
-JOIN_COL_MAP["char_name.id"] = "char_id"
+JOIN_MAP_IMDB["cast_info.person_role_id"] = "char_id"
+JOIN_MAP_IMDB["char_name.id"] = "char_id"
 
-JOIN_COL_MAP["movie_info.info_type_id"] = "info_id"
-JOIN_COL_MAP["movie_info_idx.info_type_id"] = "info_id"
-# JOIN_COL_MAP["mi_idx.info_type_id"] = "info_id"
-# JOIN_COL_MAP["miidx.info_type_id"] = "info_id"
+JOIN_MAP_IMDB["movie_info.info_type_id"] = "info_id"
+JOIN_MAP_IMDB["movie_info_idx.info_type_id"] = "info_id"
+# JOIN_MAP_IMDB["mi_idx.info_type_id"] = "info_id"
+# JOIN_MAP_IMDB["miidx.info_type_id"] = "info_id"
 
-JOIN_COL_MAP["person_info.info_type_id"] = "info_id"
-JOIN_COL_MAP["info_type.id"] = "info_id"
+JOIN_MAP_IMDB["person_info.info_type_id"] = "info_id"
+JOIN_MAP_IMDB["info_type.id"] = "info_id"
 
-JOIN_COL_MAP["movie_companies.company_type_id"] = "company_type"
-JOIN_COL_MAP["company_type.id"] = "company_type"
+JOIN_MAP_IMDB["movie_companies.company_type_id"] = "company_type"
+JOIN_MAP_IMDB["company_type.id"] = "company_type"
 
-JOIN_COL_MAP["movie_companies.company_id"] = "company_id"
-JOIN_COL_MAP["company_name.id"] = "company_id"
+JOIN_MAP_IMDB["movie_companies.company_id"] = "company_id"
+JOIN_MAP_IMDB["company_name.id"] = "company_id"
 
-JOIN_COL_MAP["movie_link.link_type_id"] = "link_id"
-JOIN_COL_MAP["link_type.id"] = "link_id"
+JOIN_MAP_IMDB["movie_link.link_type_id"] = "link_id"
+JOIN_MAP_IMDB["link_type.id"] = "link_id"
 
-JOIN_COL_MAP["complete_cast.status_id"] = "subject"
-JOIN_COL_MAP["complete_cast.subject_id"] = "subject"
-JOIN_COL_MAP["comp_cast_type.id"] = "subject"
+JOIN_MAP_IMDB["complete_cast.status_id"] = "subject"
+JOIN_MAP_IMDB["complete_cast.subject_id"] = "subject"
+JOIN_MAP_IMDB["comp_cast_type.id"] = "subject"
 
-JOIN_KEY_MAX_TMP = """SELECT COUNT(*), {COL} FROM {TABLE} GROUP BY {COL} ORDER BY COUNT(*) DESC LIMIT 1"""
+JOIN_MAP_STATS = {}
+JOIN_MAP_STATS["badges.id"] = "badge_id"
+JOIN_MAP_STATS["badges.userid"] = "user_id"
 
-JOIN_KEY_MIN_TMP = """SELECT COUNT(*), {COL} FROM {TABLE} GROUP BY {COL} ORDER BY COUNT(*) ASC LIMIT 1"""
+JOIN_MAP_STATS["comments.userid"] = "user_id"
+JOIN_MAP_STATS["comments.postid"] = "post_id"
+JOIN_MAP_STATS["comments.id"] = "comment_id"
 
-JOIN_KEY_AVG_TMP = """SELECT AVG(count) FROM (SELECT COUNT(*) AS count, {COL} FROM {TABLE} GROUP BY {COL} ORDER BY COUNT(*)) AS tmp"""
+JOIN_MAP_STATS["posthistory.id"] = "history_id"
+JOIN_MAP_STATS["posthistory.postid"] = "post_id"
+JOIN_MAP_STATS["posthistory.userid"] = "user_id"
 
-JOIN_KEY_VAR_TMP = """SELECT VARIANCE(count) FROM (SELECT COUNT(*) AS count, {COL} FROM {TABLE} GROUP BY {COL} ORDER BY COUNT(*)) AS tmp"""
+JOIN_MAP_STATS["postlinks.id"] = "link_id"
+JOIN_MAP_STATS["postlinks.postid"] = "post_id"
+JOIN_MAP_STATS["postlinks.relatedpostid"] = "post_id"
+JOIN_MAP_STATS["postlinks.linktypeid"] = "link_type_id"
 
-JOIN_KEY_COUNT_TMP = """SELECT COUNT({COL}) FROM {TABLE}"""
-JOIN_KEY_DISTINCT_TMP = """SELECT COUNT(DISTINCT {COL}) FROM {TABLE}"""
+JOIN_MAP_STATS["posts.id"] = "post_id"
+JOIN_MAP_STATS["posts.posttypeid"] = "post_type_id"
+JOIN_MAP_STATS["posts.owneruserid"] = "user_id"
+JOIN_MAP_STATS["posts.lasteditoruserid"] = "user_id"
+
+JOIN_MAP_STATS["tags.id"] = "tag_id"
+# JOIN_MAP_STATS["tags.excerptpostid"] = "post_id"
+
+JOIN_MAP_STATS["users.id"] = "user_id"
+
+JOIN_MAP_STATS["votes.id"] = "vote_id"
+JOIN_MAP_STATS["votes.postid"] = "post_id"
+JOIN_MAP_STATS["votes.userid"] = "user_id"
+
+JOIN_MAP_STATS["badges.Id"] = "badge_id"
+JOIN_MAP_STATS["badges.UserId"] = "user_id"
+
+# JOIN_MAP_STATS["comments.userid"] = "user_id"
+# JOIN_MAP_STATS["comments.postid"] = "post_id"
+
+JOIN_MAP_STATS["comments.UserId"] = "user_id"
+JOIN_MAP_STATS["comments.PostId"] = "post_id"
+
+JOIN_MAP_STATS["comments.id"] = "comment_id"
+
+# JOIN_MAP_STATS["posthistory.id"] = "history_id"
+# JOIN_MAP_STATS["posthistory.postid"] = "post_id"
+# JOIN_MAP_STATS["posthistory.userid"] = "user_id"
+
+JOIN_MAP_STATS["postHistory.Id"] = "history_id"
+JOIN_MAP_STATS["postHistory.PostId"] = "post_id"
+JOIN_MAP_STATS["postHistory.UserId"] = "user_id"
+
+# JOIN_MAP_STATS["postlinks.id"] = "link_id"
+# JOIN_MAP_STATS["postlinks.postid"] = "post_id"
+# JOIN_MAP_STATS["postlinks.relatedpostid"] = "post_id"
+# JOIN_MAP_STATS["postlinks.linktypeid"] = "link_type_id"
+
+JOIN_MAP_STATS["postLinks.Id"] = "link_id"
+JOIN_MAP_STATS["postLinks.PostId"] = "post_id"
+JOIN_MAP_STATS["postLinks.RelatedPostId"] = "post_id"
+JOIN_MAP_STATS["postLinks.LinkTypeId"] = "link_type_id"
+
+# JOIN_MAP_STATS["posts.id"] = "post_id"
+# JOIN_MAP_STATS["posts.posttypeid"] = "post_type_id"
+# JOIN_MAP_STATS["posts.owneruserid"] = "user_id"
+# JOIN_MAP_STATS["posts.lasteditoruserid"] = "user_id"
+
+JOIN_MAP_STATS["posts.Id"] = "post_id"
+JOIN_MAP_STATS["posts.PostTypeId"] = "post_type_id"
+JOIN_MAP_STATS["posts.OwnerUserId"] = "user_id"
+JOIN_MAP_STATS["posts.LastEditorUserId"] = "user_id"
+
+
+# JOIN_MAP_STATS["tags.id"] = "tag_id"
+# JOIN_MAP_STATS["tags.excerptpostid"] = "post_id"
+JOIN_MAP_STATS["tags.Id"] = "tag_id"
+JOIN_MAP_STATS["tags.ExcerptPostId"] = "post_id"
+
+# JOIN_MAP_STATS["users.id"] = "user_id"
+JOIN_MAP_STATS["users.Id"] = "user_id"
+
+# JOIN_MAP_STATS["votes.id"] = "vote_id"
+# JOIN_MAP_STATS["votes.postid"] = "post_id"
+# JOIN_MAP_STATS["votes.userid"] = "user_id"
+JOIN_MAP_STATS["votes.Id"] = "vote_id"
+JOIN_MAP_STATS["votes.PostId"] = "post_id"
+JOIN_MAP_STATS["votes.UserId"] = "user_id"
+
+# JOIN_KEY_MAX_TMP = """SELECT COUNT(*), {COL} FROM {TABLE} GROUP BY {COL} ORDER BY COUNT(*) DESC LIMIT 1"""
+# JOIN_KEY_MIN_TMP = """SELECT COUNT(*), {COL} FROM {TABLE} GROUP BY {COL} ORDER BY COUNT(*) ASC LIMIT 1"""
+# JOIN_KEY_AVG_TMP = """SELECT AVG(count) FROM (SELECT COUNT(*) AS count, {COL} FROM {TABLE} GROUP BY {COL} ORDER BY COUNT(*)) AS tmp"""
+# JOIN_KEY_VAR_TMP = """SELECT VARIANCE(count) FROM (SELECT COUNT(*) AS count, {COL} FROM {TABLE} GROUP BY {COL} ORDER BY COUNT(*)) AS tmp"""
+# JOIN_KEY_COUNT_TMP = """SELECT COUNT({COL}) FROM {TABLE}"""
+# JOIN_KEY_DISTINCT_TMP = """SELECT COUNT(DISTINCT {COL}) FROM {TABLE}"""
+
+JOIN_KEY_MAX_TMP = """SELECT COUNT(*), "{COL}" FROM "{TABLE}" GROUP BY "{COL}" ORDER BY COUNT(*) DESC LIMIT 1"""
+JOIN_KEY_MIN_TMP = """SELECT COUNT(*), "{COL}" FROM "{TABLE}" GROUP BY "{COL}" ORDER BY COUNT(*) ASC LIMIT 1"""
+JOIN_KEY_AVG_TMP = """SELECT AVG(count) FROM (SELECT COUNT(*) AS count, "{COL}" FROM "{TABLE}" GROUP BY "{COL}" ORDER BY COUNT(*)) AS tmp"""
+JOIN_KEY_VAR_TMP = """SELECT VARIANCE(count) FROM (SELECT COUNT(*) AS count, "{COL}" FROM "{TABLE}" GROUP BY "{COL}" ORDER BY COUNT(*)) AS tmp"""
+JOIN_KEY_COUNT_TMP = """SELECT COUNT("{COL}") FROM "{TABLE}" """
+JOIN_KEY_DISTINCT_TMP = """SELECT COUNT(DISTINCT "{COL}") FROM "{TABLE}" """
 
 # TODO:
 NULL_FRAC_TMP = """SELECT null_frac FROM pg_stats WHERE tablename='{TABLE}' AND attname = '{COL}'"""
@@ -95,8 +184,9 @@ SELECT_ALL_COL_TEMPLATE = "SELECT {COL} FROM {TABLE} WHERE {COL} IS NOT NULL"
 ALIAS_FORMAT = "{TABLE} AS {ALIAS}"
 MIN_TEMPLATE = "SELECT {COL} FROM {TABLE} WHERE {COL} IS NOT NULL ORDER BY {COL} ASC LIMIT 1"
 MAX_TEMPLATE = "SELECT {COL} FROM {TABLE} WHERE {COL} IS NOT NULL ORDER BY {COL} DESC LIMIT 1"
-UNIQUE_VALS_TEMPLATE = "SELECT DISTINCT {COL} FROM {FROM_CLAUSE}"
-UNIQUE_COUNT_TEMPLATE = "SELECT COUNT(*) FROM (SELECT DISTINCT {COL} from {FROM_CLAUSE}) AS t"
+
+UNIQUE_VALS_TEMPLATE = """SELECT DISTINCT "{COL}" FROM {FROM_CLAUSE}"""
+UNIQUE_COUNT_TEMPLATE = """SELECT COUNT(*) FROM (SELECT DISTINCT "{COL}" from {FROM_CLAUSE}) AS t"""
 
 MCV_TEMPLATE= """SELECT most_common_vals,most_common_freqs FROM pg_stats WHERE tablename = '{TABLE}' and attname = '{COL}'"""
 
@@ -365,23 +455,35 @@ class Featurizer():
             if self.sample_bitmap:
                 sbitmaps = None
                 assert self.bitmap_dir is not None
+                # if "jobm" in qrep["template_name"]:
+                    # bitdir = "./queries/jobm_bitmaps/"
+                # elif "joblight" in qrep["template_name"]:
+                    # bitdir = "./queries/bitmaps/joblight_bitmaps/"
+                # elif "job" in qrep["template_name"]:
+                    # bitdir = "./queries/job_bitmaps/"
+                # else:
+                    # bitdir = self.bitmap_dir
+
                 if "jobm" in qrep["template_name"]:
+                    assert False
                     bitdir = "./queries/jobm_bitmaps/"
                 elif "joblight" in qrep["template_name"]:
-                    bitdir = "./queries/bitmaps/joblight_bitmaps/"
+                    # bitdir = "./queries/bitmaps/joblight_bitmaps/"
+                    bitdir = "./queries/allbitmaps/joblight_bitmaps/sample_bitmap"
                 elif "job" in qrep["template_name"]:
-                    bitdir = "./queries/job_bitmaps/"
+                    bitdir = "./queries/allbitmaps/job_bitmaps/sample_bitmap"
+                elif "stats_train" in qrep["template_name"]:
+                    bitdir = "./queries/allbitmaps/stats_train_bitmaps/sample_bitmap/"
+                elif "stats" in qrep["template_name"]:
+                    bitdir = "./queries/allbitmaps/stats_bitmaps/sample_bitmap/"
                 else:
                     bitdir = self.bitmap_dir
 
                 bitmapfn = os.path.join(bitdir, qrep["name"])
 
-                # assert os.path.exists(bitmapfn)
-                # if not os.path.exists(bitmapfn):
-                    # print(bitmapfn)
-                    # pdb.set_trace()
                 if not os.path.exists(bitmapfn):
                     print(bitmapfn)
+                    # pdb.set_trace()
                     sbitmaps = None
                 else:
                     with open(bitmapfn, "rb") as handle:
@@ -450,6 +552,11 @@ class Featurizer():
         self.regex_templates = set()
 
     def update_max_sets(self, qreps):
+        if "stats" in qreps[0]["template_name"]:
+            self.join_col_map = JOIN_MAP_STATS
+        else:
+            self.join_col_map = JOIN_MAP_IMDB
+
         for qrep in qreps:
             if qrep["template_name"] not in self.templates:
                 self.templates.append(qrep["template_name"])
@@ -463,6 +570,9 @@ class Featurizer():
             num_preds = 0
             num_pred_vals = 0
             for node, info in node_data:
+                # if "pred_cols" not in info:
+                    # continue
+
                 num_preds += len(info["pred_cols"])
                 if len(info["pred_vals"]) == 0:
                     continue
@@ -480,17 +590,29 @@ class Featurizer():
                 # print(num_pred_vals)
                 # pdb.set_trace()
 
+            # kinda hacky
+            if self.max_preds > self.max_pred_vals:
+                self.max_pred_vals = self.max_preds
+
             num_joins = len(qrep["join_graph"].edges())
             if num_joins > self.max_joins:
                 self.max_joins = num_joins
 
         if self.join_bitmap:
-            self.max_joins = len(set(JOIN_COL_MAP.values()))
+            self.max_joins = len(set(self.join_col_map.values()))
+
+        print("Max tables: ", self.max_tables, "Max pred vals: ", self.max_pred_vals,
+                "Max joins: ", self.max_joins)
 
     def update_workload_stats(self, qreps):
         for qrep in qreps:
             cur_columns = []
             for node, info in qrep["join_graph"].nodes(data=True):
+                # if "pred_types" not in info:
+                    # print(info)
+                    # pdb.set_trace()
+                    # continue
+
                 for i, cmp_op in enumerate(info["pred_types"]):
                     self.cmp_ops.add(cmp_op)
                     if "like" in cmp_op:
@@ -616,6 +738,7 @@ class Featurizer():
             cursor.close()
             con.close()
             print("returning arbitrary large value for now")
+            # pdb.set_trace()
             return [[1000000]]
             # return None
 
@@ -1044,7 +1167,7 @@ class Featurizer():
             bitmap_feat_len += len(self.tables)
 
             # for real col
-            bitmap_feat_len += len(set(JOIN_COL_MAP.values()))
+            bitmap_feat_len += len(set(self.join_col_map.values()))
 
             if not self.bitmap_onehotmask:
                 self.featurizer_type_idxs["join_onehot"] = (0, bitmap_feat_len)
@@ -1099,7 +1222,7 @@ class Featurizer():
         elif self.featurization_type == "set":
             self._init_pred_featurizer_set()
 
-        real_join_cols = list(set(JOIN_COL_MAP.values()))
+        real_join_cols = list(set(self.join_col_map.values()))
         real_join_cols.sort()
         self.real_join_col_mapping = {}
         for rci,rc in enumerate(real_join_cols):
@@ -1349,9 +1472,14 @@ class Featurizer():
 
                 cols = join_str.split("=")
                 for ci, c in enumerate(cols):
-                    if c not in JOIN_COL_MAP:
-                        print("{} not in JOIN COL MAP".format(c))
-                    rcol = JOIN_COL_MAP[c]
+                    if c not in self.join_col_map:
+                        c = c.replace("\"", "")
+
+                    if c not in self.join_col_map:
+                        print("{} still not in JOIN COL MAP".format(c))
+                        pdb.set_trace()
+
+                    rcol = self.join_col_map[c]
                     tabname = c[0:c.find(".")]
                     real_join_tabs[rcol].append(tabname)
 
@@ -1363,7 +1491,7 @@ class Featurizer():
                     else:
                         assert False
 
-                    if ".id" in c:
+                    if ".id" in c.lower():
                         if bitmaps is None:
                             continue
                         if (curalias,) not in bitmaps:
@@ -1387,13 +1515,6 @@ class Featurizer():
                         alias_bm = join_bitmaps[(curalias,)]
                         # TODO: maybe handle this some other way?
                         if bitmap_key not in alias_bm:
-                            if "movie_id" in bitmap_key:
-                                pass
-                                # print("movie_id not in join bitmaps :/")
-                                # print(curalias)
-                                # print(cols)
-                                # print(bitmap_key)
-                                # pdb.set_trace()
                             continue
 
                         bitmap = set(alias_bm[bitmap_key])
@@ -1605,6 +1726,9 @@ class Featurizer():
         if use_onehot:
             feat_start,_ = self.featurizer_type_idxs["col_onehot"]
             # which column does the current feature belong to
+            if col not in self.columns_onehot_idx:
+                # print("{} not in columns_onehot_idx".format(col))
+                return
             cidx = self.columns_onehot_idx[col]
             pfeats[feat_start + cidx] = 1.0
 
@@ -1734,13 +1858,17 @@ class Featurizer():
                 tfeats = np.zeros(self.table_features_len)
                 # need to find its real table name from the join_graph
                 table = joingraph.nodes()[alias]["real_name"]
+                table = table.replace(" ", "")
+
                 if table not in self.seen_tabs:
-                    # print("skipping unseen tabs!")
+                    # print("skipping unseen tabs {}".format(table))
                     alltablefeats.append(tfeats)
+                    # pdb.set_trace()
                     continue
 
                 if table not in self.table_featurizer:
                     print("table: {} not found in featurizer".format(table))
+                    # pdb.set_trace()
                     # assert False
                     continue
                 # Note: same table might be set to 1.0 twice, in case of aliases
@@ -1755,23 +1883,30 @@ class Featurizer():
                         if self.feat_onlyseen_preds:
                             if table not in self.seen_bitmaps:
                                 print(table, " not in seen bitmaps")
-                                # pdb.set_trace()
+                                pdb.set_trace()
                                 continue
                             train_seenvals = self.seen_bitmaps[table]
 
+                        # print("Bitmap for {} is: ".format(alias))
+                        # print(bitmap)
+                        # pdb.set_trace()
                         for val in bitmap:
                             if self.feat_onlyseen_preds:
                                 if val not in train_seenvals:
-                                    # print(" {} not in seen bitmaps for {}".format(val, table))
                                     continue
-                                # else:
-                                    # print(" {} in seen bitmaps for {}".format(val, table))
-
                                 bitmapidx = val % self.sample_bitmap_buckets
+                                # bitmapidx = deterministic_hash(val) % self.sample_bitmap_buckets
                                 tfeats[startidx+bitmapidx] = 1.0
                             else:
                                 bitmapidx = val % self.sample_bitmap_buckets
+                                # bitmapidx = deterministic_hash(val) % self.sample_bitmap_buckets
                                 tfeats[startidx+bitmapidx] = 1.0
+                    else:
+                        print(self.sample_bitmap_key, " not in sb")
+                        pdb.set_trace()
+                # else:
+                    # print(bitmaps)
+                    # pdb.set_trace()
 
                 alltablefeats.append(tfeats)
 
@@ -1913,7 +2048,10 @@ class Featurizer():
         if len(allpredfeats) == 0:
             allpredfeats.append(np.zeros(self.max_pred_len))
 
-        assert len(allpredfeats) <= self.max_pred_vals
+        # assert len(allpredfeats) <= self.max_pred_vals
+        if not len(allpredfeats) <= self.max_pred_vals:
+            print(len(allpredfeats), self.max_pred_vals)
+            pdb.set_trace()
 
         featdict["pred"] = allpredfeats
         flow_features = []
@@ -2136,7 +2274,7 @@ class Featurizer():
 
             joincol = "".join([jc for jc in joincol if not jc.isdigit()])
 
-            realcol = JOIN_COL_MAP[joincol]
+            realcol = self.join_col_map[joincol]
             jcol_idx = self.real_join_col_mapping[realcol]
             flow_features[cur_idx + jcol_idx] = 1.0
             cur_idx += len(self.real_join_col_mapping)
@@ -2293,8 +2431,14 @@ class Featurizer():
             cur_idx += self.PG_EST_BUCKETS
 
         if self.card_type == "subplan":
+            if "expected" not in subsetg.nodes()[node]["cardinality"]:
+                print(node)
+                pdb.set_trace()
             pg_est = subsetg.nodes()[node]["cardinality"]["expected"]
-            total = subsetg.nodes()[node]["cardinality"]["total"]
+            try:
+                total = subsetg.nodes()[node]["cardinality"]["total"]
+            except:
+                total = None
             pg_est = self.normalize_val(pg_est, total)
 
         elif self.card_type == "joinkey":
@@ -2315,8 +2459,9 @@ class Featurizer():
 
     def unnormalize_torch(self, y, total):
         if self.ynormalization == "log":
-            est_cards = torch.exp((y + \
-                self.min_val)*(self.max_val-self.min_val))
+            est_cards = torch.exp((y + self.min_val)*(self.max_val-self.min_val))
+            ## wrong one??
+            # est_card = np.exp((y*(self.max_val-self.min_val) + self.min_val))
         elif self.ynormalization == "selectivity":
             est_cards = y*total
         elif self.ynormalization == "selectivity-log":
@@ -2332,9 +2477,14 @@ class Featurizer():
             est_card = (y*self.stdy) + self.meany
             if est_card <= 0:
                 est_card = 1
-
         elif self.ynormalization == "log":
-            est_card = np.exp((y*(self.max_val-self.min_val) + self.min_val))
+            ## wrong?
+            # est_card = np.exp((y*(self.max_val-self.min_val) + self.min_val))
+
+            # est_cards = torch.exp((y + \
+                # self.min_val)*(self.max_val-self.min_val))
+            est_card = np.exp((y + self.min_val)*(self.max_val-self.min_val))
+
         elif self.ynormalization == "minmax":
             est_card = (float(y) * (self.max_val-self.min_val)) + self.min_val
         elif self.ynormalization == "selectivity":
@@ -2381,11 +2531,16 @@ class Featurizer():
 
         table = column[0:column.find(".")]
         attr_name = column[column.find(".")+1:]
+        table = table.replace(" ", "")
+
         if table in self.aliases:
             table_real_name = self.aliases[table]
+        else:
+            return
 
         mcv_cmd = MCV_TEMPLATE.format(TABLE = table_real_name,
                                       COL = attr_name)
+
         mcvres = self.execute(mcv_cmd)
         if len(mcvres) == 0:
             return
@@ -2447,8 +2602,11 @@ class Featurizer():
             if node not in self.aliases:
                 self.aliases[node] = info["real_name"]
                 self.tables.add(info["real_name"])
+            if "pred_cols" not in info:
+                continue
 
             for col in info["pred_cols"]:
+                col = col.replace(" ", "")
                 cur_columns.append(col)
 
             if "implied_pred_cols" in info:
@@ -2479,6 +2637,7 @@ class Featurizer():
                 curtab = self.aliases[curalias]
                 # print("skipping join stats for: ", jkey)
                 # continue
+                print(curcol)
                 for si,tmp in enumerate(self.join_key_stat_tmps):
                     sname = self.join_key_stat_names[si]
                     execcmd = tmp.format(TABLE=curtab,
@@ -2526,6 +2685,7 @@ class Featurizer():
         ## features required for each column used in the DB
         updated_cols = []
         for column in cur_columns:
+            column = column.replace(" ", "")
             if column in self.column_stats:
                 continue
 
@@ -2533,8 +2693,11 @@ class Featurizer():
             jkey = column
             self.join_key_stats[jkey] = {}
             curalias = jkey[0:jkey.find(".")]
+            curalias = curalias.replace(" ", "")
             curcol = jkey[jkey.find(".")+1:]
+            curcol = curcol.replace(" ", "")
             curtab = self.aliases[curalias]
+
             for si,tmp in enumerate(self.join_key_stat_tmps):
                 sname = self.join_key_stat_names[si]
                 execcmd = tmp.format(TABLE=curtab,
@@ -2546,13 +2709,20 @@ class Featurizer():
                 self.join_key_stats[jkey][sname] = val
 
             updated_cols.append(column)
-            self._update_mcvs(column)
+
+            ## not using this for now
+            # self._update_mcvs(column)
 
             table = column[0:column.find(".")]
+            table = table.replace(" ", "")
+
             column_stats = {}
             if table in self.aliases:
                 table = ALIAS_FORMAT.format(TABLE = self.aliases[table],
                                     ALIAS = table)
+            else:
+                print(table)
+                pdb.set_trace()
 
             min_query = MIN_TEMPLATE.format(TABLE = table,
                                             COL   = column)

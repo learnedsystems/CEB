@@ -32,7 +32,7 @@ def read_flags():
     parser.add_argument("--reps", type=int, required=False,
             default=1)
     parser.add_argument("--timeout", type=int, required=False,
-            default=900000*8)
+            default=None)
     parser.add_argument("--rerun_timeouts", type=int, required=False,
             default=1)
     parser.add_argument("--db_name", type=str, required=False,
@@ -96,7 +96,9 @@ def execute_sql(sql, cost_model="cm1",
     # using the given cardinalities
     cursor.execute("SET join_collapse_limit = {}".format(32))
     cursor.execute("SET from_collapse_limit = {}".format(32))
-    cursor.execute("SET statement_timeout = {}".format(timeout))
+
+    if timeout is not None:
+        cursor.execute("SET statement_timeout = {}".format(timeout))
 
     start = time.time()
 

@@ -61,8 +61,8 @@ def eval_alg(alg, eval_funcs, qreps, samples_type, featurizer=None):
                 args.joinkey_basecard_type, args.joinkey_basecard_tables)
         assert len(ests) == len(qreps)
 
-    if samples_type == "test" and args.save_test_preds:
-        preds_dir = os.path.join(rdir, "test_preds")
+    if samples_type != "train" and args.save_test_preds:
+        preds_dir = os.path.join(rdir, samples_type + "-preds")
         make_dir(preds_dir)
         for i,qrep in enumerate(qreps):
             predfn = os.path.join(preds_dir, qrep["name"])

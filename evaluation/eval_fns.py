@@ -303,6 +303,61 @@ class QErrorJoinKey(EvalFunc):
         return errors
 
 class QError(EvalFunc):
+
+    def save_logs(self, qreps, errors, **kwargs):
+        result_dir = kwargs["result_dir"]
+        if result_dir is None:
+            return
+
+        if "samples_type" in kwargs:
+            samples_type = kwargs["samples_type"]
+        else:
+            samples_type = ""
+
+        num_table_errs = defaultdict(list)
+        didx = 0
+        qnames = []
+        qidxs = []
+
+        for i, qrep in enumerate(qreps):
+            nodes = list(qrep["subset_graph"].nodes())
+            if SOURCE_NODE in nodes:
+                nodes.remove(SOURCE_NODE)
+            nodes.sort()
+            for qi, node in enumerate(nodes):
+                numt = len(node)
+                if didx >= len(errors):
+                    assert False
+                    continue
+                qnames.append(qrep["name"])
+                qidxs.append(qi)
+                curerr = errors[didx]
+
+                num_table_errs[numt].append(curerr)
+                didx += 1
+
+        nts = list(num_table_errs.keys())
+        nts.sort()
+        # for nt in nts:
+            # if nt <= 3:
+                # print("{} Tables, QError mean: {}, 99p: {}".format(
+                    # nt, np.mean(num_table_errs[nt]),
+                    # np.percentile(num_table_errs[nt], 99)))
+
+
+        resfn = os.path.join(result_dir, self.__str__() + ".csv")
+
+        res = pd.DataFrame(data=errors, columns=["errors"])
+        res["samples_type"] = samples_type
+        res["qname"] = qnames
+        res["qidx"] = qidxs
+
+        # TODO: add other data?
+        if os.path.exists(resfn):
+            res.to_csv(resfn, mode="a",header=False)
+        else:
+            res.to_csv(resfn, header=True)
+
     def eval(self, qreps, preds, **kwargs):
         '''
         '''
@@ -315,40 +370,6 @@ class QError(EvalFunc):
         assert 0.00 not in yhat
 
         errors = np.maximum((ytrue / yhat), (yhat / ytrue))
-        # print(len(errors), np.max(errors), np.min(errors))
-
-        num_table_errs = defaultdict(list)
-        didx = 0
-
-        for i, qrep in enumerate(qreps):
-            nodes = list(qrep["subset_graph"].nodes())
-            if SOURCE_NODE in nodes:
-                nodes.remove(SOURCE_NODE)
-            nodes.sort()
-            # qidx = 0
-            for qi, node in enumerate(nodes):
-                numt = len(node)
-                if didx >= len(errors):
-                    continue
-                curerr = errors[didx]
-
-                ## debug code!
-                # if numt <= 2 and curerr > 100:
-                    # if ytrue[didx] >= TIMEOUT_CARD:
-                        # continue
-                    # print(node, ytrue[didx], yhat[didx], curerr)
-                    # pdb.set_trace()
-
-                num_table_errs[numt].append(curerr)
-                didx += 1
-
-        nts = list(num_table_errs.keys())
-        nts.sort()
-        # for nt in nts:
-            # if nt <= 3:
-                # print("{} Tables, QError mean: {}, 99p: {}".format(
-                    # nt, np.mean(num_table_errs[nt]),
-                    # np.percentile(num_table_errs[nt], 99)))
 
         if kwargs["result_dir"] is not None:
             self.save_logs(qreps, errors, **kwargs)

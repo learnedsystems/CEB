@@ -434,14 +434,17 @@ class CardSetTransformer(nn.Module):
             combined_size = sample_hid_units + pred_hid_units + join_hid_units
             combined_hid_units = int(combined_size * hid_units)
         else:
-            sample_hid_units = int(min(hid_units, int(2*sample_feats)))
-            pred_hid_units = int(min(hid_units, int(2*predicate_feats)))
-            join_hid_units = int(min(hid_units, int(2*join_feats)))
-
+            # sample_hid_units = int(min(hid_units, int(2*sample_feats)))
+            # pred_hid_units = int(min(hid_units, int(2*predicate_feats)))
+            # join_hid_units = int(min(hid_units, int(2*join_feats)))
             ## need to make these multiples of NUM_HEADS
             # sample_hid_units = int(round(sample_hid_units / float(NUM_HEADS))*NUM_HEADS)
             # pred_hid_units = int(round(pred_hid_units / float(NUM_HEADS))*NUM_HEADS)
             # join_hid_units = int(round(join_hid_units / float(NUM_HEADS))*NUM_HEADS)
+
+            sample_hid_units = hid_units
+            pred_hid_units = hid_units
+            join_hid_units = hid_units
 
             # sample_hid_units = hid_units
             # pred_hid_units = hid_units
@@ -449,22 +452,39 @@ class CardSetTransformer(nn.Module):
             combined_size = sample_hid_units + pred_hid_units + join_hid_units
             combined_hid_units = int(hid_units)
 
+        self.sample_mlps = nn.ModuleList()
+        self.predicate_mlps = nn.ModuleList()
+
         if self.sample_feats != 0:
-            self.sample_transformer = SetTransformer(sample_feats,
-                                                  1,
-                                                  sample_hid_units,
-                                                  dim_hidden=sample_hid_units,
-                                                  num_heads=NUM_HEADS,
-                                                  ln=False).to(device)
+            sample_mlp1 = nn.Linear(sample_feats, sample_hid_units).to(device)
+            self.sample_mlps.append(sample_mlp1)
+            for i in range(0, self.num_hidden_layers-1):
+                self.sample_mlps.append(nn.Linear(sample_hid_units,
+                    sample_hid_units).to(device))
 
         if self.predicate_feats != 0:
-            print(predicate_feats)
-            self.predicate_transformer = SetTransformer(predicate_feats,
-                                                        1,
-                                                        pred_hid_units,
-                                                        dim_hidden=pred_hid_units,
-                                                        num_heads=NUM_HEADS,
-                                                        ln=False).to(device)
+            predicate_mlp1 = nn.Linear(predicate_feats, pred_hid_units).to(device)
+            self.predicate_mlps.append(predicate_mlp1)
+            for i in range(0, self.num_hidden_layers-1):
+                self.predicate_mlps.append(nn.Linear(pred_hid_units,
+                    pred_hid_units).to(device))
+
+        # if self.sample_feats != 0:
+            # self.sample_transformer = SetTransformer(sample_feats,
+                                                  # 1,
+                                                  # sample_hid_units,
+                                                  # dim_hidden=sample_hid_units,
+                                                  # num_heads=NUM_HEADS,
+                                                  # ln=False).to(device)
+
+        # if self.predicate_feats != 0:
+            # print(predicate_feats)
+            # self.predicate_transformer = SetTransformer(predicate_feats,
+                                                        # 1,
+                                                        # pred_hid_units,
+                                                        # dim_hidden=pred_hid_units,
+                                                        # num_heads=NUM_HEADS,
+                                                        # ln=False).to(device)
 
         if self.join_feats != 0:
             self.join_transformer = SetTransformer(join_feats,
@@ -502,17 +522,58 @@ class CardSetTransformer(nn.Module):
 
         tocat = []
         if self.sample_feats != 0:
+            ## transformer code
+            # samples = samples.to(device, non_blocking=True)
+            # samples = self.inp_drop_layer(samples)
+            # hid_sample = self.sample_transformer(samples)
+            # hid_sample = hid_sample.squeeze(1)
+            # tocat.append(hid_sample)
+
+            ## set convolution code
             samples = samples.to(device, non_blocking=True)
             samples = self.inp_drop_layer(samples)
-            hid_sample = self.sample_transformer(samples)
-            hid_sample = hid_sample.squeeze(1)
+
+            hid_sample = samples
+            for i in range(0, self.num_hidden_layers):
+                hid_sample = F.relu(self.sample_mlps[i](hid_sample))
+                hid_sample = self.hl_drop_layer(hid_sample)
+
+            sample_mask = sample_mask.to(device, non_blocking=True)
+            hid_sample = hid_sample * sample_mask
+            hid_sample = torch.sum(hid_sample, dim=1, keepdim=False)
+
+            if torch.sum(sample_mask) == 0:
+                hid_sample = torch.zeros(hid_sample.shape).squeeze()
+            else:
+                sample_norm = sample_mask.sum(1, keepdim=False)
+                hid_sample = hid_sample / sample_norm
+                hid_sample = hid_sample.squeeze()
+
             tocat.append(hid_sample)
 
         if self.predicate_feats != 0:
+            ## transformer code
+            # predicates = predicates.to(device, non_blocking=True)
+            # predicates = self.inp_drop_layer(predicates)
+            # hid_predicate = self.predicate_transformer(predicates)
+            # hid_predicate = hid_predicate.squeeze(1)
+            # tocat.append(hid_predicate)
+
+            ## set conv code
             predicates = predicates.to(device, non_blocking=True)
+            predicate_mask = predicate_mask.to(device, non_blocking=True)
             predicates = self.inp_drop_layer(predicates)
-            hid_predicate = self.predicate_transformer(predicates)
-            hid_predicate = hid_predicate.squeeze(1)
+
+            hid_predicate = predicates
+            for i in range(0, self.num_hidden_layers):
+                hid_predicate = F.relu(self.predicate_mlps[i](hid_predicate))
+                hid_predicate = self.hl_drop_layer(hid_predicate)
+
+            hid_predicate = hid_predicate * predicate_mask
+            hid_predicate = torch.sum(hid_predicate, dim=1, keepdim=False)
+            predicate_norm = predicate_mask.sum(1, keepdim=False)
+            hid_predicate = hid_predicate / predicate_norm
+            hid_predicate = hid_predicate.squeeze()
             tocat.append(hid_predicate)
 
         if self.join_feats != 0:

@@ -1437,6 +1437,36 @@ class Featurizer():
             if bool(re.search(r'\d', regex_val)):
                 pfeats[pred_idx_start + num_buckets + 1] = 1
 
+    def _find_join_bitmaps(self, alias, join_bitmaps, bitmaps,
+            joingraph):
+        # find all potential join keys in this table
+        ret_bitmaps = {}
+        tab = joingraph.nodes()[alias]["real_name"]
+        for join_key, join_real in self.join_col_map.items():
+            if ".id" in join_key.lower():
+                continue
+            if "posttypeid" in join_key.lower():
+                continue
+            join_key_col1 = join_key[join_key.find(".")+1:]
+            join_tab = join_key[:join_key.find(".")]
+
+            if tab == join_tab:
+                newid = join_key[join_key.find(".")+1:]
+                bitmap_key = NEW_JOIN_TABLE_TEMPLATE.format(TABLE=tab,
+                                               JOINKEY = join_real,
+                                               SS = "sb",
+                                               NUM = self.sample_bitmap_num)
+                if (alias,) not in join_bitmaps:
+                    print(alias, " not in join bitmaps")
+                    continue
+                alias_bm = join_bitmaps[(alias,)]
+                if bitmap_key not in alias_bm:
+                    continue
+                jbitmap = set(alias_bm[bitmap_key])
+                ret_bitmaps[join_real] = jbitmap
+
+        return ret_bitmaps
+
     def _handle_join_bitmaps(self, subplan, join_bitmaps,
             bitmaps,
             joingraph):
@@ -1457,10 +1487,18 @@ class Featurizer():
         real_join_tabs = defaultdict(list)
 
         if len(subplan) == 1:
-            return real_join_cols
+            return join_features
 
         seenjoins = set()
         for alias1 in subplan:
+            alias_jbitmaps  = self._find_join_bitmaps(alias1, join_bitmaps,
+                                                         bitmaps, joingraph)
+            for rcol, rbm in alias_jbitmaps.items():
+                real_join_cols[rcol].append(rbm)
+
+            ## maybe this stuff is just not required?
+            ## probably need it for the id special case -- can handle that in
+            ## _find_join_bitmaps too maybe?
             for alias2 in subplan:
                 ekey = (alias1, alias2)
                 if ekey not in joingraph.edges():
@@ -1492,6 +1530,7 @@ class Featurizer():
                         assert False
 
                     if ".id" in c.lower():
+                        # sample bitmap
                         if bitmaps is None:
                             continue
                         if (curalias,) not in bitmaps:
@@ -1534,7 +1573,6 @@ class Featurizer():
             for table in alltabs:
                 if table not in self.table_featurizer:
                     print("table: {} not found in featurizer".format(table))
-                    # assert False
                     continue
                 # Note: same table might be set to 1.0 twice, in case of aliases
                 features[cur_idx + self.table_featurizer[table]] = 1.00
@@ -1545,6 +1583,10 @@ class Featurizer():
             jcol_idx = self.real_join_col_mapping[rc]
             features[cur_idx + jcol_idx] = 1.0
             cur_idx += len(self.real_join_col_mapping)
+
+            # if rc != "movie_id":
+                # print(rc, len(real_join_cols[rc]))
+                # pdb.set_trace()
 
             # bitmap intersection
             bitmap_int = set.intersection(*real_join_cols[rc])

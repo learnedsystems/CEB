@@ -2,11 +2,13 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 import torch.nn.functional as F
+import time
 import math
 from .set_transformer import SetTransformer
 import pdb
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+DEBUG_TIMES=False
 
 class SimpleRegression(torch.nn.Module):
     def __init__(self, input_width, n_output,
@@ -44,11 +46,21 @@ class SimpleRegression(torch.nn.Module):
 
 # minor modifications on the MSCN model in Kipf et al.
 class SetConv(nn.Module):
-    def __init__(self, sample_feats, predicate_feats, join_feats, flow_feats,
+    def __init__(self, sample_feats, predicate_feats, join_feats,
+            flow_feats,
             hid_units,
+            other_hid_units,
             num_hidden_layers=2, n_out=1,
             dropouts=[0.0, 0.0, 0.0], use_sigmoid=True):
         super(SetConv, self).__init__()
+
+        ## debug time code
+        self.total_fwd_time = 0.0
+
+        hid_units = int(hid_units)
+        if other_hid_units is not None:
+            other_hid_units = int(other_hid_units)
+
         self.use_sigmoid = use_sigmoid
 
         self.sample_feats = sample_feats
@@ -81,7 +93,12 @@ class SetConv(nn.Module):
             pred_hid_units = int(min(hid_units, int(2*predicate_feats)))
             join_hid_units = int(min(hid_units, int(2*join_feats)))
             combined_size = sample_hid_units + pred_hid_units + join_hid_units
-            combined_hid_units = int(hid_units)
+
+            if other_hid_units is None:
+                combined_hid_units = hid_units
+            else:
+                combined_hid_units = other_hid_units
+
 
         if self.sample_feats != 0:
             sample_mlp1 = nn.Linear(sample_feats, sample_hid_units).to(device)
@@ -89,6 +106,7 @@ class SetConv(nn.Module):
             for i in range(0, self.num_hidden_layers-1):
                 self.sample_mlps.append(nn.Linear(sample_hid_units,
                     sample_hid_units).to(device))
+
 
         if self.predicate_feats != 0:
             predicate_mlp1 = nn.Linear(predicate_feats, pred_hid_units).to(device)
@@ -121,6 +139,8 @@ class SetConv(nn.Module):
         '''
         #TODO: describe shapes
         '''
+        start = time.time()
+
         samples = xbatch["table"]
         predicates = xbatch["pred"]
         joins = xbatch["join"]
@@ -208,6 +228,9 @@ class SetConv(nn.Module):
 
             tocat.append(hid_join)
 
+        if DEBUG_TIMES:
+            inplayer_time = time.time()-start
+
         if self.flow_feats:
             flows = flows.to(device, non_blocking=True)
             flows = self.inp_drop_layer(flows)
@@ -225,9 +248,6 @@ class SetConv(nn.Module):
 
         hid = self.combined_drop_layer(hid)
 
-        # print(hid.shape)
-        # pdb.set_trace()
-
         hid = F.relu(self.out_mlp1(hid))
         if self.flow_feats:
             hid = torch.cat([hid, flows], 1)
@@ -236,6 +256,13 @@ class SetConv(nn.Module):
             out = torch.sigmoid(self.out_mlp2(hid))
         else:
             out = self.out_mlp2(hid)
+
+        total_time = time.time()-start
+
+        if DEBUG_TIMES:
+            # print("Ratio total / input layer: ", round(inplayer_time / total_time, 6))
+            self.total_fwd_time += total_time - inplayer_time
+
         return out
 
 class SetConvFlow(nn.Module):

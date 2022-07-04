@@ -34,6 +34,7 @@ JOIN_MAP_IMDB["movie_keyword.keyword_id"] = "keyword"
 JOIN_MAP_IMDB["keyword.id"] = "keyword"
 
 JOIN_MAP_IMDB["name.id"] = "person_id"
+JOIN_MAP_IMDB["aka_name.id"] = "person_id"
 JOIN_MAP_IMDB["person_info.person_id"] = "person_id"
 JOIN_MAP_IMDB["cast_info.person_id"] = "person_id"
 JOIN_MAP_IMDB["aka_name.person_id"] = "person_id"
@@ -41,6 +42,7 @@ JOIN_MAP_IMDB["aka_name.person_id"] = "person_id"
 # JOIN_MAP_IMDB["a.person_id"] = "person_id"
 
 JOIN_MAP_IMDB["title.kind_id"] = "kind_id"
+JOIN_MAP_IMDB["aka_title.kind_id"] = "kind_id"
 JOIN_MAP_IMDB["kind_type.id"] = "kind_id"
 
 JOIN_MAP_IMDB["cast_info.role_id"] = "role_id"
@@ -469,13 +471,18 @@ class Featurizer():
                     bitdir = "./queries/jobm_bitmaps/"
                 elif "joblight" in qrep["template_name"]:
                     # bitdir = "./queries/bitmaps/joblight_bitmaps/"
-                    bitdir = "./queries/allbitmaps/joblight_bitmaps/sample_bitmap"
+                    bitdir = "./queries/allbitmaps/joblight_bitmaps2/sample_bitmap"
                 elif "job" in qrep["template_name"]:
-                    bitdir = "./queries/allbitmaps/job_bitmaps/sample_bitmap"
+                    # bitdir = "./queries/allbitmaps/job_bitmaps/sample_bitmap"
+                    bitdir = "./queries/allbitmaps/job_bitmaps2/sample_bitmap"
                 elif "stats_train" in qrep["template_name"]:
                     bitdir = "./queries/allbitmaps/stats_train_bitmaps/sample_bitmap/"
                 elif "stats" in qrep["template_name"]:
                     bitdir = "./queries/allbitmaps/stats_bitmaps/sample_bitmap/"
+                elif "simple_imdb_train" in qrep["template_name"]:
+                    bitdir = "./queries/allbitmaps/simple_imdb_bitmaps/sample_bitmap/"
+                elif "imdb_train" in qrep["template_name"]:
+                    bitdir = "./queries/allbitmaps/imdb_train_bitmaps/sample_bitmap/"
                 else:
                     bitdir = self.bitmap_dir
 
@@ -570,8 +577,6 @@ class Featurizer():
             num_preds = 0
             num_pred_vals = 0
             for node, info in node_data:
-                # if "pred_cols" not in info:
-                    # continue
 
                 num_preds += len(info["pred_cols"])
                 if len(info["pred_vals"]) == 0:
@@ -608,20 +613,15 @@ class Featurizer():
         for qrep in qreps:
             cur_columns = []
             for node, info in qrep["join_graph"].nodes(data=True):
-                # if "pred_types" not in info:
-                    # print(info)
-                    # pdb.set_trace()
-                    # continue
-
                 for i, cmp_op in enumerate(info["pred_types"]):
                     self.cmp_ops.add(cmp_op)
                     if "like" in cmp_op:
                         self.regex_cols.add(info["pred_cols"][i])
                         self.regex_templates.add(qrep["template_name"])
+                self.tables.add(info["real_name"])
 
                 if node not in self.aliases:
                     self.aliases[node] = info["real_name"]
-                    self.tables.add(info["real_name"])
                     # also without the ints
                     node2 = "".join([n1 for n1 in node if not n1.isdigit()])
                     self.aliases[node2] = info["real_name"]
@@ -643,6 +643,7 @@ class Featurizer():
 
         print("max pred vals: {}".format(self.max_pred_vals))
         print("Seen comparison operators: ", self.cmp_ops)
+        print("Tables: ", self.tables)
 
         # if self.set_column_feature == "debug":
             # print(self.cmp_ops)
@@ -1573,6 +1574,7 @@ class Featurizer():
             for table in alltabs:
                 if table not in self.table_featurizer:
                     print("table: {} not found in featurizer".format(table))
+                    pdb.set_trace()
                     continue
                 # Note: same table might be set to 1.0 twice, in case of aliases
                 features[cur_idx + self.table_featurizer[table]] = 1.00
@@ -1625,8 +1627,11 @@ class Featurizer():
             keys = ",".join(keys)
             if keys not in self.join_featurizer:
                 print("join_str: {} not found in featurizer".format(join_str))
-                # return jfeats
-                pass
+                # print(join_str)
+                # print(self.join_featurizer)
+                # pdb.set_trace()
+                return jfeats
+                # pass
             else:
                 jfeats[self.join_featurizer[keys]] = 1.00
 
@@ -1910,6 +1915,8 @@ class Featurizer():
 
                 if table not in self.table_featurizer:
                     print("table: {} not found in featurizer".format(table))
+                    alltablefeats.append(tfeats)
+                    pdb.set_trace()
                     # pdb.set_trace()
                     # assert False
                     continue
@@ -1944,8 +1951,10 @@ class Featurizer():
                                 # bitmapidx = deterministic_hash(val) % self.sample_bitmap_buckets
                                 tfeats[startidx+bitmapidx] = 1.0
                     else:
-                        print(self.sample_bitmap_key, " not in sb")
-                        pdb.set_trace()
+                        pass
+                        # print(self.sample_bitmap_key, " not in sb")
+                        # continue
+                        # pdb.set_trace()
                 # else:
                     # print(bitmaps)
                     # pdb.set_trace()
@@ -2095,7 +2104,11 @@ class Featurizer():
             print(len(allpredfeats), self.max_pred_vals)
             pdb.set_trace()
 
-        featdict["pred"] = allpredfeats
+        if self.pred_features:
+            featdict["pred"] = allpredfeats
+        else:
+            featdict["pred"] = []
+
         flow_features = []
 
         if self.flow_features:

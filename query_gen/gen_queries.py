@@ -8,14 +8,12 @@ import klepto
 from multiprocessing import Pool
 import multiprocessing
 import toml
-# from db_utils.query_storage import *
-from utils.utils import *
+
 import json
 import pickle
 
-# from sql_rep.query import parse_sql
-# from sql_rep.utils import *
 from query_representation.query import *
+from query_representation.utils import *
 from query_gen.query_generator import *
 import time
 import glob
@@ -42,7 +40,7 @@ def remove_doubles(query_strs):
     seen_samples = set()
     for q in query_strs:
         if q in seen_samples:
-            print(q)
+            # print(q)
             continue
         seen_samples.add(q)
         newq.append(q)
@@ -80,7 +78,8 @@ def main():
         print("after verifying, and removing doubles: ", len(query_strs))
 
         for i, sql in enumerate(query_strs):
-            qrep = parse_sql(sql)
+            qrep = parse_sql(sql, args.user, args.db_name, args.db_host,
+                    args.port, args.pwd, compute_ground_truth=False)
             qrep_fn = out_dir + "/" + str(deterministic_hash(sql)) + ".pkl"
             with open(qrep_fn, "wb") as f:
                 pickle.dump(qrep, f, protocol=pickle.HIGHEST_PROTOCOL)
@@ -93,13 +92,13 @@ def read_flags():
     parser.add_argument("--db_host", type=str, required=False,
             default="localhost")
     parser.add_argument("--user", type=str, required=False,
-            default="arthurfleck")
+            default="ceb")
     parser.add_argument("--pwd", type=str, required=False,
             default="password")
     parser.add_argument("--template_dir", type=str, required=False,
             default=None)
     parser.add_argument("--port", type=str, required=False,
-            default=5401)
+            default=5432)
     parser.add_argument("--query_output_dir", type=str, required=False,
             default=None)
     parser.add_argument("-n", "--num_samples_per_template", type=int,

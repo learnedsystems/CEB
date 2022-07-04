@@ -30,6 +30,7 @@ import random
 import pickle
 
 QERR_MIN_EPS=0.0000001
+DEBUG_TIMES=False
 
 def qloss_torch(yhat, ytrue):
     assert yhat.shape == ytrue.shape
@@ -363,6 +364,21 @@ class NN(CardinalityEstimationAlg):
                     wandb.log({str(efunc)+"-"+st: err, "epoch":self.epoch})
                     curerrs[str(efunc)+"-"+st] = round(err,4)
 
+                    median_err = np.median(errors)
+                    p90 = np.percentile(errors, 90)
+                    p99 = np.percentile(errors, 99)
+
+                    wandb.log({str(efunc)+"-"+st+"-median": median_err,
+                        "epoch":self.epoch})
+                    # wandb.log({str(efunc)+"-"+st+"-90p": p90,
+                        # "epoch":self.epoch})
+                    # wandb.log({str(efunc)+"-"+st+"-99p": p99,
+                        # "epoch":self.epoch})
+
+                    curerrs[str(efunc)+"-"+st+"-median"] = round(median_err,4)
+                    curerrs[str(efunc)+"-"+st+"-90p"] = round(p90,4)
+                    curerrs[str(efunc)+"-"+st+"-99p"] = round(p99,4)
+
         if self.early_stopping == 2:
             self.all_errs.append(curerrs)
 
@@ -521,7 +537,7 @@ class NN(CardinalityEstimationAlg):
                     elif "stats" in evalqname:
                         evalqname = "Stats-CEB"
 
-                    if len(cur_evalqs) > 300:
+                    if len(cur_evalqs) > 600:
                         ns = int(len(cur_evalqs) / 10)
                         random.seed(42)
                         cur_evalqs = random.sample(cur_evalqs, ns)
@@ -565,9 +581,9 @@ class NN(CardinalityEstimationAlg):
 
         for self.epoch in range(0,total_epochs):
 
-            # if self.epoch % self.eval_epoch == 0 \
-                    # and self.epoch != 0:
-            if self.epoch % self.eval_epoch == 0:
+            # if self.epoch % self.eval_epoch == 0:
+            if self.epoch % self.eval_epoch == 0 \
+                    and self.epoch != 0:
                 self.periodic_eval()
 
             self.train_one_epoch()
@@ -615,7 +631,7 @@ class NN(CardinalityEstimationAlg):
                     self.best_model_epoch = self.epoch-1
                     break
 
-        self.periodic_eval()
+        # self.periodic_eval()
 
         if self.training_opt == "swa":
             torch.optim.swa_utils.update_bn(self.trainloader, self.swa_net)
@@ -636,11 +652,18 @@ class NN(CardinalityEstimationAlg):
         else:
             net = self.net
 
+        if DEBUG_TIMES:
+            torch.set_num_threads(1)
+            start = time.time()
+            batchsize = 2
+        else:
+            batchsize = self.mb_size
+
         # important to not shuffle the data so correct order preserved!
         # also, assuming we are not loading everything in memory for
         # evaluation stuff, therefore collate_fn set
         loader = data.DataLoader(ds,
-                batch_size=self.mb_size, shuffle=False,
+                batch_size=batchsize, shuffle=False,
                 collate_fn = self.collate_fn
                 )
 
@@ -682,6 +705,13 @@ class NN(CardinalityEstimationAlg):
 
             allpreds.append(pred)
             allys.append(ybatch)
+
+        if DEBUG_TIMES:
+            print("eval ds for {} took: {}".format(len(allpreds[0])*len(allpreds),
+                round((time.time()-start)*1000, 6)))
+            print("excluding input layer time: ", round(net.total_fwd_time*1000, 6))
+
+            pdb.set_trace()
 
         preds = torch.cat(allpreds).detach().cpu().numpy()
         ys = torch.cat(allys).detach().cpu().numpy()

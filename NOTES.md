@@ -1,8 +1,12 @@
 
 # TODO
 
+# New simple workloads
 
-* fix samples\_type info
+* separate\_sqls.py
+* convert\_....py
+* get_query_cardinalities.py
+* update_qrep_preds.py
 
 # Creating join bitmaps / sample bitmaps
 

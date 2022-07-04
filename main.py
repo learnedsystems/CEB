@@ -203,6 +203,7 @@ def get_alg(alg):
                 optimizer_name=args.optimizer_name,
                 clip_gradient=args.clip_gradient,
                 loss_func_name = args.loss_func_name,
+                other_hid_units = args.other_hid_units,
                 hidden_layer_size = args.hidden_layer_size)
 
     elif alg == "mstn":
@@ -513,7 +514,7 @@ def load_qdata(fns):
     for qfn in fns:
         qrep = load_qrep(qfn)
 
-        if "job" in qfn:
+        if "job" in qfn and "joblight" not in qfn:
             # TODO: need to fix the != case
             update_job_parsing(qrep)
 
@@ -536,11 +537,13 @@ def load_qdata(fns):
                 break
             if "actual" not in qrep["subset_graph"].nodes()[node]["cardinality"]:
                 skip = True
-                break
+                continue
+                # break
 
             if qrep["subset_graph"].nodes()[node]["cardinality"]["actual"] \
                     >= TIMEOUT_CARD:
                 skip = True
+                # print("timeout card found!")
                 break
 
             if qrep["subset_graph"].nodes()[node]["cardinality"]["actual"] \
@@ -647,6 +650,7 @@ def get_featurizer(trainqs, valqs, testqs, eval_qs):
             featurization_type=feat_type,
             card_type = card_type,
             table_features=args.table_features,
+            pred_features = args.pred_features,
             flow_features = args.flow_features,
             join_features=args.join_features,
             set_column_feature=args.set_column_feature,
@@ -877,11 +881,11 @@ def read_flags():
             default=0)
 
     parser.add_argument("--bitmap_dir", type=str, required=False,
-            default="./queries/allbitmaps/imdb_bitmaps/sample_bitmap")
+            default="./queries/allbitmaps/imdb_bitmaps2/sample_bitmap")
     # parser.add_argument("--join_bitmap_dir", type=str, required=False,
             # default="./queries/join_bitmaps_up/")
     parser.add_argument("--join_bitmap_dir", type=str, required=False,
-            default="./queries/allbitmaps/imdb_bitmaps/join_bitmap")
+            default="./queries/allbitmaps/imdb_bitmaps2/join_bitmap")
 
     parser.add_argument("--joinkey_basecard_type", type=str, required=False,
             default="actual")
@@ -1044,8 +1048,11 @@ def read_flags():
 
     parser.add_argument("--num_hidden_layers", type=int,
             required=False, default=2)
+    parser.add_argument("--other_hid_units", type=float,
+            required=False, default=None)
     parser.add_argument("--hidden_layer_size", type=float,
             required=False, default=128)
+
     parser.add_argument("--load_query_together", type=int, required=False,
             default=0)
     parser.add_argument("--optimizer_name", type=str, required=False,
@@ -1061,6 +1068,8 @@ def read_flags():
             default=1)
     parser.add_argument("--join_features", type=str, required=False,
             default="onehot")
+    parser.add_argument("--pred_features", type=int, required=False,
+            default=1)
     parser.add_argument("--set_column_feature", type=str, required=False,
             default="onehot")
     parser.add_argument("--flow_features", type=int, required=False,
@@ -1079,9 +1088,9 @@ def read_flags():
             default=1000)
 
     parser.add_argument("--max_discrete_featurizing_buckets", type=int, required=False,
-            default=10)
+            default=1)
     parser.add_argument("--max_like_featurizing_buckets", type=int, required=False,
-            default=10)
+            default=1)
 
     parser.add_argument("--embedding_fn", type=str, required=False, default=None)
     parser.add_argument("--embedding_pooling", type=str, required=False, default=None)

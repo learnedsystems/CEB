@@ -457,14 +457,6 @@ class Featurizer():
             if self.sample_bitmap:
                 sbitmaps = None
                 assert self.bitmap_dir is not None
-                # if "jobm" in qrep["template_name"]:
-                    # bitdir = "./queries/jobm_bitmaps/"
-                # elif "joblight" in qrep["template_name"]:
-                    # bitdir = "./queries/bitmaps/joblight_bitmaps/"
-                # elif "job" in qrep["template_name"]:
-                    # bitdir = "./queries/job_bitmaps/"
-                # else:
-                    # bitdir = self.bitmap_dir
 
                 if "jobm" in qrep["template_name"]:
                     assert False
@@ -472,6 +464,10 @@ class Featurizer():
                 elif "joblight" in qrep["template_name"]:
                     # bitdir = "./queries/bitmaps/joblight_bitmaps/"
                     bitdir = "./queries/allbitmaps/joblight_bitmaps2/sample_bitmap"
+                elif "joblight-train-1980-all" in qrep["template_name"]:
+                    bitdir = "./queries/allbitmaps/joblight1980_bitmaps/sample_bitmap"
+                elif "joblight-train-1950-all" in qrep["template_name"]:
+                    bitdir = "./queries/allbitmaps/joblight1950_bitmaps/sample_bitmap"
                 elif "job" in qrep["template_name"]:
                     # bitdir = "./queries/allbitmaps/job_bitmaps/sample_bitmap"
                     bitdir = "./queries/allbitmaps/job_bitmaps2/sample_bitmap"
@@ -693,6 +689,7 @@ class Featurizer():
             maxval = np.max(y0)
 
         y = []
+
         for qrep in qreps:
             jg = qrep["join_graph"]
             for node,data in qrep["subset_graph"].nodes(data=True):
@@ -707,6 +704,9 @@ class Featurizer():
                         y.append(actual)
                 else:
                     y.append(actual)
+
+                if self.ynormalization == "selectivity":
+                    y[-1] = float(y[-1]) / data[self.ckey]["total"]
 
         y = np.array(y)
 
@@ -959,7 +959,7 @@ class Featurizer():
 
     def setup(self,
             bitmap_dir = None,
-            random_bitmap_idx = False,
+            # random_bitmap_idx = False,
             join_bitmap_dir = None,
             use_saved_feats = True,
             feat_onlyseen_maxy = False,
@@ -1596,13 +1596,13 @@ class Featurizer():
 
             for val in bitmap_int:
                 # TODO: check if seen condition or no
-                if self.random_bitmap_idx:
-                    # more robust?
-                    bitmapidx = random.randint(0, self.sample_bitmap_num-1)
-                    features[cur_idx+bitmapidx] = 1.0
-                else:
-                    bitmapidx = val % self.sample_bitmap_buckets
-                    features[cur_idx+bitmapidx] = 1.0
+                # if self.random_bitmap_idx:
+                    # # more robust?
+                    # bitmapidx = random.randint(0, self.sample_bitmap_num-1)
+                    # features[cur_idx+bitmapidx] = 1.0
+                # else:
+                bitmapidx = val % self.sample_bitmap_buckets
+                features[cur_idx+bitmapidx] = 1.0
 
             join_features.append(features)
 
@@ -2543,9 +2543,15 @@ class Featurizer():
         elif self.ynormalization == "minmax":
             est_card = (float(y) * (self.max_val-self.min_val)) + self.min_val
         elif self.ynormalization == "selectivity":
+            y = (y + self.min_val)*(self.max_val-self.min_val)
             est_card = y*total
+
         elif self.ynormalization == "selectivity-log":
             est_card = (np.exp(y)) * total
+
+        elif self.ynormalization == "log-selectivity":
+            y = y*np.log(total)
+            est_card = np.exp(y)
         else:
             assert False
 
@@ -2568,13 +2574,23 @@ class Featurizer():
         elif self.ynormalization == "minmax":
             ret =  (float(val) - self.min_val) / (self.max_val-self.min_val)
             return ret
+        # elif self.ynormalization == "selectivity":
+            # return float(val) / total
+
         elif self.ynormalization == "selectivity":
-            return float(val) / total
+            sel = float(val) / total
+            return (sel - self.min_val) / (self.max_val-self.min_val)
+
         elif self.ynormalization == "selectivity-log":
             sel = float(val) / total
             if sel == 0:
                 sel += 1
             logsel = np.log(sel)
+            return logsel
+        elif self.ynormalization == "log-selectivity":
+            logsel = np.log(float(val)) / np.log(total)
+            # if logsel == 0:
+                # logsel += 1
             return logsel
         else:
             assert False

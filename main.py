@@ -72,7 +72,7 @@ def eval_alg(alg, eval_funcs, qreps, samples_type, featurizer=None):
 
     for efunc in eval_funcs:
         if "plan" in str(efunc).lower() and "train" in qreps[0]["template_name"]:
-            print("skipping joblight eval_alg")
+            print("skipping _train_ workload plan cost eval")
             continue
 
         # if "plan" in str(efunc).lower() and "joblight" in qreps[0]["template_name"]:
@@ -174,6 +174,8 @@ def get_alg(alg):
                 hidden_layer_size = args.hidden_layer_size)
     elif alg == "mscn":
         return MSCN(max_epochs = args.max_epochs, lr=args.lr,
+                random_bitmap_idx = args.random_bitmap_idx,
+                reg_loss = args.reg_loss,
                 max_num_tables = args.max_num_tables,
                 early_stopping = args.early_stopping,
                 inp_dropout = args.inp_dropout,
@@ -188,7 +190,7 @@ def get_alg(alg):
                 heuristic_unseen_preds = args.heuristic_unseen_preds,
                 cost_model = args.cost_model,
                 use_wandb = args.use_wandb,
-                eval_fns = args.eval_fns,
+                eval_fns = args.evalq_eval_fns,
                 load_padded_mscn_feats = args.load_padded_mscn_feats,
                 mb_size = args.mb_size,
                 weight_decay = args.weight_decay,
@@ -407,12 +409,13 @@ def get_query_fns():
         test_qfns += cur_test_fns
 
     print("Skipped templates: ", " ".join(skipped_templates))
-
+    trainqnames = [os.path.basename(qfn) for qfn in train_qfns]
 
     eval_qfns = []
     eval_qdirs = args.eval_query_dir.split(",")
     for qdir in eval_qdirs:
-        if "imdb" in qdir:
+        if "imdb" in qdir and not \
+            ("1950" in args.query_dir or "1980" in args.query_dir):
             with open("ceb_runtime_qnames.pkl", "rb") as f:
                 qkeys = pickle.load(f)
             print("going to read only {} CEB queries".format(len(qkeys)))
@@ -440,6 +443,8 @@ def get_query_fns():
 
             if qkeys is not None:
                 qfns = [qf for qf in qfns if os.path.basename(qf) in qkeys]
+            if "1950" in args.query_dir or "1980" in args.query_dir:
+                qfns = [qf for qf in qfns if os.path.basename(qf) not in trainqnames]
 
             cur_eval_qfns += qfns
 
@@ -533,9 +538,11 @@ def load_qdata(fns):
         skip = False
         for node in qrep["subset_graph"].nodes():
             if "cardinality" not in qrep["subset_graph"].nodes()[node]:
+                print("no card!")
                 skip = True
                 break
             if "actual" not in qrep["subset_graph"].nodes()[node]["cardinality"]:
+                # print("no actual!")
                 skip = True
                 continue
                 # break
@@ -543,7 +550,7 @@ def load_qdata(fns):
             if qrep["subset_graph"].nodes()[node]["cardinality"]["actual"] \
                     >= TIMEOUT_CARD:
                 skip = True
-                # print("timeout card found!")
+                print("timeout card found!")
                 break
 
             if qrep["subset_graph"].nodes()[node]["cardinality"]["actual"] \
@@ -553,12 +560,13 @@ def load_qdata(fns):
 
             if "expected" not in qrep["subset_graph"].nodes()[node]["cardinality"]:
                 skip = True
+                print("no expected!")
                 break
 
-            if qrep["subset_graph"].nodes()[node]["cardinality"]["expected"] \
-                    == 0:
-                skip = True
-                break
+            # if qrep["subset_graph"].nodes()[node]["cardinality"]["expected"] \
+                    # == 0:
+                # skip = True
+                # break
 
         if skip:
             continue
@@ -627,7 +635,7 @@ def get_featurizer(trainqs, valqs, testqs, eval_qs):
         all_evalqs += e0
 
     featurizer.setup(ynormalization=args.ynormalization,
-            random_bitmap_idx = args.random_bitmap_idx,
+            # random_bitmap_idx = args.random_bitmap_idx,
             feat_onlyseen_maxy = args.feat_onlyseen_maxy,
             # max_num_tables = args.max_num_tables,
             like_char_features = args.like_char_features,
@@ -971,8 +979,10 @@ def read_flags():
     parser.add_argument("--onehot_reg", type=int, required=False,
             default=0)
 
+    parser.add_argument("--reg_loss", type=int, required=False,
+            default=0)
     parser.add_argument("--onehot_reg_decay", type=float, required=False,
-            default=0.1)
+            default=0.01)
     parser.add_argument("--subplan_level_outputs", type=int, required=False,
             default=0)
     parser.add_argument("--mask_unseen_subplans", type=int, required=False,
@@ -1005,9 +1015,9 @@ def read_flags():
     parser.add_argument("--feat_separate_alias", type=int, required=False,
             default=0)
     parser.add_argument("--feat_onlyseen_maxy", type=int, required=False,
-            default=0)
+            default=1)
     parser.add_argument("--feat_clamp_timeouts", type=int, required=False,
-            default=0)
+            default=1)
     parser.add_argument("--max_num_tables", type=int, required=False,
             default=-1)
 

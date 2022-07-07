@@ -497,6 +497,10 @@ class QueryDataset(data.Dataset):
                 bitdir = "./queries/jobm_bitmaps/"
             elif "joblight" in qrep["template_name"]:
                 bitdir = "./queries/allbitmaps/joblight_bitmaps2/sample_bitmap"
+            elif "joblight-train-1980-all" in qrep["template_name"]:
+                bitdir = "./queries/allbitmaps/joblight1980_bitmaps/sample_bitmap"
+            elif "joblight-train-1950-all" in qrep["template_name"]:
+                bitdir = "./queries/allbitmaps/joblight1950_bitmaps/sample_bitmap"
             elif "job" in qrep["template_name"]:
                 # bitdir = "./queries/allbitmaps/job_bitmaps/sample_bitmap"
                 bitdir = "./queries/allbitmaps/job_bitmaps2/sample_bitmap"
@@ -532,6 +536,10 @@ class QueryDataset(data.Dataset):
                 bitdir = "./queries/jobm_joinbitmaps/"
             elif "joblight" in qrep["template_name"]:
                 bitdir = "./queries/allbitmaps/joblight_bitmaps2/join_bitmap/"
+            elif "joblight-train-1980-all" in qrep["template_name"]:
+                bitdir = "./queries/allbitmaps/joblight1980_bitmaps/join_bitmap"
+            elif "joblight-train-1950-all" in qrep["template_name"]:
+                bitdir = "./queries/allbitmaps/joblight1950_bitmaps/join_bitmap"
             elif "job" in qrep["template_name"]:
                 # bitdir = "./queries/allbitmaps/job_bitmaps/join_bitmap/"
                 bitdir = "./queries/allbitmaps/job_bitmaps2/join_bitmap/"

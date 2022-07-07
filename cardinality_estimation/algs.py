@@ -39,8 +39,8 @@ def qloss_torch(yhat, ytrue):
 
     epsilons = to_variable([QERR_MIN_EPS]*len(yhat)).float()
 
-    # ytrue = torch.max(ytrue, epsilons)
-    # yhat = torch.max(yhat, epsilons)
+    ytrue = torch.max(ytrue, epsilons)
+    yhat = torch.max(yhat, epsilons)
 
     errors = torch.max( (ytrue / yhat), (yhat / ytrue))
 
@@ -581,9 +581,9 @@ class NN(CardinalityEstimationAlg):
 
         for self.epoch in range(0,total_epochs):
 
-            # if self.epoch % self.eval_epoch == 0:
-            if self.epoch % self.eval_epoch == 0 \
-                    and self.epoch != 0:
+            if self.epoch % self.eval_epoch == 0:
+            # if self.epoch % self.eval_epoch == 0 \
+                    # and self.epoch != 0:
                 self.periodic_eval()
 
             self.train_one_epoch()
@@ -900,6 +900,10 @@ class NN(CardinalityEstimationAlg):
             # TODO: load_query_together things
             ybatch = ybatch.to(device, non_blocking=True)
 
+            if self.random_bitmap_idx:
+                idxs = torch.randperm(xbatch["join"].shape[-1])
+                xbatch["join"] = xbatch["join"][:,:,idxs]
+
             if self.onehot_dropout == 0:
                 pass
 
@@ -1008,8 +1012,8 @@ class NN(CardinalityEstimationAlg):
 
             epoch_losses.append(loss.item())
 
+            reg_loss = None
             if self.onehot_reg:
-                reg_loss = None
                 for name, param in self.net.named_parameters():
                     if name == "sample_mlp1.weight":
                         mask = torch.from_numpy(~np.array(self.featurizer.table_onehot_mask,
@@ -1029,8 +1033,12 @@ class NN(CardinalityEstimationAlg):
                     else:
                         reg_loss = reg_loss + reg_param.norm(p=2)
 
-                if reg_loss is not None:
-                    loss += self.onehot_reg_decay * reg_loss
+            elif self.reg_loss:
+                reg_loss = sum(torch.linalg.norm(p, 1) for p in
+                        self.net.parameters())
+
+            if reg_loss is not None:
+                loss += self.onehot_reg_decay * reg_loss
 
             if self.training_opt == "swa":
                 self.optimizer.zero_grad()

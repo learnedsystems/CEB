@@ -291,6 +291,9 @@ class QueryDataset(data.Dataset):
             self.save_mscn_feats = False
             self.featurizer.use_saved_feats = False
 
+        if self.load_query_together:
+            self.save_mscn_feats = False
+
         # shorthands
         self.ckey = self.featurizer.ckey
         self.minv = self.featurizer.min_val
@@ -306,6 +309,7 @@ class QueryDataset(data.Dataset):
             self.num_samples = len(samples)
         else:
             self.num_samples = len(self.X)
+            print("num samples: ", self.num_samples)
 
     def _update_idxs(self, samples):
         qidx = 0
@@ -459,7 +463,8 @@ class QueryDataset(data.Dataset):
                 x["pmask"] = pm
                 x["jmask"] = jm
 
-            x["flow"] = to_variable(x["flow"], requires_grad=False).float()
+            if self.featurizer.featurization_type == "set":
+                x["flow"] = to_variable(x["flow"], requires_grad=False).float()
 
             X.append(x)
             Y.append(y)
@@ -478,16 +483,6 @@ class QueryDataset(data.Dataset):
         '''
         @qrep: qrep dict.
         '''
-        # X = []
-        # Y = []
-        # sample_info = []
-        # now, we will generate the actual feature vectors over all the
-        # subplans. Order matters --- dataset idx will be specified based on
-        # order.
-        # node_names = list(qrep["subset_graph"].nodes())
-        # if SOURCE_NODE in node_names:
-            # node_names.remove(SOURCE_NODE)
-        # node_names.sort()
 
         if self.featurizer.sample_bitmap or \
                 self.featurizer.join_bitmap:
@@ -506,6 +501,8 @@ class QueryDataset(data.Dataset):
                 bitdir = "./queries/allbitmaps/job_bitmaps2/sample_bitmap"
             elif "stats_train" in qrep["template_name"]:
                 bitdir = "./queries/allbitmaps/stats_train_bitmaps/sample_bitmap/"
+            elif "stats2" in qrep["template_name"]:
+                bitdir = "./queries/allbitmaps/stats_bitmaps2/sample_bitmap/"
             elif "stats" in qrep["template_name"]:
                 bitdir = "./queries/allbitmaps/stats_bitmaps/sample_bitmap/"
             elif "simple_imdb_train" in qrep["template_name"]:
@@ -544,7 +541,9 @@ class QueryDataset(data.Dataset):
                 # bitdir = "./queries/allbitmaps/job_bitmaps/join_bitmap/"
                 bitdir = "./queries/allbitmaps/job_bitmaps2/join_bitmap/"
             elif "stats_train" in qrep["template_name"]:
-                bitdir = "./queries/allbitmaps/stats_train_bitmaps/sample_bitmap/"
+                bitdir = "./queries/allbitmaps/stats_train_bitmaps/join_bitmap/"
+            elif "stats2" in qrep["template_name"]:
+                bitdir = "./queries/allbitmaps/stats_bitmaps2/join_bitmap/"
             elif "stats" in qrep["template_name"]:
                 bitdir = "./queries/allbitmaps/stats_bitmaps/join_bitmap/"
             elif "simple_imdb_train" in qrep["template_name"]:

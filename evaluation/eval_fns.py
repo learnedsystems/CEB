@@ -102,14 +102,28 @@ def _get_all_cardinalities(qreps, preds):
     yhat = []
     for i, pred_subsets in enumerate(preds):
         qrep = qreps[i]["subset_graph"].nodes()
-        assert len(qrep) == len(pred_subsets)
+        # assert len(qrep) == len(pred_subsets)
+
         keys = list(pred_subsets.keys())
+        if SOURCE_NODE in keys:
+            keys.remove(SOURCE_NODE)
+        assert len(keys) == len(pred_subsets)
+
         keys.sort()
         for alias in keys:
             pred = pred_subsets[alias]
+            if "actual" not in qrep[alias]["cardinality"]:
+                continue
+
             actual = qrep[alias]["cardinality"]["actual"]
+            if actual < 0:
+                continue
+            if actual >= TIMEOUT_CARD:
+                # print("skipping timeout card!")
+                continue
+
             if actual == 0:
-                assert False
+                # assert False
                 actual += 1
 
             ytrue.append(float(actual))
@@ -327,7 +341,7 @@ class QError(EvalFunc):
             for qi, node in enumerate(nodes):
                 numt = len(node)
                 if didx >= len(errors):
-                    assert False
+                    # assert False
                     continue
                 qnames.append(qrep["name"])
                 qidxs.append(qi)

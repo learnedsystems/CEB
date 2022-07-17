@@ -473,6 +473,8 @@ class Featurizer():
                     bitdir = "./queries/allbitmaps/job_bitmaps2/sample_bitmap"
                 elif "stats_train" in qrep["template_name"]:
                     bitdir = "./queries/allbitmaps/stats_train_bitmaps/sample_bitmap/"
+                elif "stats2" in qrep["template_name"]:
+                    bitdir = "./queries/allbitmaps/stats_bitmaps2/sample_bitmap/"
                 elif "stats" in qrep["template_name"]:
                     bitdir = "./queries/allbitmaps/stats_bitmaps/sample_bitmap/"
                 elif "simple_imdb_train" in qrep["template_name"]:
@@ -573,11 +575,12 @@ class Featurizer():
             num_preds = 0
             num_pred_vals = 0
             for node, info in node_data:
-
-                num_preds += len(info["pred_cols"])
+                if not "pred_vals" in info:
+                    continue
                 if len(info["pred_vals"]) == 0:
                     continue
 
+                num_preds += len(info["pred_cols"])
                 if isinstance(info["pred_vals"][0], list):
                     num_pred_vals += len(info["pred_vals"][0])
                 else:
@@ -609,6 +612,8 @@ class Featurizer():
         for qrep in qreps:
             cur_columns = []
             for node, info in qrep["join_graph"].nodes(data=True):
+                if "pred_types" not in info:
+                    continue
                 for i, cmp_op in enumerate(info["pred_types"]):
                     self.cmp_ops.add(cmp_op)
                     if "like" in cmp_op:
@@ -1138,9 +1143,14 @@ class Featurizer():
         if self.sample_bitmap:
             # bitmap_tables = []
             self.sample_bitmap_key = "sb" + str(self.sample_bitmap_num)
-            assert self.featurization_type == "set"
-            self.table_features_len = len(self.tables) + self.sample_bitmap_num
-            self.max_table_feature_len = len(self.tables) + self.sample_bitmap_num
+            # assert self.featurization_type == "set"
+            if self.featurization_type == "set":
+                self.table_features_len = len(self.tables) + self.sample_bitmap_num
+                self.max_table_feature_len = len(self.tables) + self.sample_bitmap_num
+            else:
+                self.table_features_len = len(self.tables) + len(self.tables)*self.sample_bitmap_buckets
+                self.max_table_feature_len = len(self.tables) + \
+                            len(self.tables)*self.sample_bitmap_buckets
         else:
             self.table_features_len = len(self.tables)
             self.max_table_feature_len = len(self.tables)
@@ -1167,19 +1177,24 @@ class Featurizer():
             # for which tables are there
             bitmap_feat_len += len(self.tables)
 
-            # for real col
-            bitmap_feat_len += len(set(self.join_col_map.values()))
+            if self.featurization_type == "combined":
+                bitmap_feat_len = len(set(self.join_col_map.values()))*self.sample_bitmap_buckets
 
-            if not self.bitmap_onehotmask:
-                self.featurizer_type_idxs["join_onehot"] = (0, bitmap_feat_len)
+            else:
+                # for real col
+                bitmap_feat_len += len(set(self.join_col_map.values()))
 
-            # for bitmap
+                if not self.bitmap_onehotmask:
+                    self.featurizer_type_idxs["join_onehot"] = (0, bitmap_feat_len)
 
-            ## because we were not using it, and it should be fixed
-            # self.featurizer_type_idxs["join_bitmap"] = (bitmap_feat_len,
-                    # bitmap_feat_len+self.sample_bitmap_buckets)
+                # for bitmap
 
-            bitmap_feat_len += self.sample_bitmap_buckets
+                ## because we were not using it, and it should be fixed
+                # self.featurizer_type_idxs["join_bitmap"] = (bitmap_feat_len,
+                        # bitmap_feat_len+self.sample_bitmap_buckets)
+
+                bitmap_feat_len += self.sample_bitmap_buckets
+
             ## includes everything for the onehot-mask
             if self.bitmap_onehotmask:
                 self.featurizer_type_idxs["join_onehot"] = (0, bitmap_feat_len)
@@ -1311,11 +1326,14 @@ class Featurizer():
                     v = max_val
 
             # use min-max normalization for continuous features
-            cur_val = float(v)
-            norm_val = (cur_val - min_val) / (max_val - min_val)
-            norm_val = max(norm_val, 0.00)
-            norm_val = min(norm_val, 1.00)
-            pfeats[pred_idx_start+vi] = norm_val
+            try:
+                cur_val = float(v)
+                norm_val = (cur_val - min_val) / (max_val - min_val)
+                norm_val = max(norm_val, 0.00)
+                norm_val = min(norm_val, 1.00)
+                pfeats[pred_idx_start+vi] = norm_val
+            except:
+                pass
 
     def _handle_categorical_feature(self, pfeats,
             pred_idx_start, col, val):
@@ -1467,6 +1485,131 @@ class Featurizer():
                 ret_bitmaps[join_real] = jbitmap
 
         return ret_bitmaps
+
+    def _handle_join_bitmaps_combined(self, subplan, join_bitmaps,
+            bitmaps,
+            joingraph):
+        '''
+        TODO: need to enforce that joins actually there between all tables
+        mapping to same join real col: e.g., mi <-> mi; might not have joins.
+        '''
+        jfeats  = np.zeros(self.join_features_len)
+        if bitmaps is None and join_bitmaps is None:
+            return jfeats
+
+        # join_features = []
+        # start_idx, end_idx = self.featurizer_type_idxs["join_bitmap"]
+
+        real_join_cols = defaultdict(list)
+        real_join_tabs = defaultdict(list)
+
+        if len(subplan) == 1:
+            return jfeats
+
+        seenjoins = set()
+        for alias1 in subplan:
+            alias_jbitmaps  = self._find_join_bitmaps(alias1, join_bitmaps,
+                                                         bitmaps, joingraph)
+            for rcol, rbm in alias_jbitmaps.items():
+                real_join_cols[rcol].append(rbm)
+
+            ## maybe this stuff is just not required?
+            ## probably need it for the id special case -- can handle that in
+            ## _find_join_bitmaps too maybe?
+            for alias2 in subplan:
+                ekey = (alias1, alias2)
+                if ekey not in joingraph.edges():
+                    continue
+                join_str = joingraph.edges()[ekey]["join_condition"]
+                join_str = self.join_str_to_real_join(join_str)
+                if join_str in seenjoins:
+                    continue
+
+                cols = join_str.split("=")
+                for ci, c in enumerate(cols):
+                    if c not in self.join_col_map:
+                        c = c.replace("\"", "")
+
+                    if c not in self.join_col_map:
+                        print("{} still not in JOIN COL MAP".format(c))
+                        pdb.set_trace()
+
+                    rcol = self.join_col_map[c]
+                    tabname = c[0:c.find(".")]
+                    real_join_tabs[rcol].append(tabname)
+
+                    # find its bitmap
+                    if self.aliases[alias1] == tabname:
+                        curalias = alias1
+                    elif self.aliases[alias2] == tabname:
+                        curalias = alias2
+                    else:
+                        assert False
+
+                    if ".id" in c.lower():
+                        # sample bitmap
+                        if bitmaps is None:
+                            continue
+                        if (curalias,) not in bitmaps:
+                            continue
+                        if self.sample_bitmap_key not in bitmaps[(curalias,)]:
+                            continue
+                        try:
+                            sb = bitmaps[(curalias,)][self.sample_bitmap_key]
+                            bitmap = set(sb)
+                        except Exception as e:
+                            print(bitmaps)
+                            print(curalias)
+                            pdb.set_trace()
+                    else:
+                        bitmap_key = NEW_JOIN_TABLE_TEMPLATE.format(
+                                TABLE=tabname,
+                                JOINKEY=rcol,
+                                SS="sb",
+                                NUM=self.sample_bitmap_num)
+
+                        alias_bm = join_bitmaps[(curalias,)]
+                        # TODO: maybe handle this some other way?
+                        if bitmap_key not in alias_bm:
+                            continue
+
+                        bitmap = set(alias_bm[bitmap_key])
+
+                    real_join_cols[rcol].append(bitmap)
+
+        cur_idx = 0
+        # features = np.zeros(self.join_features_len)
+
+        # num tables
+        # alltabs = real_join_tabs[rc]
+        # nt_idx = len(alltabs)-1
+        # jfeats[cur_idx + nt_idx] = 1.0
+        # cur_idx += self.max_tables
+
+        for rc in real_join_cols:
+            ## bitmap
+            # real column on which we have bitmap
+            start_idx = self.real_join_col_mapping[rc]*self.sample_bitmap_buckets
+            # features[cur_idx + jcol_idx] = 1.0
+            # cur_idx += len(self.real_join_col_mapping)
+
+            # for table in alltabs:
+                # if table not in self.table_featurizer:
+                    # print("table: {} not found in featurizer".format(table))
+                    # pdb.set_trace()
+                    # continue
+                # # Note: same table might be set to 1.0 twice, in case of aliases
+                # jfeats[start_idx + self.table_featurizer[table]] = 1.00
+            # cur_idx += len(self.table_featurizer)
+
+            # bitmap intersection
+            bitmap_int = set.intersection(*real_join_cols[rc])
+
+            for val in bitmap_int:
+                bitmapidx = val % self.sample_bitmap_buckets
+                jfeats[start_idx+bitmapidx] = 1.0
+
+        return jfeats
 
     def _handle_join_bitmaps(self, subplan, join_bitmaps,
             bitmaps,
@@ -1952,12 +2095,6 @@ class Featurizer():
                                 tfeats[startidx+bitmapidx] = 1.0
                     else:
                         pass
-                        # print(self.sample_bitmap_key, " not in sb")
-                        # continue
-                        # pdb.set_trace()
-                # else:
-                    # print(bitmaps)
-                    # pdb.set_trace()
 
                 alltablefeats.append(tfeats)
 
@@ -2120,7 +2257,8 @@ class Featurizer():
 
         return featdict
 
-    def get_subplan_features_combined(self, qrep, subplan, bitmaps=None):
+    def get_subplan_features_combined(self, qrep, subplan, bitmaps=None,
+            join_bitmaps=None):
         assert isinstance(subplan, tuple)
         featvectors = []
 
@@ -2132,39 +2270,77 @@ class Featurizer():
         joingraph = qrep["join_graph"]
 
         if self.table_features:
-            tfeats = np.zeros(self.table_features_len)
             ## table features
             # loop over each node, update the tfeats bitvector
+            tfeats = np.zeros(self.table_features_len)
+
             for alias in subplan:
+                if alias == SOURCE_NODE:
+                    continue
+                # tfeats = np.zeros(self.table_features_len)
                 # need to find its real table name from the join_graph
                 table = joingraph.nodes()[alias]["real_name"]
+                table = table.replace(" ", "")
+
                 if table not in self.seen_tabs:
-                    # print("Skipping table featurization")
                     continue
 
                 if table not in self.table_featurizer:
                     print("table: {} not found in featurizer".format(table))
                     continue
-                # Note: same table might be set to 1.0 twice, in case of aliases
-                tfeats[self.table_featurizer[table]] = 1.00
+                tidx = self.table_featurizer[table]
+                tfeats[tidx] = 1.00
+
+                if self.sample_bitmap and bitmaps is not None:
+                    # assert bitmaps is not None
+                    startidx = len(self.table_featurizer)
+                    startidx += tidx*self.sample_bitmap_buckets
+
+                    sb = bitmaps[(alias,)]
+                    if self.sample_bitmap_key in sb:
+                        bitmap = sb[self.sample_bitmap_key]
+                        if self.feat_onlyseen_preds:
+                            if table not in self.seen_bitmaps:
+                                print(table, " not in seen bitmaps")
+                                pdb.set_trace()
+                                continue
+                            train_seenvals = self.seen_bitmaps[table]
+
+                        for val in bitmap:
+                            if self.feat_onlyseen_preds:
+                                if val not in train_seenvals:
+                                    continue
+                                bitmapidx = val % self.sample_bitmap_buckets
+                                tfeats[startidx+bitmapidx] = 1.0
+                            else:
+                                bitmapidx = val % self.sample_bitmap_buckets
+                                tfeats[startidx+bitmapidx] = 1.0
+                    else:
+                        pass
+
             featvectors.append(tfeats)
 
         if self.join_features:
-            ## join features
-            jfeats  = np.zeros(len(self.joins))
-            for alias1 in subplan:
-                for alias2 in subplan:
-                    ekey = (alias1, alias2)
-                    if ekey in joingraph.edges():
-                        join_str = joingraph.edges()[ekey]["join_condition"]
-                        keys = join_str.split("=")
-                        keys.sort()
-                        keys = ",".join(keys)
-                        if keys not in self.join_featurizer:
-                            # print("join_str: {} not found in featurizer".format(join_str))
-                            continue
-                        jfeats[self.join_featurizer[keys]] = 1.00
-            featvectors.append(jfeats)
+            ## this would imply the bitmap is the only feature
+            if self.join_bitmap:
+                jfeats  = self._handle_join_bitmaps_combined(subplan,
+                        join_bitmaps, bitmaps, joingraph)
+                featvectors.append(jfeats)
+            else:
+                jfeats  = np.zeros(len(self.joins))
+                for alias1 in subplan:
+                    for alias2 in subplan:
+                        ekey = (alias1, alias2)
+                        if ekey in joingraph.edges():
+                            join_str = joingraph.edges()[ekey]["join_condition"]
+                            keys = join_str.split("=")
+                            keys.sort()
+                            keys = ",".join(keys)
+                            if keys not in self.join_featurizer:
+                                # print("join_str: {} not found in featurizer".format(join_str))
+                                continue
+                            jfeats[self.join_featurizer[keys]] = 1.00
+                featvectors.append(jfeats)
 
         ## predicate filter features
         if self.pred_features:
@@ -2233,6 +2409,7 @@ class Featurizer():
             featvectors.append(flow_features)
 
         feat = np.concatenate(featvectors)
+
         return feat
 
     def get_subplan_features_joinkey(self, qrep, subset_node, subset_edge,
@@ -2276,7 +2453,8 @@ class Featurizer():
         # the shapes will depend on combined v/s set feat types
         if self.featurization_type == "combined":
             x = self.get_subplan_features_combined(qrep,
-                    node, bitmaps=bitmaps)
+                    node, bitmaps=bitmaps,
+                    join_bitmaps = join_bitmaps)
         elif self.featurization_type == "set":
             x = self.get_subplan_features_set(qrep,
                     node, bitmaps=bitmaps,
@@ -2534,11 +2712,11 @@ class Featurizer():
                 est_card = 1
         elif self.ynormalization == "log":
             ## wrong?
-            # est_card = np.exp((y*(self.max_val-self.min_val) + self.min_val))
+            est_card = np.exp((y*(self.max_val-self.min_val) + self.min_val))
 
             # est_cards = torch.exp((y + \
                 # self.min_val)*(self.max_val-self.min_val))
-            est_card = np.exp((y + self.min_val)*(self.max_val-self.min_val))
+            # est_card = np.exp((y + self.min_val)*(self.max_val-self.min_val))
 
         elif self.ynormalization == "minmax":
             est_card = (float(y) * (self.max_val-self.min_val)) + self.min_val
@@ -2564,6 +2742,8 @@ class Featurizer():
     def normalize_val(self, val, total):
         if val == 0:
             val += 1
+        if val < 0:
+            val = 1
 
         if self.ynormalization == "logwhitening":
             return (np.log(float(val)) - self.meany) / self.stdy

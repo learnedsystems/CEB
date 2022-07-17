@@ -15,6 +15,7 @@ class SimpleRegression(torch.nn.Module):
             num_hidden_layers,
             hidden_layer_size):
         super(SimpleRegression, self).__init__()
+        hidden_layer_size = int(hidden_layer_size)
 
         self.layers = nn.ModuleList()
         layer1 = nn.Sequential(
@@ -272,6 +273,9 @@ class SetConvFlow(nn.Module):
         super(SetConvFlow, self).__init__()
         self.use_sigmoid = use_sigmoid
 
+        sample_feats = int(sample_feats)
+        hid_units = int(hid_units)
+
         self.sample_feats = sample_feats
         self.predicate_feats = predicate_feats
         self.join_feats = join_feats
@@ -409,9 +413,22 @@ class SetConvFlow(nn.Module):
             if self.num_hidden_layers == 2:
                 hid_flow = F.relu(self.flow_mlp2(hid_flow))
 
+            # if hid_flow.shape[0] == 1 and tocat[0].shape[0] != 1:
+            hid_flow = hid_flow.squeeze()
             tocat.append(hid_flow)
 
-        hid = torch.cat(tocat, 1)
+        try:
+            hid = torch.cat(tocat, 1)
+            # if tocat[0].shape[0] == 1:
+                # hid = torch.cat(tocat, 1)
+            # else:
+                # hid = torch.cat(tocat)
+        except Exception as e:
+            for tc in tocat:
+                print(tc.shape)
+            hid = torch.cat(tocat)
+            # pdb.set_trace()
+
         hid = self.combined_drop_layer(hid)
         hid = F.relu(self.out_mlp1(hid))
 

@@ -246,6 +246,9 @@ class NN(CardinalityEstimationAlg):
 
         if self.load_query_together:
             self.collate_fn = mscn_collate_fn_together
+        elif ("mscn" not in self.__str__().lower()
+                and "mstn" not in self.__str__().lower()):
+            self.collate_fn = None
         else:
             if hasattr(self, "load_padded_mscn_feats"):
                 if self.load_padded_mscn_feats:
@@ -483,11 +486,16 @@ class NN(CardinalityEstimationAlg):
                 self.load_query_together,
                 max_num_tables = self.max_num_tables,
                 load_padded_mscn_feats=self.load_padded_mscn_feats)
+
         self.trainloader = data.DataLoader(self.trainds,
                 batch_size=self.mb_size, shuffle=True,
                 collate_fn=self.collate_fn,
                 # num_workers=self.num_workers
                 )
+
+        if self.eval_epoch >= self.max_epochs and \
+            "flowloss" not in self.loss_func_name:
+            del training_samples[1:]
 
         self.eval_ds = {}
         self.samples = {}
@@ -537,10 +545,10 @@ class NN(CardinalityEstimationAlg):
                     elif "stats" in evalqname:
                         evalqname = "Stats-CEB"
 
-                    if len(cur_evalqs) > 600:
-                        ns = int(len(cur_evalqs) / 10)
-                        random.seed(42)
-                        cur_evalqs = random.sample(cur_evalqs, ns)
+                    # if len(cur_evalqs) > 600:
+                        # ns = int(len(cur_evalqs) / 10)
+                        # random.seed(42)
+                        # cur_evalqs = random.sample(cur_evalqs, ns)
 
                     print("{}, num eval queries: {}".format(evalqname,
                         len(cur_evalqs)))
@@ -581,9 +589,9 @@ class NN(CardinalityEstimationAlg):
 
         for self.epoch in range(0,total_epochs):
 
-            if self.epoch % self.eval_epoch == 0:
             # if self.epoch % self.eval_epoch == 0 \
                     # and self.epoch != 0:
+            if self.epoch % self.eval_epoch == 0:
                 self.periodic_eval()
 
             self.train_one_epoch()
@@ -662,10 +670,16 @@ class NN(CardinalityEstimationAlg):
         # important to not shuffle the data so correct order preserved!
         # also, assuming we are not loading everything in memory for
         # evaluation stuff, therefore collate_fn set
-        loader = data.DataLoader(ds,
-                batch_size=batchsize, shuffle=False,
-                collate_fn = self.collate_fn
-                )
+        if "flowloss" in self.loss_func_name:
+            loader = data.DataLoader(ds,
+                    batch_size=len(ds), shuffle=False,
+                    collate_fn = None
+                    )
+        else:
+            loader = data.DataLoader(ds,
+                    batch_size=batchsize, shuffle=False,
+                    collate_fn = self.collate_fn
+                    )
 
         allpreds = []
         allys = []
@@ -923,16 +937,22 @@ class NN(CardinalityEstimationAlg):
                         xbatch["table"] = xbatch["table"] * tf_mask
 
             elif self.onehot_dropout == 2:
-                tf_mask = self._get_onehot_mask(self.featurizer.table_onehot_mask)
-                jf_mask = self._get_onehot_mask(self.featurizer.join_onehot_mask)
-                pf_mask = self._get_onehot_mask(self.featurizer.pred_onehot_mask)
+                if self.featurizer.featurization_type == "combined":
+                    mask = np.zeros(xbatch.shape[1])
+                    mask[-1] = 1
+                    mask = self._get_onehot_mask(mask)
+                    xbatch = xbatch*mask
+                else:
+                    tf_mask = self._get_onehot_mask(self.featurizer.table_onehot_mask)
+                    jf_mask = self._get_onehot_mask(self.featurizer.join_onehot_mask)
+                    pf_mask = self._get_onehot_mask(self.featurizer.pred_onehot_mask)
 
-                if self.featurizer.pred_features:
-                    xbatch["pred"] = xbatch["pred"] * pf_mask
-                if self.featurizer.join_features:
-                    xbatch["join"] = xbatch["join"] * jf_mask
-                if self.featurizer.table_features:
-                    xbatch["table"] = xbatch["table"] * tf_mask
+                    if self.featurizer.pred_features:
+                        xbatch["pred"] = xbatch["pred"] * pf_mask
+                    if self.featurizer.join_features:
+                        xbatch["join"] = xbatch["join"] * jf_mask
+                    if self.featurizer.table_features:
+                        xbatch["table"] = xbatch["table"] * tf_mask
             else:
                 # tf_mask = self._get_onehot_mask(self.featurizer.table_onehot_mask)
                 # jf_mask = self._get_onehot_mask(self.featurizer.join_onehot_mask)
@@ -1074,7 +1094,12 @@ class NN(CardinalityEstimationAlg):
         for each subset graph node (subplan). Each key should be ' ' separated
         list of aliases / table names
         '''
+        # self.trainds = self.init_dataset(training_samples,
+                # self.load_query_together,
+                # max_num_tables = self.max_num_tables,
+                # load_padded_mscn_feats=self.load_padded_mscn_feats)
         testds = self.init_dataset(test_samples, False,
+                max_num_tables = self.max_num_tables,
                 load_padded_mscn_feats=self.load_padded_mscn_feats)
 
         start = time.time()

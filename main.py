@@ -35,6 +35,10 @@ def eval_alg(alg, eval_funcs, qreps, samples_type, featurizer=None):
     alg_name = alg.__str__()
     exp_name = alg.get_exp_name()
 
+    if "train" in qreps[0]["template_name"]:
+        print("skipping _train_ workload plan cost eval")
+        return
+
     ests = alg.test(qreps)
 
     rdir = None
@@ -149,6 +153,15 @@ def get_alg(alg):
                        max_depth=10, lr = 0.01)
     elif alg == "fcnn":
         return FCNN(max_epochs = args.max_epochs, lr=args.lr,
+                random_bitmap_idx = args.random_bitmap_idx,
+                onehot_mask_truep=args.onehot_mask_truep,
+                reg_loss = args.reg_loss,
+                max_num_tables = args.max_num_tables,
+                load_padded_mscn_feats = False,
+                early_stopping = args.early_stopping,
+                inp_dropout = args.inp_dropout,
+                hl_dropout = args.hl_dropout,
+                comb_dropout = args.comb_dropout,
                 training_opt = args.training_opt,
                 opt_lr = args.opt_lr,
                 swa_start = args.swa_start,
@@ -415,7 +428,9 @@ def get_query_fns():
     eval_qdirs = args.eval_query_dir.split(",")
     for qdir in eval_qdirs:
         if "imdb" in qdir and not \
-            ("1950" in args.query_dir or "1980" in args.query_dir):
+            ("imdb-unique-plans1950" in args.query_dir or \
+                    "imdb-unique-plans1980" in args.query_dir or \
+                    "1a" in args.query_templates):
             with open("ceb_runtime_qnames.pkl", "rb") as f:
                 qkeys = pickle.load(f)
             print("going to read only {} CEB queries".format(len(qkeys)))
@@ -443,7 +458,10 @@ def get_query_fns():
 
             if qkeys is not None:
                 qfns = [qf for qf in qfns if os.path.basename(qf) in qkeys]
-            if "1950" in args.query_dir or "1980" in args.query_dir:
+
+            if ("imdb-unique-plans1950" in args.query_dir or \
+                    "imdb-unique-plans1980" in args.query_dir or \
+                    "1a" in args.query_templates):
                 qfns = [qf for qf in qfns if os.path.basename(qf) not in trainqnames]
 
             cur_eval_qfns += qfns
@@ -460,10 +478,6 @@ def get_query_fns():
     else:
         train_tmp_names = [os.path.basename(tfn) for tfn in train_tmps]
         test_tmp_names = [os.path.basename(tfn) for tfn in test_tmps]
-        # if args.eval_on_jobm:
-            # test_tmp_names.append("jobm")
-        # if args.eval_on_job:
-            # test_tmp_names.append("job")
 
         print("""Selected {} train queries, {} test queries, {} val queries,{} job queries"""\
                 .format(len(train_qfns), len(test_qfns), len(val_qfns),
@@ -514,7 +528,7 @@ def update_job_parsing(qrep):
 
     # pdb.set_trace()
 
-def load_qdata(fns):
+def load_qdata(fns, skip_timeouts=False):
     qreps = []
     for qfn in fns:
         qrep = load_qrep(qfn)
@@ -541,20 +555,23 @@ def load_qdata(fns):
                 print("no card!")
                 skip = True
                 break
+
             if "actual" not in qrep["subset_graph"].nodes()[node]["cardinality"]:
-                # print("no actual!")
+                print("no actual")
                 skip = True
                 continue
                 # break
 
             if qrep["subset_graph"].nodes()[node]["cardinality"]["actual"] \
-                    >= TIMEOUT_CARD:
+                    >= TIMEOUT_CARD and skip_timeouts:
                 skip = True
-                print("timeout card found!")
+                # print(qfn)
+                print("timeout card skipped!")
                 break
 
             if qrep["subset_graph"].nodes()[node]["cardinality"]["actual"] \
                     < 1:
+                print("zero!")
                 skip = True
                 break
 
@@ -568,7 +585,10 @@ def load_qdata(fns):
                 # skip = True
                 # break
 
-        if skip:
+        # if skip:
+            # continue
+
+        if skip and skip_timeouts:
             continue
 
         # TODO: can do checks like no queries with zero cardinalities etc.
@@ -756,11 +776,11 @@ def main():
     # train_qfns, test_qfns, val_qfns, job_qfns = get_query_fns()
     train_qfns, test_qfns, val_qfns, eval_qfns = get_query_fns()
 
-    trainqs = load_qdata(train_qfns)
+    trainqs = load_qdata(train_qfns, skip_timeouts=True)
     # Note: can be quite memory intensive to load them all; might want to just
     # keep around the qfns and load them as needed
-    valqs = load_qdata(val_qfns)
-    testqs = load_qdata(test_qfns)
+    valqs = load_qdata(val_qfns, skip_timeouts=True)
+    testqs = load_qdata(test_qfns, skip_timeouts=True)
 
     eval_qdirs = args.eval_query_dir.split(",")
     print(eval_qdirs)
@@ -868,6 +888,7 @@ def main():
         if len(evalqs) > 0 and len(evalqs[0]) > 0:
             for ei, evalq in enumerate(evalqs):
                 eval_alg(alg, evalq_eval_fns, evalq, eval_qdirs[ei], featurizer=featurizer)
+                del evalq[:]
 
 # def check_logical_constraints(alg, qreps):
     # for qrep in qreps:
@@ -877,7 +898,7 @@ def main():
 def read_flags():
     parser = argparse.ArgumentParser()
     parser.add_argument("--query_dir", type=str, required=False,
-            default="./queries/imdb/")
+            default="./queries/imdb-unique-plans/")
     parser.add_argument("--eval_query_dir", type=str, required=False,
             default="")
     # parser.add_argument("--save_logs", type=int, required=False,

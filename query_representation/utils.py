@@ -807,8 +807,9 @@ def get_pg_join_order(join_graph, explain):
 
     try:
         return __extract_jo(explain[0][0][0]["Plan"]), physical_join_ops, scan_ops
-    except:
-        print(explain)
+    except Exception as e:
+        # print(explain)
+        print(e)
         pdb.set_trace()
 
 def extract_join_graph(sql):
@@ -919,7 +920,8 @@ def cached_execute_query(sql, user, db_host, port, pwd, db_name,
     try:
         cursor.execute(sql)
     except Exception as e:
-        # print("query failed to execute: ", sql)
+        print(e)
+        print("query failed to execute: ", sql)
         # FIXME: better way to do this.
         cursor.execute("ROLLBACK")
         con.commit()

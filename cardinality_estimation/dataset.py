@@ -258,7 +258,8 @@ class QueryDataset(data.Dataset):
 
         self.save_mscn_feats = False
 
-        if self.load_padded_mscn_feats:
+        # if self.load_padded_mscn_feats:
+        if False:
             fkeys = list(dir(self.featurizer))
             fkeys.sort()
             attrs = ""
@@ -286,6 +287,8 @@ class QueryDataset(data.Dataset):
                 self.save_mscn_feats = True
                 make_dir("./mscn_features")
                 make_dir(self.featdir)
+        else:
+            print("load mscn feats False")
 
         if self.max_num_tables != -1:
             self.save_mscn_feats = False

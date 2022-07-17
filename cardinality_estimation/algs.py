@@ -507,12 +507,12 @@ class NN(CardinalityEstimationAlg):
                     # max_num_tables = -1,
                     # load_padded_mscn_feats=self.load_padded_mscn_feats)
 
-        if "valqs" in kwargs and len(kwargs["valqs"]) > 0:
-            self.eval_ds["val"] = self.init_dataset(kwargs["valqs"], False,
-                    load_padded_mscn_feats=self.load_padded_mscn_feats)
-            self.samples["val"] = kwargs["valqs"]
 
         if self.eval_epoch < self.max_epochs:
+            if "valqs" in kwargs and len(kwargs["valqs"]) > 0:
+                self.eval_ds["val"] = self.init_dataset(kwargs["valqs"], False,
+                        load_padded_mscn_feats=self.load_padded_mscn_feats)
+                self.samples["val"] = kwargs["valqs"]
 
             # if "valqs" in kwargs and len(kwargs["valqs"]) > 0:
                 # pass

@@ -493,6 +493,10 @@ class QueryDataset(data.Dataset):
             if "jobm" in qrep["template_name"]:
                 assert False
                 bitdir = "./queries/jobm_bitmaps/"
+            elif "zero-shot-train" in qrep["template_name"]:
+                bitdir = "./queries/allbitmaps/zero-shot-train_bitmaps/sample_bitmap"
+            elif "zero-shot-test" in qrep["template_name"]:
+                bitdir = "./queries/allbitmaps/zero-shot-test_bitmaps/sample_bitmap"
             elif "joblight" in qrep["template_name"]:
                 bitdir = "./queries/allbitmaps/joblight_bitmaps2/sample_bitmap"
             elif "joblight-train-1980-all" in qrep["template_name"]:
@@ -534,6 +538,10 @@ class QueryDataset(data.Dataset):
             if "jobm" in qrep["template_name"]:
                 assert False
                 bitdir = "./queries/jobm_joinbitmaps/"
+            elif "zero-shot-train" in qrep["template_name"]:
+                bitdir = "./queries/allbitmaps/zero-shot-train_bitmaps/join_bitmap/"
+            elif "zero-shot-test" in qrep["template_name"]:
+                bitdir = "./queries/allbitmaps/zero-shot-test_bitmaps/join_bitmap"
             elif "joblight" in qrep["template_name"]:
                 bitdir = "./queries/allbitmaps/joblight_bitmaps2/join_bitmap/"
             elif "joblight-train-1980-all" in qrep["template_name"]:

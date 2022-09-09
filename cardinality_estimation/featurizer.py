@@ -461,6 +461,10 @@ class Featurizer():
                 if "jobm" in qrep["template_name"]:
                     assert False
                     bitdir = "./queries/jobm_bitmaps/"
+                elif "zero-shot-train" in qrep["template_name"]:
+                    bitdir = "./queries/allbitmaps/zero-shot-train_bitmaps/sample_bitmap"
+                elif "zero-shot-test" in qrep["template_name"]:
+                    bitdir = "./queries/allbitmaps/zero-shot-test_bitmaps/sample_bitmap"
                 elif "joblight" in qrep["template_name"]:
                     # bitdir = "./queries/bitmaps/joblight_bitmaps/"
                     bitdir = "./queries/allbitmaps/joblight_bitmaps2/sample_bitmap"
@@ -685,6 +689,8 @@ class Featurizer():
                 for node,data in qrep["subset_graph"].nodes(data=True):
                     if max_num_tables != -1 and len(node) > max_num_tables:
                         continue
+                    if "actual" not in data[self.ckey]:
+                        continue
 
                     actual = data[self.ckey]["actual"]
                     if actual >= TIMEOUT_CARD:
@@ -699,6 +705,8 @@ class Featurizer():
             jg = qrep["join_graph"]
             for node,data in qrep["subset_graph"].nodes(data=True):
                 if max_num_tables != -1 and len(node) > max_num_tables:
+                    continue
+                if "actual" not in data[self.ckey]:
                     continue
 
                 actual = data[self.ckey]["actual"]
@@ -1101,7 +1109,7 @@ class Featurizer():
                 self.feat_rel_pg_ests_onehot=True
                 self.feat_pg_est_one_hot=True
                 self.flow_feat_degrees = True
-                self.flow_feat_tables = True
+                # self.flow_feat_tables = True
 
     def init_feature_mapping(self):
 
@@ -1460,6 +1468,8 @@ class Featurizer():
             joingraph):
         # find all potential join keys in this table
         ret_bitmaps = {}
+        if join_bitmaps is None:
+            return ret_bitmaps
         tab = joingraph.nodes()[alias]["real_name"]
         for join_key, join_real in self.join_col_map.items():
             if ".id" in join_key.lower():
@@ -1631,6 +1641,8 @@ class Featurizer():
         real_join_tabs = defaultdict(list)
 
         if len(subplan) == 1:
+            return join_features
+        if join_bitmaps is None:
             return join_features
 
         seenjoins = set()
@@ -2137,6 +2149,9 @@ class Featurizer():
                 continue
 
             aliasinfo = joingraph.nodes()[alias]
+            if "pred_cols" not in aliasinfo:
+                continue
+
             if len(aliasinfo["pred_cols"]) == 0:
                 continue
 

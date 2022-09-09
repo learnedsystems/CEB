@@ -545,10 +545,10 @@ class NN(CardinalityEstimationAlg):
                     elif "stats" in evalqname:
                         evalqname = "Stats-CEB"
 
-                    # if len(cur_evalqs) > 600:
-                        # ns = int(len(cur_evalqs) / 10)
-                        # random.seed(42)
-                        # cur_evalqs = random.sample(cur_evalqs, ns)
+                    if len(cur_evalqs) > 400:
+                        ns = int(len(cur_evalqs) / 10)
+                        random.seed(42)
+                        cur_evalqs = random.sample(cur_evalqs, ns)
 
                     print("{}, num eval queries: {}".format(evalqname,
                         len(cur_evalqs)))
@@ -1099,7 +1099,7 @@ class NN(CardinalityEstimationAlg):
                 # max_num_tables = self.max_num_tables,
                 # load_padded_mscn_feats=self.load_padded_mscn_feats)
         testds = self.init_dataset(test_samples, False,
-                max_num_tables = self.max_num_tables,
+                max_num_tables = -1,
                 load_padded_mscn_feats=self.load_padded_mscn_feats)
 
         start = time.time()

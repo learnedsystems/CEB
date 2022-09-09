@@ -35,9 +35,9 @@ def eval_alg(alg, eval_funcs, qreps, samples_type, featurizer=None):
     alg_name = alg.__str__()
     exp_name = alg.get_exp_name()
 
-    if "train" in qreps[0]["template_name"]:
-        print("skipping _train_ workload plan cost eval")
-        return
+    # if "train" in qreps[0]["template_name"]:
+        # print("skipping _train_ workload plan cost eval")
+        # return
 
     ests = alg.test(qreps)
 
@@ -552,12 +552,11 @@ def load_qdata(fns, skip_timeouts=False):
         skip = False
         for node in qrep["subset_graph"].nodes():
             if "cardinality" not in qrep["subset_graph"].nodes()[node]:
-                print("no card!")
                 skip = True
                 break
 
             if "actual" not in qrep["subset_graph"].nodes()[node]["cardinality"]:
-                print("no actual")
+                # print("no actual")
                 skip = True
                 continue
                 # break
@@ -566,18 +565,18 @@ def load_qdata(fns, skip_timeouts=False):
                     >= TIMEOUT_CARD and skip_timeouts:
                 skip = True
                 # print(qfn)
-                print("timeout card skipped!")
+                # print("timeout card skipped!")
                 break
 
             if qrep["subset_graph"].nodes()[node]["cardinality"]["actual"] \
                     < 1:
-                print("zero!")
+                # print("zero!")
                 skip = True
                 break
 
             if "expected" not in qrep["subset_graph"].nodes()[node]["cardinality"]:
                 skip = True
-                print("no expected!")
+                # print("no expected!")
                 break
 
             # if qrep["subset_graph"].nodes()[node]["cardinality"]["expected"] \
@@ -787,7 +786,8 @@ def main():
 
     evalqs = []
     for eval_qfn in eval_qfns:
-        evalqs.append(load_qdata(eval_qfn))
+        # evalqs.append(load_qdata(eval_qfn))
+        evalqs.append(load_qdata(eval_qfn, skip_timeouts=True))
 
     print("""Selected {} train qdata, {} test qdata, {} val qdata, {} eval qdata"""\
             .format(len(trainqs), len(testqs), len(valqs), len(evalqs[0])))
@@ -978,7 +978,7 @@ def read_flags():
     parser.add_argument("--eval_fns", type=str, required=False,
             default="qerr,ppc")
     parser.add_argument("--evalq_eval_fns", type=str, required=False,
-            default="qerr,ppc")
+            default="qerr")
 
     parser.add_argument("--cost_model", type=str, required=False,
             default="C")

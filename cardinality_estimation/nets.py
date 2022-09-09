@@ -90,9 +90,15 @@ class SetConv(nn.Module):
             combined_size = sample_hid_units + pred_hid_units + join_hid_units
             combined_hid_units = int(combined_size * hid_units)
         else:
+            ## takes less memory etc. when some have very few inp features
             sample_hid_units = int(min(hid_units, int(2*sample_feats)))
             pred_hid_units = int(min(hid_units, int(2*predicate_feats)))
             join_hid_units = int(min(hid_units, int(2*join_feats)))
+            ## temporary to fix all input lengths being same
+            # sample_hid_units = int(hid_units)
+            # pred_hid_units = int(hid_units)
+            # join_hid_units = int(hid_units)
+
             combined_size = sample_hid_units + pred_hid_units + join_hid_units
 
             if other_hid_units is None:

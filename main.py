@@ -18,6 +18,7 @@ from sklearn.model_selection import train_test_split
 import pdb
 import copy
 import pickle
+import os
 
 import wandb
 import logging
@@ -69,6 +70,7 @@ def eval_alg(alg, eval_funcs, qreps, samples_type, featurizer=None):
         preds_dir = os.path.join(rdir, samples_type + "-preds")
         make_dir(preds_dir)
         for i,qrep in enumerate(qreps):
+            newfn = os.path.basename(qrep["name"])
             predfn = os.path.join(preds_dir, qrep["name"])
             cur_ests = ests[i]
             with open(predfn, "wb") as f:

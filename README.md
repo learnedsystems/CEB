@@ -112,11 +112,11 @@ bash scripts/download_stack_workload.sh
 
 Standalone evaluation setup that does not depend on PostgreSQL, and has minimal dependencies.
 
-```bash
-bash scripts/download_mlsys1.sh
-```
+<!--```bash-->
+<!--bash scripts/download_mlsys1.sh-->
+<!--```-->
 
-Installing python dependencies.
+Install python dependencies.
 
 ```bash
 pip3 install -r requirements.txt

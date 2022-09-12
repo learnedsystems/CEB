@@ -1133,7 +1133,7 @@ def read_flags():
     parser.add_argument("--wandb_tags", type=str, required=False,
         default=None, help="additional tags for wandb logs")
     parser.add_argument("--use_wandb", type=int, required=False,
-        default=1, help="")
+        default=0, help="")
 
     return parser.parse_args()
 

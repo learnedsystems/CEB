@@ -17,14 +17,8 @@ from ctypes import *
 import os
 import copy
 import pkg_resources
-import jax
-
-# import jax.numpy as jp
-# from jax import grad, jit, vmap
-import jax.numpy as jp
-from jax import jacfwd, jacrev
 # import tensorflow as tf
-import pyamg
+# import pyamg
 from .cost_model import *
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -442,6 +436,10 @@ def single_forward2(yhat, totals, edges_head, edges_tail, edges_cost_node1,
     @edges_cost_node2: these are single tables..
     '''
     if DEBUG_JAX:
+        import jax
+        import jax.numpy as jp
+        from jax import jacfwd, jacrev
+
         # costs_grad_fn = jacfwd(get_optimization_variables_jax, argnums=0)
         # costs_grad_fn = jacrev(get_optimization_variables_jax, argnums=0)
         jax_start = time.time()

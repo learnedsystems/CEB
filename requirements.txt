@@ -11,3 +11,6 @@ xgboost
 scikit-learn
 torch
 pygtrie
+wandb
+jax
+jaxlib

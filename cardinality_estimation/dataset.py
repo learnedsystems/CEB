@@ -498,14 +498,13 @@ class QueryDataset(data.Dataset):
             elif "zero-shot-test" in qrep["template_name"]:
                 bitdir = "./queries/allbitmaps/zero-shot-test_bitmaps/sample_bitmap"
             elif "joblight" in qrep["template_name"]:
-                bitdir = "./queries/allbitmaps/joblight_bitmaps2/sample_bitmap"
+                bitdir = "./queries/allbitmaps/joblight_bitmaps/sample_bitmap"
             elif "joblight-train-1980-all" in qrep["template_name"]:
                 bitdir = "./queries/allbitmaps/joblight1980_bitmaps/sample_bitmap"
             elif "joblight-train-1950-all" in qrep["template_name"]:
                 bitdir = "./queries/allbitmaps/joblight1950_bitmaps/sample_bitmap"
             elif "job" in qrep["template_name"]:
-                # bitdir = "./queries/allbitmaps/job_bitmaps/sample_bitmap"
-                bitdir = "./queries/allbitmaps/job_bitmaps2/sample_bitmap"
+                bitdir = "./queries/allbitmaps/job_bitmaps/sample_bitmap"
             elif "stats_train" in qrep["template_name"]:
                 bitdir = "./queries/allbitmaps/stats_train_bitmaps/sample_bitmap/"
             elif "stats2" in qrep["template_name"]:
@@ -516,6 +515,8 @@ class QueryDataset(data.Dataset):
                 bitdir = "./queries/allbitmaps/simple_imdb_bitmaps/sample_bitmap/"
             elif "imdb_train" in qrep["template_name"]:
                 bitdir = "./queries/allbitmaps/imdb_train_bitmaps/sample_bitmap/"
+            elif "imdb" in qrep["template_name"]:
+                bitdir = "./queries/allbitmaps/imdb_bitmaps/sample_bitmap/"
             else:
                 bitdir = self.featurizer.bitmap_dir
 
@@ -543,14 +544,13 @@ class QueryDataset(data.Dataset):
             elif "zero-shot-test" in qrep["template_name"]:
                 bitdir = "./queries/allbitmaps/zero-shot-test_bitmaps/join_bitmap"
             elif "joblight" in qrep["template_name"]:
-                bitdir = "./queries/allbitmaps/joblight_bitmaps2/join_bitmap/"
+                bitdir = "./queries/allbitmaps/joblight_bitmaps/join_bitmap/"
             elif "joblight-train-1980-all" in qrep["template_name"]:
                 bitdir = "./queries/allbitmaps/joblight1980_bitmaps/join_bitmap"
             elif "joblight-train-1950-all" in qrep["template_name"]:
                 bitdir = "./queries/allbitmaps/joblight1950_bitmaps/join_bitmap"
             elif "job" in qrep["template_name"]:
-                # bitdir = "./queries/allbitmaps/job_bitmaps/join_bitmap/"
-                bitdir = "./queries/allbitmaps/job_bitmaps2/join_bitmap/"
+                bitdir = "./queries/allbitmaps/job_bitmaps/join_bitmap/"
             elif "stats_train" in qrep["template_name"]:
                 bitdir = "./queries/allbitmaps/stats_train_bitmaps/join_bitmap/"
             elif "stats2" in qrep["template_name"]:
@@ -561,6 +561,8 @@ class QueryDataset(data.Dataset):
                 bitdir = "./queries/allbitmaps/simple_imdb_bitmaps/join_bitmap/"
             elif "imdb_train" in qrep["template_name"]:
                 bitdir = "./queries/allbitmaps/imdb_train_bitmaps/join_bitmap/"
+            elif "imdb" in qrep["template_name"]:
+                bitdir = "./queries/allbitmaps/imdb_bitmaps/join_bitmap/"
             else:
                 # assert "imdb" in qrep["template_name"]
                 bitdir = self.featurizer.join_bitmap_dir

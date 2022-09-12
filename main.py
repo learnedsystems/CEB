@@ -913,8 +913,6 @@ def read_flags():
 
     parser.add_argument("--bitmap_dir", type=str, required=False,
             default="./queries/allbitmaps/imdb_bitmaps2/sample_bitmap")
-    # parser.add_argument("--join_bitmap_dir", type=str, required=False,
-            # default="./queries/join_bitmaps_up/")
     parser.add_argument("--join_bitmap_dir", type=str, required=False,
             default="./queries/allbitmaps/imdb_bitmaps2/join_bitmap")
 

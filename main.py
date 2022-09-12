@@ -631,6 +631,7 @@ def get_featurizer(trainqs, valqs, testqs, eval_qs):
             f.close()
     else:
         f = open(featdata_fn, "r")
+        #f = open(featdata_fn, "rb")
         featdata = json.load(f)
         f.close()
         featurizer.update_using_saved_stats(featdata)

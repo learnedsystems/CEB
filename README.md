@@ -110,16 +110,21 @@ bash scripts/download_stack_workload.sh
 
 ### Notebooks
 
-Standalone evaluation setup that does not depend on PostgreSQL, and has minimal dependencies.
+Standalone training / evaluation notebooks. These should be convenient to get
+started, but using the command line flags, as described in [Learned
+Models](#learned-models) is more flexible for running experiments.
 
-<!--```bash-->
-<!--bash scripts/download_mlsys1.sh-->
-<!--```-->
+Also, for PostgreSQL based evaluation (e.g., for plan costs or runtimes, you
+will need to setup PostgreSQL as described in [PostgreSQL](#postgresql).)
 
-Install python dependencies.
+First, install python dependencies.
 
 ```bash
 pip3 install -r requirements.txt
+pip3 install jupyter
+
+# if you want to use captum for visualizing neural net feature importance attributions
+pip3 install captum
 ```
 
 <b> Optional </b> For some of the plan graph visualizations, we will need graphviz. Note: This is not neccessary to run the benchmark, and can be hard to install with some system configurations. You can usually install it with:

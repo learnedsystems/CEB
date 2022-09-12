@@ -1060,7 +1060,7 @@ def read_flags():
 
     ## NN training features
     parser.add_argument("--load_padded_mscn_feats", type=int, required=False,
-            default=1, help="""==1 loads all the mscn features with padded zeros in memory -- speeds up training, but can take too much RAM.""")
+            default=0, help="""==1 loads all the mscn features with padded zeros in memory -- speeds up training, but can take too much RAM.""")
     parser.add_argument("--training_opt", type=str, required=False,
             default="")
     parser.add_argument("--opt_lr", type=float, required=False,

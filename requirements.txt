@@ -12,5 +12,4 @@ scikit-learn
 torch
 pygtrie
 wandb
-jax
-jaxlib
+seaborn

@@ -23,15 +23,7 @@ from .cost_model import *
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-system = platform.system()
-lib_dir = "./flow_loss_cpp"
-if system == 'Linux':
-    lib_file = "libflowloss.so"
-    lib_file = lib_dir + "/" + lib_file
-    fl_cpp = CDLL(lib_file, mode=RTLD_GLOBAL)
-else:
-    print("flow loss C library not being used as we are not on linux")
-    # lib_file = "libflowloss.dylib"
+lib_file = None
 
 DEBUG_JAX = False
 DEBUG = False
@@ -668,6 +660,16 @@ class FlowLoss(Function):
             pool, cost_model):
         '''
         '''
+        global lib_file
+        system = platform.system()
+        lib_dir = "./flow_loss_cpp"
+        if system == 'Linux':
+            lib_file = "libflowloss.so"
+            lib_file = lib_dir + "/" + lib_file
+            fl_cpp = CDLL(lib_file, mode=RTLD_GLOBAL)
+        else:
+            print("flow loss C library not being used as we are not on linux")
+
         # Note: do flow loss computation and save G, invG etc. for backward
         # pass
         torch.set_num_threads(1)

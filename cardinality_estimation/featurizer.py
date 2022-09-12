@@ -456,39 +456,39 @@ class Featurizer():
 
             if self.sample_bitmap:
                 sbitmaps = None
-                assert self.bitmap_dir is not None
+                # assert self.bitmap_dir is not None
+                # if "jobm" in qrep["template_name"]:
+                    # assert False
+                    # bitdir = "./queries/jobm_bitmaps/"
+                # elif "zero-shot-train" in qrep["template_name"]:
+                    # bitdir = "./queries/allbitmaps/zero-shot-train_bitmaps/sample_bitmap"
+                # elif "zero-shot-test" in qrep["template_name"]:
+                    # bitdir = "./queries/allbitmaps/zero-shot-test_bitmaps/sample_bitmap"
+                # elif "joblight" in qrep["template_name"]:
+                    # bitdir = "./queries/bitmaps/joblight_bitmaps/sample_bitmap"
+                # elif "joblight-train-1980-all" in qrep["template_name"]:
+                    # bitdir = "./queries/allbitmaps/joblight1980_bitmaps/sample_bitmap"
+                # elif "joblight-train-1950-all" in qrep["template_name"]:
+                    # bitdir = "./queries/allbitmaps/joblight1950_bitmaps/sample_bitmap"
+                # elif "job" in qrep["template_name"]:
+                    # bitdir = "./queries/allbitmaps/job_bitmaps/sample_bitmap"
+                # elif "stats_train" in qrep["template_name"]:
+                    # bitdir = "./queries/allbitmaps/stats_train_bitmaps/sample_bitmap/"
+                # elif "stats2" in qrep["template_name"]:
+                    # bitdir = "./queries/allbitmaps/stats_bitmaps2/sample_bitmap/"
+                # elif "stats" in qrep["template_name"]:
+                    # bitdir = "./queries/allbitmaps/stats_bitmaps/sample_bitmap/"
+                # elif "simple_imdb_train" in qrep["template_name"]:
+                    # bitdir = "./queries/allbitmaps/simple_imdb_bitmaps/sample_bitmap/"
+                # elif "imdb_train" in qrep["template_name"]:
+                    # bitdir = "./queries/allbitmaps/imdb_train_bitmaps/sample_bitmap/"
+                # elif "imdb" in qrep["template_name"]:
+                    # bitdir = "./queries/allbitmaps/imdb_bitmaps/sample_bitmap/"
+                # else:
+                    # assert False
 
-                if "jobm" in qrep["template_name"]:
-                    assert False
-                    bitdir = "./queries/jobm_bitmaps/"
-                elif "zero-shot-train" in qrep["template_name"]:
-                    bitdir = "./queries/allbitmaps/zero-shot-train_bitmaps/sample_bitmap"
-                elif "zero-shot-test" in qrep["template_name"]:
-                    bitdir = "./queries/allbitmaps/zero-shot-test_bitmaps/sample_bitmap"
-                elif "joblight" in qrep["template_name"]:
-                    bitdir = "./queries/bitmaps/joblight_bitmaps/sample_bitmap"
-                elif "joblight-train-1980-all" in qrep["template_name"]:
-                    bitdir = "./queries/allbitmaps/joblight1980_bitmaps/sample_bitmap"
-                elif "joblight-train-1950-all" in qrep["template_name"]:
-                    bitdir = "./queries/allbitmaps/joblight1950_bitmaps/sample_bitmap"
-                elif "job" in qrep["template_name"]:
-                    bitdir = "./queries/allbitmaps/job_bitmaps/sample_bitmap"
-                elif "stats_train" in qrep["template_name"]:
-                    bitdir = "./queries/allbitmaps/stats_train_bitmaps/sample_bitmap/"
-                elif "stats2" in qrep["template_name"]:
-                    bitdir = "./queries/allbitmaps/stats_bitmaps2/sample_bitmap/"
-                elif "stats" in qrep["template_name"]:
-                    bitdir = "./queries/allbitmaps/stats_bitmaps/sample_bitmap/"
-                elif "simple_imdb_train" in qrep["template_name"]:
-                    bitdir = "./queries/allbitmaps/simple_imdb_bitmaps/sample_bitmap/"
-                elif "imdb_train" in qrep["template_name"]:
-                    bitdir = "./queries/allbitmaps/imdb_train_bitmaps/sample_bitmap/"
-                elif "imdb" in qrep["template_name"]:
-                    bitdir = "./queries/allbitmaps/imdb_bitmaps/sample_bitmap/"
-                else:
-                    assert False
-
-                bitmapfn = os.path.join(bitdir, qrep["name"])
+                sbitdir = os.path.join(self.bitmap_dir, "sample_bitmap")
+                bitmapfn = os.path.join(sbitdir, qrep["name"])
 
                 if not os.path.exists(bitmapfn):
                     print(bitmapfn)
@@ -540,7 +540,6 @@ class Featurizer():
                             self.seen_like_preds[col] = set()
                         assert len(vals) == 1
                         self.seen_like_preds[col].add(vals[0])
-
 
 
     def update_using_saved_stats(self, featdata):
@@ -1151,7 +1150,6 @@ class Featurizer():
         if self.sample_bitmap:
             # bitmap_tables = []
             self.sample_bitmap_key = "sb" + str(self.sample_bitmap_num)
-            # assert self.featurization_type == "set"
             if self.featurization_type == "set":
                 self.table_features_len = len(self.tables) + self.sample_bitmap_num
                 self.max_table_feature_len = len(self.tables) + self.sample_bitmap_num

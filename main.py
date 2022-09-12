@@ -656,6 +656,9 @@ def get_featurizer(trainqs, valqs, testqs, eval_qs):
     for e0 in eval_qs:
         all_evalqs += e0
 
+    qdir_name = os.path.basename(args.query_dir)
+    bitmap_dir = os.path.join(args.bitmap_dir, qdir_name)
+
     featurizer.setup(ynormalization=args.ynormalization,
             # random_bitmap_idx = args.random_bitmap_idx,
             feat_onlyseen_maxy = args.feat_onlyseen_maxy,
@@ -664,8 +667,8 @@ def get_featurizer(trainqs, valqs, testqs, eval_qs):
             flow_feat_tables = args.feat_tables,
             loss_func = args.loss_func_name,
             use_saved_feats = args.use_saved_feats,
-            bitmap_dir = args.bitmap_dir,
-            join_bitmap_dir = args.join_bitmap_dir,
+            bitmap_dir = bitmap_dir,
+            # join_bitmap_dir = args.join_bitmap_dir,
             sample_bitmap = args.sample_bitmap,
             sample_bitmap_num = args.sample_bitmap_num,
             sample_bitmap_buckets = args.sample_bitmap_buckets,
@@ -913,9 +916,9 @@ def read_flags():
             default=0)
 
     parser.add_argument("--bitmap_dir", type=str, required=False,
-            default="./queries/allbitmaps/imdb_bitmaps2/sample_bitmap")
-    parser.add_argument("--join_bitmap_dir", type=str, required=False,
-            default="./queries/allbitmaps/imdb_bitmaps2/join_bitmap")
+            default="./queries/allbitmaps/")
+    # parser.add_argument("--join_bitmap_dir", type=str, required=False,
+            # default="./queries/allbitmaps/")
 
     parser.add_argument("--joinkey_basecard_type", type=str, required=False,
             default="actual")

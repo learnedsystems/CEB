@@ -13,7 +13,9 @@ wget -O job_bitmaps2.tar.gz https://www.dropbox.com/s/6zsas4gmnj7x1uu/job_bitmap
 tar -xvf job_bitmaps2.tar.gz
 mkdir -p queries
 mkdir -p queries/allbitmaps
-mv job_bitmaps2 queries/allbitmaps/job_bitmaps
+#mv job_bitmaps2 queries/allbitmaps/job_bitmaps
+mv job_bitmaps2 queries/allbitmaps/job
+
 rm job_bitmaps2.tar.gz
 
 # JOBLight
@@ -30,7 +32,9 @@ wget -O joblight_bitmaps2.tar.gz https://www.dropbox.com/s/2bhwfmky06m2mes/jobli
 tar -xvf joblight_bitmaps2.tar.gz
 mkdir -p queries
 mkdir -p queries/allbitmaps
-mv joblight_bitmaps2 queries/allbitmaps/joblight_bitmaps
+#mv joblight_bitmaps2 queries/allbitmaps/joblight_bitmaps
+mv joblight_bitmaps2 queries/allbitmaps/joblight_train
+
 rm joblight_bitmaps2.tar.gz
 
 ## JOB-M

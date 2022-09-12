@@ -12,7 +12,8 @@ wget -O imdb_bitmaps2.tar.gz https://www.dropbox.com/s/qnzrzxnr5c6paa2/imdb_bitm
 tar -xvf imdb_bitmaps2.tar.gz
 mkdir -p queries
 mkdir -p queries/allbitmaps
-mv imdb_bitmaps2 queries/allbitmaps/imdb_bitmaps
+#mv imdb_bitmaps2 queries/allbitmaps/imdb_bitmaps
+mv imdb_bitmaps2 queries/allbitmaps/imdb
 
 rm imdb_bitmaps2.tar.gz
 

@@ -25,57 +25,30 @@ def to_variable(arr, use_cuda=True, requires_grad=False):
 def mscn_collate_fn_together(data):
     start = time.time()
     alldata = defaultdict(list)
-    # print(len(data))
 
     for di in range(len(data)):
-        # if isinstance(data[di][0], dict):
-            # for feats in data[di]:
-                # for k,v in feats.items():
-                    # alldata[k].append(v)
-        # else:
-            # for feats in data[di][0]:
-                # for k,v in feats.items():
-                    # alldata[k].append(v)
         try:
             for feats in data[di][0]:
                 for k,v in feats.items():
                     alldata[k].append(v)
         except Exception:
-            print(type(data[di]))
-            print(type(data[di][0]))
-            print(type(data[di][1]))
             for feats in data[di]:
                 for k,v in feats.items():
                     alldata[k].append(v)
 
     xdata = {}
     for k,v in alldata.items():
-        # xdata[k] = torch.stack(v)
         if k == "flow":
             if len(v[0]) == 0:
                 xdata[k] = v
             else:
-                # print(type(v))
-                # print(type(v[0]))
-                # pdb.set_trace()
-                # xdata[k] = to_variable(v, requires_grad=False).float()
                 xdata[k] = torch.stack(v)
         else:
             xdata[k] = torch.stack(v)
 
-    # ys = data[0][1]
-
-    # for cinfo in data
-    # infos = [data[0][2]]
-
     ys = [d[1] for d in data]
     ys = torch.cat(ys)
     infos = [d[2] for d in data]
-    # print(xdata["table"].shape)
-    # print(ys.shape)
-
-    # pdb.set_trace()
-
     return xdata,ys,infos
 
 def mscn_collate_fn(data):
@@ -115,10 +88,6 @@ def mscn_collate_fn(data):
     tf,pf,jf,tm,pm,jm = pad_sets(alltabs, allpreds,
             alljoins, maxtabs,maxpreds,maxjoins)
 
-    # print(flows)
-    # pdb.set_trace()
-    # print(flows)
-    # flows = to_variable(flows, requires_grad=False).float()
     flows = torch.stack(flows).float()
 
     ys = to_variable(ys, requires_grad=False).float()
@@ -148,9 +117,6 @@ def _handle_set_padding(features, max_set_vals):
     features = np.expand_dims(features, 0)
     mask = np.expand_dims(mask, 0)
 
-    # if max_set_vals == 1:
-        # mask = mask.unsqueeze(1)
-
     return features, mask
 
 def pad_sets(all_table_features, all_pred_features,
@@ -177,18 +143,6 @@ def pad_sets(all_table_features, all_pred_features,
                 maxtabs)
         join_features, join_mask = _handle_set_padding(join_features,
                 maxjoins)
-
-        # print(table_features.shape, table_mask.shape)
-        # print(join_features.shape, join_mask.shape)
-        # print("Tables: ")
-        # print(table_features)
-        # print(table_mask)
-
-        # pdb.set_trace()
-        # print("Joins: ")
-        # print(join_features)
-        # print(join_mask)
-        # pdb.set_trace()
 
         if table_features is not None:
             tf.append(table_features)
@@ -312,7 +266,6 @@ class QueryDataset(data.Dataset):
             self.num_samples = len(samples)
         else:
             self.num_samples = len(self.X)
-            print("num samples: ", self.num_samples)
 
     def _update_idxs(self, samples):
         qidx = 0
@@ -364,23 +317,10 @@ class QueryDataset(data.Dataset):
         Y = []
         sample_info = []
 
-        # now, we will generate the actual feature vectors over all the
-        # subplans. Order matters --- dataset idx will be specified based on
-        # order.
-
-        # node_names = list(qrep["subset_graph"].nodes())
-        # if SOURCE_NODE in node_names:
-            # node_names.remove(SOURCE_NODE)
-        # node_names.sort()
-
         edges = list(qrep["subset_graph"].edges())
         edges.sort(key = lambda x: str(x))
 
         for edge_idx, subset_edge in enumerate(edges):
-
-            # if self.max_num_tables != -1 \
-                    # and self.max_num_tables < len(node):
-                # continue
 
             # find the appropriate node from which this edge starts
             subset = subset_edge[1]
@@ -490,36 +430,6 @@ class QueryDataset(data.Dataset):
         if self.featurizer.sample_bitmap or \
                 self.featurizer.join_bitmap:
             assert self.featurizer.bitmap_dir is not None
-            # if "jobm" in qrep["template_name"]:
-                # assert False
-                # bitdir = "./queries/jobm_bitmaps/"
-            # elif "zero-shot-train" in qrep["template_name"]:
-                # bitdir = "./queries/allbitmaps/zero-shot-train_bitmaps/sample_bitmap"
-            # elif "zero-shot-test" in qrep["template_name"]:
-                # bitdir = "./queries/allbitmaps/zero-shot-test_bitmaps/sample_bitmap"
-            # elif "joblight" in qrep["template_name"]:
-                # bitdir = "./queries/allbitmaps/joblight_bitmaps/sample_bitmap"
-            # elif "joblight-train-1980-all" in qrep["template_name"]:
-                # bitdir = "./queries/allbitmaps/joblight1980_bitmaps/sample_bitmap"
-            # elif "joblight-train-1950-all" in qrep["template_name"]:
-                # bitdir = "./queries/allbitmaps/joblight1950_bitmaps/sample_bitmap"
-            # elif "job" in qrep["template_name"]:
-                # bitdir = "./queries/allbitmaps/job_bitmaps/sample_bitmap"
-            # elif "stats_train" in qrep["template_name"]:
-                # bitdir = "./queries/allbitmaps/stats_train_bitmaps/sample_bitmap/"
-            # elif "stats2" in qrep["template_name"]:
-                # bitdir = "./queries/allbitmaps/stats_bitmaps2/sample_bitmap/"
-            # elif "stats" in qrep["template_name"]:
-                # bitdir = "./queries/allbitmaps/stats_bitmaps/sample_bitmap/"
-            # elif "simple_imdb_train" in qrep["template_name"]:
-                # bitdir = "./queries/allbitmaps/simple_imdb_bitmaps/sample_bitmap/"
-            # elif "imdb_train" in qrep["template_name"]:
-                # bitdir = "./queries/allbitmaps/imdb_train_bitmaps/sample_bitmap/"
-            # elif "imdb" in qrep["template_name"]:
-                # bitdir = "./queries/allbitmaps/imdb_bitmaps/sample_bitmap/"
-            # else:
-                # bitdir = self.featurizer.bitmap_dir
-
             bitdir = os.path.join(self.featurizer.bitmap_dir, "sample_bitmap")
             bitmapfn = os.path.join(bitdir, qrep["name"])
 
@@ -535,38 +445,6 @@ class QueryDataset(data.Dataset):
 
         # old code
         if self.featurizer.join_bitmap:
-            # assert self.featurizer.join_bitmap_dir is not None
-            # if "jobm" in qrep["template_name"]:
-                # assert False
-                # bitdir = "./queries/jobm_joinbitmaps/"
-            # elif "zero-shot-train" in qrep["template_name"]:
-                # bitdir = "./queries/allbitmaps/zero-shot-train_bitmaps/join_bitmap/"
-            # elif "zero-shot-test" in qrep["template_name"]:
-                # bitdir = "./queries/allbitmaps/zero-shot-test_bitmaps/join_bitmap"
-            # elif "joblight" in qrep["template_name"]:
-                # bitdir = "./queries/allbitmaps/joblight_bitmaps/join_bitmap/"
-            # elif "joblight-train-1980-all" in qrep["template_name"]:
-                # bitdir = "./queries/allbitmaps/joblight1980_bitmaps/join_bitmap"
-            # elif "joblight-train-1950-all" in qrep["template_name"]:
-                # bitdir = "./queries/allbitmaps/joblight1950_bitmaps/join_bitmap"
-            # elif "job" in qrep["template_name"]:
-                # bitdir = "./queries/allbitmaps/job_bitmaps/join_bitmap/"
-            # elif "stats_train" in qrep["template_name"]:
-                # bitdir = "./queries/allbitmaps/stats_train_bitmaps/join_bitmap/"
-            # elif "stats2" in qrep["template_name"]:
-                # bitdir = "./queries/allbitmaps/stats_bitmaps2/join_bitmap/"
-            # elif "stats" in qrep["template_name"]:
-                # bitdir = "./queries/allbitmaps/stats_bitmaps/join_bitmap/"
-            # elif "simple_imdb_train" in qrep["template_name"]:
-                # bitdir = "./queries/allbitmaps/simple_imdb_bitmaps/join_bitmap/"
-            # elif "imdb_train" in qrep["template_name"]:
-                # bitdir = "./queries/allbitmaps/imdb_train_bitmaps/join_bitmap/"
-            # elif "imdb" in qrep["template_name"]:
-                # bitdir = "./queries/allbitmaps/imdb_bitmaps/join_bitmap/"
-            # else:
-                # # assert "imdb" in qrep["template_name"]
-                # bitdir = self.featurizer.join_bitmap_dir
-
             bitdir = os.path.join(self.featurizer.bitmap_dir, "join_bitmap")
             bitmapfn = os.path.join(bitdir, qrep["name"])
 
@@ -631,35 +509,6 @@ class QueryDataset(data.Dataset):
 
         pool.close()
         pdb.set_trace()
-
-        # par_args = []
-        # batchsize = math.ceil(len(samples) / nump)
-
-        # qidxstart = 0
-        # for i in range(nump):
-            # startidx = i*nump
-            # end = startidx+batchsize
-            # end = min(len(samples), end)
-            # qreps = samples[startidx:end]
-
-            # par_args.append((qreps, qidxstart, startidx, self.featurizer,
-                # self.load_padded_mscn_feats))
-            # for qr in qreps:
-                # qidxstart += len(qr["subset_graph"].nodes())
-
-        # # pool = mp.Pool(nump)
-        # # res = pool.starmap(get_queries_features, par_args)
-        # with mp.Pool(nump) as p:
-            # res = p.starmap(get_queries_features, par_args)
-
-            # # len(res) == 16; len(res[0]) == 3 # Xs,Ys,infos
-            # for r in res:
-                # X += r[0]
-                # Y += r[1]
-                # sample_info += r[2]
-
-        # # pdb.set_trace()
-        # pool.close()
 
         print("Extracting features took: ", time.time() - start)
         # TODO: handle this somehow
@@ -732,19 +581,8 @@ class QueryDataset(data.Dataset):
             # assert False, "needs to be implemented"
             start_idx = self.start_idxs[index]
             end_idx = start_idx + self.idx_lens[index]
-            # end_idx = start_idx + 2
-            # print(start_idx, end_idx)
-            # return self.X[start_idx], self.Y[start_idx], \
-                    # self.info[start_idx]
 
             return self.X[start_idx:end_idx], self.Y[start_idx:end_idx], \
                     self.info[start_idx:end_idx]
-
-            # if self.feattype == "combined":
-                # return self.X[start_idx:end_idx], self.Y[start_idx:end_idx], \
-                        # self.info[start_idx:end_idx]
-            # elif self.feattype == "set":
-                # print(start_idx, end_idx)
-                # pdb.set_trace()
         else:
             return self.X[index], self.Y[index], self.info[index]

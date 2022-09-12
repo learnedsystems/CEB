@@ -55,8 +55,8 @@ started with CEB, and can choose which one fits your needs best.
 
 #### IMDb CEB
 
-We'll suggest to start with 3000 representative queries from the 16 IMDb CEB
-templates with:
+We'll suggest to start with around 3000 representative queries from the 16 IMDb
+CEB templates with:
 
 ```bash
 bash scripts/download_imdb_uniqueplans.sh
@@ -64,10 +64,9 @@ bash scripts/download_imdb_uniqueplans.sh
 
 This downloads all the queries to queries/imdb-unique-plans. It also downloads
 sample bitmaps and join bitmaps (used for featurizing queries) to
-queries/allbitmaps/imdb.
-
-In our experiments, these 3K queries give similar results to using the full
-workload of 13K queries. All the data is also available for the full workload:
+queries/allbitmaps/imdb. In our experiments, these 3K queries give similar
+results to using the full workload of 13K queries. All the data is also
+available for the full workload:
 
 ```bash
 bash scripts/download_imdb_workload.sh

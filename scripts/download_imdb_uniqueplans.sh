@@ -16,3 +16,7 @@ mkdir -p queries/allbitmaps
 mv imdb_bitmaps2 queries/allbitmaps/imdb_bitmaps
 
 rm imdb_bitmaps2.tar.gz
+
+## downloading data about imdb schema etc.
+wget -O imdb_data.json https://www.dropbox.com/s/o8m1fthow6zn1kg/imdb-unique-plans-sqls.tar.gz?dl=1
+mv imdb_data.json queries/imdb-unique-plans/dbdata.json

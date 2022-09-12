@@ -40,3 +40,9 @@ rm joblight_bitmaps2.tar.gz
 #tar -xvf jobm.tar.gz
 #mv jobm queries/
 #rm jobm.tar.gz
+
+## downloading data about imdb schema etc.
+wget -O imdb_data.json https://www.dropbox.com/s/o8m1fthow6zn1kg/imdb-unique-plans-sqls.tar.gz?dl=1
+cp imdb_data.json queries/job/dbdata.json
+cp imdb_data.json queries/joblight_train/dbdata.json
+rm imdb_data.json

@@ -569,7 +569,7 @@ can use:
 python3 query_gen/gen_queries.py --query_output_dir qreps --template_dir ./templates/imdb/3a/ -n 10 --user ceb --pwd password --db_name imdb --port 5432
 ```
 
-### Generating Cardinalities (TODO)
+### Generating Cardinalities
 
 Here, we will provide an example that shows how to go from a bunch of sql files
 to the qrep objects which contain all the cardinality estimates for subplans,
@@ -593,8 +593,11 @@ python3 scripts/get_query_cardinalities.py --port 5432 --db_name imdb --query_di
 # evaluation setup you have etc. Also, be careful with the resource utilization
 #by this script: by default, it parallelizes the executions, but this might
 #cause PostgreSQL to crash in case there is not enough resources (check flags
-#    --no_parallel 1 to do it one query at a time)
+#    --no\_parallel 1 to do it one query at a time)
 python3 scripts/get_query_cardinalities.py --port 5432 --db_name imdb --query_dir queries/joblight/all_joblight/ --card_type actual --key_name actual --pwd password --user ceb
+
+## TODO: generate bitmaps for these
+
 ```
 
 ### TODO: Using wanderjoin

@@ -482,10 +482,17 @@ class NN(CardinalityEstimationAlg):
             for node in sample["subset_graph"].nodes():
                 self.seen_subplans.add(str(node))
 
+        if "subplan_mask" in kwargs:
+            subplan_mask = kwargs["subplan_mask"]
+        else:
+            subplan_mask = None
+
         self.trainds = self.init_dataset(training_samples,
                 self.load_query_together,
                 max_num_tables = self.max_num_tables,
-                load_padded_mscn_feats=self.load_padded_mscn_feats)
+                load_padded_mscn_feats=self.load_padded_mscn_feats,
+                subplan_mask = subplan_mask
+                )
 
         self.trainloader = data.DataLoader(self.trainds,
                 batch_size=self.mb_size, shuffle=True,
@@ -493,9 +500,9 @@ class NN(CardinalityEstimationAlg):
                 # num_workers=self.num_workers
                 )
 
-        if self.eval_epoch >= self.max_epochs and \
-            "flowloss" not in self.loss_func_name:
-            del training_samples[1:]
+        # if self.eval_epoch >= self.max_epochs and \
+            # "flowloss" not in self.loss_func_name:
+            # del training_samples[1:]
 
         self.eval_ds = {}
         self.samples = {}

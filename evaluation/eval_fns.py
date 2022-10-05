@@ -401,6 +401,17 @@ class AbsError(EvalFunc):
         errors = np.abs(yhat - ytrue)
         return errors
 
+class MeanSquaredError(EvalFunc):
+    def eval(self, qreps, preds, **kwargs):
+        '''
+        '''
+        assert len(preds) == len(qreps)
+        assert isinstance(preds[0], dict)
+
+        ytrue, yhat = _get_all_cardinalities(qreps, preds)
+        errors = np.linalg.mse(yhat - ytrue)
+        return errors
+
 class RelativeError(EvalFunc):
     def eval(self, qreps, preds, **kwargs):
         '''
@@ -430,8 +441,11 @@ class PostgresPlanCost(EvalFunc):
         result_dir = kwargs["result_dir"]
         if result_dir is None and not use_wandb:
             return
+        if "save_pdf_plans" in kwargs:
+            save_pdf_plans = kwargs["save_pdf_plans"]
+        else:
+            save_pdf_plans = False
 
-        save_pdf_plans = kwargs["save_pdf_plans"]
         sqls = kwargs["sqls"]
         plans = kwargs["plans"]
         opt_costs = kwargs["opt_costs"]
@@ -578,6 +592,7 @@ class PostgresPlanCost(EvalFunc):
     def eval(self, qreps, preds, user="imdb",
             pwd="password",
             db_name="imdb", db_host="localhost", port=5432, num_processes=-1,
+            save_pdf_plans=False,
             result_dir=None, **kwargs):
         ''''
         @kwargs:

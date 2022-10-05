@@ -190,12 +190,14 @@ class QueryDataset(data.Dataset):
     def __init__(self, samples, featurizer,
             load_query_together, load_padded_mscn_feats=False,
             max_num_tables = -1,
+            subplan_mask = None,
             join_key_cards=False):
         '''
         @samples: [] sqlrep query dictionaries, which represent a query and all
         of its subplans.
         @load_query_together: each sample will be a list of all the feature
         vectors belonging to all the subplans of a query.
+        @subplan_mask: [], same length as samples;
         '''
         self.load_query_together = load_query_together
         if self.load_query_together:
@@ -211,6 +213,7 @@ class QueryDataset(data.Dataset):
         self.join_key_cards = join_key_cards
 
         self.save_mscn_feats = False
+        self.subplan_mask = subplan_mask
 
         # if self.load_padded_mscn_feats:
         if False:
@@ -368,6 +371,12 @@ class QueryDataset(data.Dataset):
             jbitmaps,
             dataset_qidx,
             query_idx):
+        '''
+        @qrep: one pickle object.
+        '''
+
+        if self.subplan_mask is not None:
+            submask = self.subplan_mask[query_idx]
 
         X = []
         Y = []
@@ -384,6 +393,10 @@ class QueryDataset(data.Dataset):
         for node_idx, node in enumerate(node_names):
             if self.max_num_tables != -1 \
                     and self.max_num_tables < len(node):
+                continue
+
+            if self.subplan_mask is not None and \
+                    list(node) not in submask:
                 continue
 
             x,y = self.featurizer.get_subplan_features(qrep,

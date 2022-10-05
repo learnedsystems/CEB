@@ -691,6 +691,9 @@ class Featurizer():
 
         y = np.array(y)
 
+        if np.min(y) == 0:
+            y += 1
+
         if "log" in self.ynormalization:
             y = np.log(y)
 

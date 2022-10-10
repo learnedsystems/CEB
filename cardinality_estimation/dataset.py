@@ -443,7 +443,11 @@ class QueryDataset(data.Dataset):
         if self.featurizer.sample_bitmap or \
                 self.featurizer.join_bitmap:
             assert self.featurizer.bitmap_dir is not None
-            bitdir = os.path.join(self.featurizer.bitmap_dir, "sample_bitmap")
+
+            bitdir = os.path.join(self.featurizer.bitmap_dir, qrep["workload"],
+                    "sample_bitmap")
+            # bitdir = os.path.join(self.featurizer.bitmap_dir, "sample_bitmap")
+
             bitmapfn = os.path.join(bitdir, qrep["name"])
 
             if not os.path.exists(bitmapfn):
@@ -458,7 +462,9 @@ class QueryDataset(data.Dataset):
 
         # old code
         if self.featurizer.join_bitmap:
-            bitdir = os.path.join(self.featurizer.bitmap_dir, "join_bitmap")
+            # bitdir = os.path.join(self.featurizer.bitmap_dir, "join_bitmap")
+            bitdir = os.path.join(self.featurizer.bitmap_dir, qrep["workload"],
+                    "join_bitmap")
             bitmapfn = os.path.join(bitdir, qrep["name"])
 
             if not os.path.exists(bitmapfn):

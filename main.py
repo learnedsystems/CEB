@@ -595,8 +595,10 @@ def load_qdata(fns, skip_timeouts=False):
         # TODO: can do checks like no queries with zero cardinalities etc.
         qreps.append(qrep)
         template_name = os.path.basename(os.path.dirname(qfn))
+        wkname = os.path.basename(os.path.dirname(os.path.dirname(qfn)))
         qrep["name"] = os.path.basename(qfn)
         qrep["template_name"] = template_name
+        qrep["workload"] = wkname
 
     return qreps
 
@@ -657,7 +659,8 @@ def get_featurizer(trainqs, valqs, testqs, eval_qs):
         all_evalqs += e0
 
     qdir_name = os.path.basename(args.query_dir)
-    bitmap_dir = os.path.join(args.bitmap_dir, qdir_name)
+    # bitmap_dir = os.path.join(args.bitmap_dir, qdir_name)
+    bitmap_dir = args.bitmap_dir
 
     featurizer.setup(ynormalization=args.ynormalization,
             # random_bitmap_idx = args.random_bitmap_idx,

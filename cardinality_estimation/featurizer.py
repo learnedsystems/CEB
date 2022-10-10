@@ -456,7 +456,10 @@ class Featurizer():
 
             if self.sample_bitmap:
                 sbitmaps = None
-                sbitdir = os.path.join(self.bitmap_dir, "sample_bitmap")
+                # sbitdir = os.path.join(self.bitmap_dir, "sample_bitmap")
+                sbitdir = os.path.join(self.bitmap_dir, qrep["workload"],
+                        "sample_bitmap")
+
                 bitmapfn = os.path.join(sbitdir, qrep["name"])
 
                 if not os.path.exists(bitmapfn):
@@ -1456,7 +1459,7 @@ class Featurizer():
                                                SS = "sb",
                                                NUM = self.sample_bitmap_num)
                 if (alias,) not in join_bitmaps:
-                    print(alias, " not in join bitmaps")
+                    # print(alias, " not in join bitmaps")
                     continue
                 alias_bm = join_bitmaps[(alias,)]
                 if bitmap_key not in alias_bm:
@@ -1676,8 +1679,11 @@ class Featurizer():
                                 JOINKEY=rcol,
                                 SS="sb",
                                 NUM=self.sample_bitmap_num)
+                        try:
+                            alias_bm = join_bitmaps[(curalias,)]
+                        except:
+                            continue
 
-                        alias_bm = join_bitmaps[(curalias,)]
                         # TODO: maybe handle this some other way?
                         if bitmap_key not in alias_bm:
                             continue

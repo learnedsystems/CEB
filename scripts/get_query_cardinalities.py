@@ -61,9 +61,10 @@ def read_flags():
     parser.add_argument("--db_host", type=str, required=False,
             default="localhost")
     parser.add_argument("--user", type=str, required=False,
-            default="")
+            default="ceb")
     parser.add_argument("--pwd", type=str, required=False,
-            default="")
+            default="password")
+
     parser.add_argument("--card_cache_dir", type=str, required=False,
             default="./cardinality_cache")
     parser.add_argument("--port", type=str, required=False,

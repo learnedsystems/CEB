@@ -13,7 +13,8 @@ DEBUG_TIMES=False
 class SimpleRegression(torch.nn.Module):
     def __init__(self, input_width, n_output,
             num_hidden_layers,
-            hidden_layer_size):
+            hidden_layer_size,
+            ):
         super(SimpleRegression, self).__init__()
         hidden_layer_size = int(hidden_layer_size)
 

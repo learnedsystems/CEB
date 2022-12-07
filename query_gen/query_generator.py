@@ -8,6 +8,8 @@ import klepto
 import random
 
 ILIKE_PRED_FMT = "'%{ILIKE_PRED}%'"
+EQ_PRED_GROUPS = ["=", ">", "<", ">=", "<="]
+
 class QueryGenerator():
     '''
     Generates sql queries based on a template.
@@ -181,7 +183,6 @@ class QueryGenerator():
                     cur_sql = random.choice(pred_group["sqls"])
                 else:
                     cur_sql = pred_group["sql"]
-                # print(cur_sql)
 
                 if pred_group["dependencies"]:
                     # need to replace placeholders in cur_sql
@@ -195,6 +196,7 @@ class QueryGenerator():
                 else:
                     if cur_sql in self.bad_sqls:
                         return None
+
                     output = cached_execute_query(cur_sql, self.user,
                             self.db_host, self.port, self.pwd, self.db_name,
                             100, "./lc_cache/sql_outputs/", None)
@@ -245,7 +247,7 @@ class QueryGenerator():
                     # no point in doing shit
                     return None
 
-                if pred_group["pred_type"].lower() in ["<", "=", ">"]:
+                if pred_group["pred_type"].lower() in EQ_PRED_GROUPS:
                     # choose single item
                     assert pred_group["min_samples"] == pred_group["max_samples"] == 1
                     num_samples = 1
@@ -268,12 +270,13 @@ class QueryGenerator():
                                 pred_group, pred_vals)
 
                     else:
+
                         samples = [random.choice(output) for _ in
                                 range(num_samples)]
                         self._update_sql_eq(samples[0],
                                 pred_group, pred_vals)
 
-                elif pred_group["pred_type"].lower() == "in":
+                elif pred_group["pred_type"].lower() in ["in","like","not like"]:
                     # now use one of the different sampling methods
                     num_samples = random.randint(pred_group["min_samples"],
                             pred_group["max_samples"])
@@ -450,10 +453,16 @@ class QueryGenerator():
                             pred_vals[cur_key] = pred_choice
                             pdb.set_trace()
                         else:
+                            # print(options)
+                            # pdb.set_trace()
                             # probably only deals with `=` ?
-                            assert len(pred_group["keys"]) == 1
-                            self._update_sql_in([[pred_choice]],
-                                    pred_group, pred_vals)
+                            if pred_group["pred_type"].lower() in EQ_PRED_GROUPS:
+                                self._update_sql_eq(pred_choice,
+                                        pred_group, pred_vals)
+                            else:
+                                assert len(pred_group["keys"]) == 1
+                                self._update_sql_in([[pred_choice]],
+                                        pred_group, pred_vals)
             else:
                 assert False
 
@@ -467,8 +476,11 @@ class QueryGenerator():
         print("going to generate ", num_samples)
         start = time.time()
         all_query_strs = []
-
+        i = 0
         while len(all_query_strs) < num_samples:
+            if i % 100000 == 0:
+                print(i)
+            i += 1
             for template in self.templates:
                 query_str = self._gen_query_str(template["predicates"])
                 if query_str is not None:
@@ -477,7 +489,6 @@ class QueryGenerator():
                     # pdb.set_trace()
                 else:
                     pass
-                    # print("query str was None")
 
         print("{} took {} seconds to generate".format(len(all_query_strs),
             time.time()-start))

@@ -36,9 +36,9 @@ def eval_alg(alg, eval_funcs, qreps, samples_type, featurizer=None):
     alg_name = alg.__str__()
     exp_name = alg.get_exp_name()
 
-    # if "train" in qreps[0]["template_name"]:
-        # print("skipping _train_ workload plan cost eval")
-        # return
+    if "train" in qreps[0]["template_name"]:
+        print("skipping _train_ workload plan cost eval")
+        return
 
     ests = alg.test(qreps)
 
@@ -194,6 +194,7 @@ def get_alg(alg):
     elif alg == "mscn":
         return MSCN(max_epochs = args.max_epochs, lr=args.lr,
                 random_bitmap_idx = args.random_bitmap_idx,
+                test_random_bitmap = args.test_random_bitmap,
                 reg_loss = args.reg_loss,
                 max_num_tables = args.max_num_tables,
                 early_stopping = args.early_stopping,
@@ -433,6 +434,10 @@ def get_query_fns():
     eval_qfns = []
     eval_qdirs = args.eval_query_dir.split(",")
     for qdir in eval_qdirs:
+        if qdir == "":
+            eval_qfns.append([])
+            continue
+
         if "imdb" in qdir and not \
             ("imdb-unique-plans1950" in args.query_dir or \
                     "imdb-unique-plans1980" in args.query_dir or \
@@ -450,6 +455,13 @@ def get_query_fns():
         for qi,qdir in enumerate(fns):
             if ".json" in qdir:
                 continue
+
+            template_name = os.path.basename(qdir)
+            if args.eval_templates != "all" and \
+                template_name not in args.eval_templates.split(","):
+                print("skipping eval template: ", template_name)
+                continue
+
             # let's first select all the qfns we are going to load
             qfns = list(glob.glob(qdir+"/*.pkl"))
             qfns.sort()
@@ -534,10 +546,42 @@ def update_job_parsing(qrep):
 
     # pdb.set_trace()
 
+def load_rts():
+    RTDIRS = ["/flash1/pari/MyCEB/runtime_plans/pg"]
+    rtdfs = []
+    for RTDIR in RTDIRS:
+        rdirs = os.listdir(RTDIR)
+        for rd in rdirs:
+            rtfn = os.path.join(RTDIR, rd, "Runtimes.csv")
+            if os.path.exists(rtfn):
+                rtdfs.append(pd.read_csv(rtfn))
+
+    rtdf = pd.concat(rtdfs)
+    print("Num RTs: ", len(rtdf))
+    return rtdf
+
 def load_qdata(fns, skip_timeouts=False):
     qreps = []
+    if args.only_pgplan_data:
+        rtdf = load_rts()
+
     for qfn in fns:
         qrep = load_qrep(qfn)
+        if args.only_pgplan_data:
+            qname = os.path.basename(qrep["name"])
+
+            if qname not in rtdf["qname"].values:
+                continue
+            tmp = rtdf[rtdf["qname"] == qrep["name"]]
+            exp = tmp["exp_analyze"].values[0]
+            try:
+                exp = eval(exp)
+            except:
+                continue
+            G = explain_to_nx(exp)
+            seen_subplans = [ndata["aliases"] for n,ndata in
+                    G.nodes(data=True)]
+            qrep["subplan_mask"] = seen_subplans
 
         if "job" in qfn and "joblight" not in qfn:
             # TODO: need to fix the != case
@@ -556,6 +600,9 @@ def load_qdata(fns, skip_timeouts=False):
                 continue
 
         skip = False
+        if "constructorr" in qrep["sql"]:
+            print(qrep["sql"])
+            pdb.set_trace()
         for node in qrep["subset_graph"].nodes():
             if "cardinality" not in qrep["subset_graph"].nodes()[node]:
                 skip = True
@@ -576,7 +623,6 @@ def load_qdata(fns, skip_timeouts=False):
 
             if qrep["subset_graph"].nodes()[node]["cardinality"]["actual"] \
                     < 1:
-                # print("zero!")
                 skip = True
                 break
 
@@ -599,6 +645,7 @@ def load_qdata(fns, skip_timeouts=False):
             # continue
 
         if skip and skip_timeouts:
+            # print("skip!")
             continue
 
         # TODO: can do checks like no queries with zero cardinalities etc.
@@ -709,7 +756,7 @@ def get_featurizer(trainqs, valqs, testqs, eval_qs):
 
     featurizer.update_max_sets(trainqs+valqs+testqs+all_evalqs)
 
-    if False:
+    if True:
         featurizer.update_workload_stats(trainqs)
     else:
         featurizer.update_workload_stats(trainqs+valqs+testqs+all_evalqs)
@@ -921,6 +968,8 @@ def read_flags():
             default="")
     # parser.add_argument("--save_logs", type=int, required=False,
             # default=0)
+    parser.add_argument("--only_pgplan_data", type=int, required=False,
+            default=0)
 
     parser.add_argument("--eval_on_jobm", type=int, required=False,
             default=0)
@@ -958,6 +1007,8 @@ def read_flags():
 
     parser.add_argument("--query_templates", type=str, required=False,
             default="all")
+    parser.add_argument("--eval_templates", type=str, required=False,
+            default="all")
 
     parser.add_argument("--seed", type=int, required=False,
             default=123)
@@ -986,13 +1037,13 @@ def read_flags():
             required=False, default=-1)
 
     parser.add_argument("--test_size", type=float, required=False,
-            default=0.5)
+            default=0.2)
     parser.add_argument("--val_size", type=float, required=False,
             default=0.2)
     parser.add_argument("--algs", type=str, required=False,
             default="postgres")
     parser.add_argument("--eval_fns", type=str, required=False,
-            default="qerr,ppc")
+            default="ppc,qerr")
     parser.add_argument("--evalq_eval_fns", type=str, required=False,
             default="qerr")
 
@@ -1026,6 +1077,8 @@ def read_flags():
             default=0)
 
     # featurizer arguments
+    parser.add_argument("--test_random_bitmap", type=int, required=False,
+            default=0)
     parser.add_argument("--random_bitmap_idx", type=int, required=False,
             default=0)
     parser.add_argument("--regen_featstats", type=int, required=False,
@@ -1052,7 +1105,7 @@ def read_flags():
     parser.add_argument("--feat_separate_alias", type=int, required=False,
             default=0)
     parser.add_argument("--feat_onlyseen_maxy", type=int, required=False,
-            default=1)
+            default=0)
     parser.add_argument("--feat_clamp_timeouts", type=int, required=False,
             default=1)
     parser.add_argument("--max_num_tables", type=int, required=False,
@@ -1072,7 +1125,7 @@ def read_flags():
 
     ## NN training features
     parser.add_argument("--load_padded_mscn_feats", type=int, required=False,
-            default=0, help="""==1 loads all the mscn features with padded zeros in memory -- speeds up training, but can take too much RAM.""")
+            default=1, help="""==1 loads all the mscn features with padded zeros in memory -- speeds up training, but can take too much RAM.""")
     parser.add_argument("--training_opt", type=str, required=False,
             default="")
     parser.add_argument("--opt_lr", type=float, required=False,
@@ -1130,9 +1183,9 @@ def read_flags():
             default=1)
 
     parser.add_argument("--sample_bitmap_num", type=int, required=False,
-            default=1000)
+            default=100)
     parser.add_argument("--sample_bitmap_buckets", type=int, required=False,
-            default=1000)
+            default=100)
 
     parser.add_argument("--max_discrete_featurizing_buckets", type=int, required=False,
             default=1)

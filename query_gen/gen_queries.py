@@ -66,6 +66,10 @@ def main():
         start = time.time()
         assert ".toml" in fn
         template_name = os.path.basename(fn).replace(".toml", "")
+        if args.templates != "all":
+            if not template_name in args.templates.split(","):
+                continue
+
         # tmp_dir = qdir + template_name
         # make_dir(tmp_dir)
         out_dir = args.query_output_dir + "/" + template_name
@@ -102,6 +106,8 @@ def read_flags():
             default=5432)
     parser.add_argument("--query_output_dir", type=str, required=False,
             default=None)
+    parser.add_argument("--templates", type=str, required=False,
+            default="all")
     parser.add_argument("-n", "--num_samples_per_template", type=int,
             required=False, default=10)
 

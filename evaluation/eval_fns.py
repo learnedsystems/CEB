@@ -111,6 +111,9 @@ def _get_all_cardinalities(qreps, preds):
 
         keys.sort()
         for alias in keys:
+            if len(alias) == 1:
+                continue
+
             pred = pred_subsets[alias]
             if "actual" not in qrep[alias]["cardinality"]:
                 continue
@@ -125,6 +128,8 @@ def _get_all_cardinalities(qreps, preds):
             if actual == 0:
                 # assert False
                 actual += 1
+            if pred <= 0:
+                pred += 1
 
             ytrue.append(float(actual))
             yhat.append(float(pred))
@@ -352,11 +357,11 @@ class QError(EvalFunc):
 
         nts = list(num_table_errs.keys())
         nts.sort()
-        # for nt in nts:
-            # if nt <= 3:
-                # print("{} Tables, QError mean: {}, 99p: {}".format(
-                    # nt, np.mean(num_table_errs[nt]),
-                    # np.percentile(num_table_errs[nt], 99)))
+        for nt in nts:
+            if nt <= 3:
+                print("{} Tables, QError mean: {}, 99p: {}".format(
+                    nt, np.mean(num_table_errs[nt]),
+                    np.percentile(num_table_errs[nt], 99)))
 
 
         resfn = os.path.join(result_dir, self.__str__() + ".csv")
@@ -380,10 +385,21 @@ class QError(EvalFunc):
 
         ytrue, yhat = _get_all_cardinalities(qreps, preds)
         assert len(ytrue) == len(yhat)
+
         assert 0.00 not in ytrue
         assert 0.00 not in yhat
 
         errors = np.maximum((ytrue / yhat), (yhat / ytrue))
+
+        ## debugging code
+        # eidxs = errors >= 7
+        # if len(ytrue[eidxs]) > 0:
+            # idxs = np.array(list(range(len(eidxs))))
+            # bad_idxs = idxs[eidxs]
+            # # print(ytrue[eidxs])
+            # # print(yhat[eidxs])
+            # print(bad_idxs)
+            # pdb.set_trace()
 
         if kwargs["result_dir"] is not None:
             self.save_logs(qreps, errors, **kwargs)

@@ -694,6 +694,17 @@ class NN(CardinalityEstimationAlg):
         for (xbatch,ybatch,info) in loader:
             ybatch = ybatch.to(device, non_blocking=True)
 
+            if self.test_random_bitmap:
+                if self.featurizer.join_features:
+                    print("testing with randomized idxs")
+                    idxs = torch.randperm(xbatch["join"].shape[-1])
+                    xbatch["join"] = xbatch["join"][:,:,idxs]
+                if self.featurizer.sample_bitmap and \
+                        self.featurizer.table_features:
+                    print("testing with randomized idxs")
+                    idxs = torch.randperm(xbatch["table"].shape[-1])
+                    xbatch["table"] = xbatch["table"][:,:,idxs]
+
             if self.mask_unseen_subplans:
                 start = time.time()
                 pf_mask = torch.from_numpy(self.featurizer.pred_onehot_mask).float()
@@ -782,6 +793,7 @@ class NN(CardinalityEstimationAlg):
             tf_mask = self._get_onehot_mask(self.featurizer.table_onehot_mask)
             jf_mask = self._get_onehot_mask(self.featurizer.join_onehot_mask)
             pf_mask = self._get_onehot_mask(self.featurizer.pred_onehot_mask)
+
             return tf_mask, jf_mask, pf_mask
 
         elif self.onehot_dropout == 3:
@@ -947,7 +959,11 @@ class NN(CardinalityEstimationAlg):
                 if self.featurizer.featurization_type == "combined":
                     mask = np.zeros(xbatch.shape[1])
                     mask[-1] = 1
+                    # mask[-2] = 1
+                    mask[-3] = 1
+                    mask[-4] = 1
                     mask = self._get_onehot_mask(mask)
+
                     xbatch = xbatch*mask
                 else:
                     tf_mask = self._get_onehot_mask(self.featurizer.table_onehot_mask)
@@ -1084,8 +1100,11 @@ class NN(CardinalityEstimationAlg):
                 self.optimizer.step()
 
         curloss = round(float(sum(epoch_losses))/len(epoch_losses),6)
-        print("Epoch {} took {}, Avg Loss: {}, #samples: {}".format(self.epoch,
-            round(time.time()-start, 2), curloss, len(self.trainds)))
+
+        if self.epoch % 100 == 0:
+            print("Epoch {} took {}, Avg Loss: {}, #samples: {}".format(self.epoch,
+                round(time.time()-start, 2), curloss, len(self.trainds)))
+
         # print(np.mean(epoch_losses), np.max(epoch_losses),
                 # np.min(epoch_losses))
         # print("Backward avg time: {}, Forward avg time: {}".format(\

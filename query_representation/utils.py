@@ -236,7 +236,6 @@ def generate_subset_graph(g):
     subset_graph = nx.DiGraph()
     for csg in connected_subgraphs(g):
         subset_graph.add_node(csg)
-
     # group by size
     max_subgraph_size = max(len(x) for x in subset_graph.nodes)
     subgraph_groups = [[] for _ in range(max_subgraph_size)]
@@ -376,7 +375,8 @@ def extract_aliases(plan, jg=None):
             alias = plan["Alias"]
             real_name = jg.nodes[alias]["real_name"]
             # yield f"{real_name} as {alias}"
-            yield "{} as {}".format(real_name, alias)
+            # yield "{} as {}".format(real_name, alias)
+            yield "\"{}\" as {}".format(real_name, alias)
         else:
             yield plan["Alias"]
 
@@ -994,6 +994,7 @@ def extract_join_graph(sql):
 
         join_graph.add_edge(t1, t2)
         join_graph[t1][t2]["join_condition"] = j
+
         if t1 in aliases:
             table1 = aliases[t1]
             table2 = aliases[t2]
@@ -1008,6 +1009,11 @@ def extract_join_graph(sql):
         if (type(token) == sqlparse.sql.Where):
             where_clauses = token
     assert where_clauses is not None
+
+    if len(join_graph.nodes()) == 0:
+        for alias in aliases:
+            join_graph.add_node(alias)
+            join_graph.nodes()[alias]["real_name"] = aliases[alias]
 
     for t1 in join_graph.nodes():
         tables = [t1]

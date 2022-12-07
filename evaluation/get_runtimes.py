@@ -38,7 +38,7 @@ def read_flags():
     parser.add_argument("--rerun_timeouts", type=int, required=False,
             default=1)
     parser.add_argument("--db_name", type=str, required=False,
-            default="imdb")
+            default="ergastf1")
     parser.add_argument("--costs_fn_tmp", type=str, required=False,
             default="PostgresPlanCost-{}.csv")
 
@@ -49,7 +49,7 @@ def read_flags():
     parser.add_argument("--pwd", type=str, required=False,
             default="password")
     parser.add_argument("--port", type=str, required=False,
-            default=5434)
+            default=5432)
 
     return parser.parse_args()
 
@@ -204,8 +204,9 @@ def main():
                 elif stored_rt == -1 and args.rerun_timeouts:
                     print("going to rerun failed query")
                 else:
-                    print("skipping {} with stored runtime".format(row["qname"]))
-                    continue
+                    pass
+                    # print("skipping {} with stored runtime".format(row["qname"]))
+                    # continue
 
             exp_analyze, rt = execute_sql(row["exec_sql"],
                     cost_model=cost_model,

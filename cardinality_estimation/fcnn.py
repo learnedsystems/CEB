@@ -13,6 +13,7 @@ class FCNN(NN):
 
     def init_dataset(self, samples, load_query_together,
             max_num_tables = -1,
+            subplan_mask = None,
             load_padded_mscn_feats=False):
         ds = QueryDataset(samples, self.featurizer,
                 load_query_together,
@@ -27,7 +28,8 @@ class FCNN(NN):
         else:
             n_output = 1
         net = SimpleRegression(num_features, n_output,
-                self.num_hidden_layers, self.hidden_layer_size)
+                self.num_hidden_layers, self.hidden_layer_size,
+                )
         return net
 
     def print_init_training_info(self):

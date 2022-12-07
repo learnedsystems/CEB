@@ -138,7 +138,6 @@ def _get_pg_plancost(query, est_cardinalities,
     '''
     Main function for computing Postgres Plan Costs.
     '''
-
     est_card_sql = get_pghint_modified_sql(query, est_cardinalities, None,
             None, None)
     assert "explain" in est_card_sql.lower()
@@ -146,9 +145,13 @@ def _get_pg_plancost(query, est_cardinalities,
     cursor.execute(est_card_sql)
     explain = cursor.fetchall()
 
+    # print(join_graph.nodes(data=True))
     est_join_order_sql, est_join_ops, scan_ops = get_pg_join_order(join_graph,
             explain)
     leading_hint = get_leading_hint(join_graph, explain)
+
+    # print(est_join_order_sql)
+    # print(leading_hint)
 
     est_opt_sql = nx_graph_to_query(join_graph,
             from_clause=est_join_order_sql)

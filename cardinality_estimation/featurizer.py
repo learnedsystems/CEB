@@ -155,8 +155,51 @@ JOIN_MAP_STATS["users.Id"] = "user_id"
 # JOIN_MAP_STATS["votes.postid"] = "post_id"
 # JOIN_MAP_STATS["votes.userid"] = "user_id"
 JOIN_MAP_STATS["votes.Id"] = "vote_id"
+
 JOIN_MAP_STATS["votes.PostId"] = "post_id"
 JOIN_MAP_STATS["votes.UserId"] = "user_id"
+
+JOIN_MAP_ERGAST = {}
+JOIN_REAL_MAP = {}
+JOIN_REAL_MAP["result_id"] = "results.resultId"
+JOIN_MAP_ERGAST["results.resultId"] = "result_id"
+
+JOIN_REAL_MAP["driver_id"] = "drivers.driverId"
+JOIN_MAP_ERGAST["drivers.driverId"] = "driver_id"
+JOIN_MAP_ERGAST["results.driverId"] = "driver_id"
+JOIN_MAP_ERGAST["lapTimes.driverId"] = "driver_id"
+JOIN_MAP_ERGAST["qualifying.driverId"] = "driver_id"
+JOIN_MAP_ERGAST["pitStops.driverId"] = "driver_id"
+JOIN_MAP_ERGAST["driverStandings.driverId"] = "driver_id"
+
+JOIN_REAL_MAP["race_id"] = "races.raceId"
+JOIN_MAP_ERGAST["races.raceId"] = "race_id"
+JOIN_MAP_ERGAST["results.raceId"] = "race_id"
+JOIN_MAP_ERGAST["lapTimes.raceId"] = "race_id"
+JOIN_MAP_ERGAST["qualifying.raceId"] = "race_id"
+JOIN_MAP_ERGAST["constructorResults.raceId"] = "race_id"
+JOIN_MAP_ERGAST["constructorStandings.raceId"] = "race_id"
+JOIN_MAP_ERGAST["pitStops.raceId"] = "race_id"
+JOIN_MAP_ERGAST["driverStandings.raceId"] = "race_id"
+
+JOIN_REAL_MAP["constructor_id"] = "constructors.constructorId"
+JOIN_MAP_ERGAST["constructors.constructorId"] = "constructor_id"
+JOIN_MAP_ERGAST["results.constructorId"] = "constructor_id"
+JOIN_MAP_ERGAST["constructorStandings.constructorId"] = "constructor_id"
+JOIN_MAP_ERGAST["constructorResults.constructorId"] = "constructor_id"
+JOIN_MAP_ERGAST["qualifying.constructorId"] = "constructor_id"
+
+JOIN_REAL_MAP["circuit_id"] = "circuits.circuitId"
+JOIN_MAP_ERGAST["circuits.circuitId"] = "circuit_id"
+JOIN_MAP_ERGAST["races.circuitId"] = "circuit_id"
+
+JOIN_REAL_MAP["status_id"] = "status.statusId"
+JOIN_MAP_ERGAST["status.statusId"] = "status_id"
+JOIN_MAP_ERGAST["results.statusId"] = "status_id"
+
+JOIN_MAP_SYNTH = {}
+JOIN_MAP_SYNTH["synth_primary.id"] = "pid"
+JOIN_MAP_SYNTH["synth_foreign.tid"] = "pid"
 
 # JOIN_KEY_MAX_TMP = """SELECT COUNT(*), {COL} FROM {TABLE} GROUP BY {COL} ORDER BY COUNT(*) DESC LIMIT 1"""
 # JOIN_KEY_MIN_TMP = """SELECT COUNT(*), {COL} FROM {TABLE} GROUP BY {COL} ORDER BY COUNT(*) ASC LIMIT 1"""
@@ -181,11 +224,15 @@ INSERT_TEMPLATE = "INSERT INTO {name} ({columns}) VALUES %s"
 NTILE_CLAUSE = "ntile({BINS}) OVER (ORDER BY {COLUMN}) AS {ALIAS}"
 GROUPBY_TEMPLATE = "SELECT {COLS}, COUNT(*) FROM {FROM_CLAUSE} GROUP BY {COLS}"
 COUNT_SIZE_TEMPLATE = "SELECT COUNT(*) FROM {FROM_CLAUSE}"
+# COUNT_SIZE_TEMPLATE = "SELECT COUNT(*) FROM {FROM_CLAUSE}"
 
 SELECT_ALL_COL_TEMPLATE = "SELECT {COL} FROM {TABLE} WHERE {COL} IS NOT NULL"
 ALIAS_FORMAT = "{TABLE} AS {ALIAS}"
 MIN_TEMPLATE = "SELECT {COL} FROM {TABLE} WHERE {COL} IS NOT NULL ORDER BY {COL} ASC LIMIT 1"
 MAX_TEMPLATE = "SELECT {COL} FROM {TABLE} WHERE {COL} IS NOT NULL ORDER BY {COL} DESC LIMIT 1"
+
+# UNIQUE_VALS_TEMPLATE = """SELECT DISTINCT {COL} FROM {FROM_CLAUSE}"""
+# UNIQUE_COUNT_TEMPLATE = """SELECT COUNT(*) FROM (SELECT DISTINCT {COL} from {FROM_CLAUSE}) AS t"""
 
 UNIQUE_VALS_TEMPLATE = """SELECT DISTINCT "{COL}" FROM {FROM_CLAUSE}"""
 UNIQUE_COUNT_TEMPLATE = """SELECT COUNT(*) FROM (SELECT DISTINCT "{COL}" from {FROM_CLAUSE}) AS t"""
@@ -473,12 +520,20 @@ class Featurizer():
             for node, info in qrep["join_graph"].nodes(data=True):
                 self.seen_tabs.add(info["real_name"])
                 real_name = info["real_name"]
+                if real_name == "synth_primary":
+                    continue
 
                 if self.sample_bitmap and sbitmaps is not None:
                     if real_name not in self.seen_bitmaps:
                         self.seen_bitmaps[real_name] = set()
+
                     assert sbitmaps is not None
                     # startidx = len(self.table_featurizer)
+                    if (node,) not in sbitmaps:
+                        # print(node)
+                        # print(real_name)
+                        # pdb.set_trace()
+                        continue
                     sb = sbitmaps[(node,)]
                     # assert self.sample_bitmap_key in sb
                     if self.sample_bitmap_key not in sb:
@@ -513,6 +568,8 @@ class Featurizer():
                         assert len(vals) == 1
                         self.seen_like_preds[col].add(vals[0])
 
+        # print(self.seen_bitmaps.keys())
+        # pdb.set_trace()
 
     def update_using_saved_stats(self, featdata):
         for k,v in featdata.items():
@@ -534,6 +591,10 @@ class Featurizer():
     def update_max_sets(self, qreps):
         if "stats" in qreps[0]["template_name"]:
             self.join_col_map = JOIN_MAP_STATS
+        elif "ergast" in qreps[0]["workload"]:
+            self.join_col_map = JOIN_MAP_ERGAST
+        elif "synth" in qreps[0]["workload"]:
+            self.join_col_map = JOIN_MAP_SYNTH
         else:
             self.join_col_map = JOIN_MAP_IMDB
 
@@ -573,15 +634,27 @@ class Featurizer():
             if self.max_preds > self.max_pred_vals:
                 self.max_pred_vals = self.max_preds
 
+            # length 1 pred sets run into some broadcasting things
+            if self.max_preds <= 1:
+                self.max_preds = 2
+
             num_joins = len(qrep["join_graph"].edges())
             if num_joins > self.max_joins:
                 self.max_joins = num_joins
 
+
+        if self.max_joins <= 1:
+            self.max_joins = 2
+
         if self.join_bitmap:
             self.max_joins = len(set(self.join_col_map.values()))
+            self.max_joins += self.max_tables
 
         print("Max tables: ", self.max_tables, "Max pred vals: ", self.max_pred_vals,
                 "Max joins: ", self.max_joins)
+
+    def get_cont_pred_kind(info):
+        pass
 
     def update_workload_stats(self, qreps):
         for qrep in qreps:
@@ -589,11 +662,21 @@ class Featurizer():
             for node, info in qrep["join_graph"].nodes(data=True):
                 if "pred_types" not in info:
                     continue
+
                 for i, cmp_op in enumerate(info["pred_types"]):
+                    if cmp_op == "lt":
+                        if len(info["predicates"]) >= 1:
+                            if ">" in info["predicates"][i]:
+                                cmp_op = ">"
+                            elif "<" in info["predicates"][i]:
+                               cmp_op = "<"
+
                     self.cmp_ops.add(cmp_op)
+
                     if "like" in cmp_op:
                         self.regex_cols.add(info["pred_cols"][i])
                         self.regex_templates.add(qrep["template_name"])
+
                 self.tables.add(info["real_name"])
 
                 if node not in self.aliases:
@@ -784,6 +867,7 @@ class Featurizer():
             # it.id; very specific to CEB workloads.
             if is_float(info["min_value"]) and is_float(info["max_value"]) \
                     and "id" not in col:
+                    # and "synth" not in self.db_name:
                 # then use min-max normalization, no matter what
                 # only support range-queries, so lower / and upper predicate
                 pred_len += self.continuous_feature_size
@@ -926,17 +1010,26 @@ class Featurizer():
         self.pred_onehot_mask_consts[a:a+b] = 0.0
 
         a,b = self.featurizer_type_idxs["constant_like"]
+        self.pred_onehot_mask[a:a+b] = 0.0
         self.pred_onehot_mask_consts[a:a+b] = 0.0
 
         if "col_onehot" in self.featurizer_type_idxs:
             a,b = self.featurizer_type_idxs["col_onehot"]
             self.pred_onehot_mask[a:a+b] = 0.0
 
+        ## TODO: apply dropout to these or not?
+        # a,b = self.featurizer_type_idxs["constant_continuous"]
+        # self.pred_onehot_mask[a:a+b] = 0.0
+
+        # a,b = self.featurizer_type_idxs["cmp_op"]
+        # self.pred_onehot_mask[a:a+b] = 0.0
+
         ## mapping columns to continuous or not
         for col in col_keys:
             info = self.column_stats[col]
             if is_float(info["min_value"]) and is_float(info["max_value"]) \
                     and "id" not in col:
+                    # and "synth" not in self.db_name:
                 # then use min-max normalization, no matter what
                 # only support range-queries, so lower / and upper predicate
                 # continuous = True
@@ -1057,19 +1150,20 @@ class Featurizer():
 
         # change the
         if not self.feat_separate_alias:
-            newstats = {}
-            for k,v in self.column_stats.items():
-                newk = ''.join([ck for ck in k if not ck.isdigit()])
-                newstats[newk] = v
-            self.column_stats = newstats
+            if "synth" not in self.db_name:
+                newstats = {}
+                for k,v in self.column_stats.items():
+                    newk = ''.join([ck for ck in k if not ck.isdigit()])
+                    newstats[newk] = v
+                self.column_stats = newstats
 
-            jkey_stats = {}
-            for k,v in self.join_key_stats.items():
-                newk = ''.join([ck for ck in k if not ck.isdigit()])
-                jkey_stats[newk] = v
-            self.join_key_stats = jkey_stats
+                jkey_stats = {}
+                for k,v in self.join_key_stats.items():
+                    newk = ''.join([ck for ck in k if not ck.isdigit()])
+                    jkey_stats[newk] = v
+                self.join_key_stats = jkey_stats
 
-            print("Updated stats to remove alias based columns")
+                print("Updated stats to remove alias based columns")
 
             if self.loss_func == "flowloss":
                 print("updating features to include flowloss specific ones")
@@ -1133,11 +1227,19 @@ class Featurizer():
                 self.max_table_feature_len = len(self.tables) + \
                             len(self.tables)*self.sample_bitmap_buckets
         else:
+
             self.table_features_len = len(self.tables)
             self.max_table_feature_len = len(self.tables)
+            if self.table_features_len <= 1:
+                self.table_features_len = 2
 
         # only have onehot encoding for tables
         self.table_onehot_mask = np.zeros(self.table_features_len)
+
+        use_onehot = ("onehot" in self.join_features \
+                            or "1" in self.join_features) \
+                            and not self.join_bitmap
+        use_stats = "stats" in self.join_features and not self.join_bitmap
 
         ## join features
         if self.join_features == "1":
@@ -1146,8 +1248,6 @@ class Featurizer():
         elif self.join_features == "0":
             self.join_features = False
 
-        use_onehot = "onehot" in self.join_features and not self.join_bitmap
-        use_stats = "stats" in self.join_features and not self.join_bitmap
 
         self.join_features_len = 0
 
@@ -1189,6 +1289,8 @@ class Featurizer():
                 self.join_featurizer[join] = i
 
             self.join_features_len += len(self.joins)
+            ## avoiding edge cases with broadcasting length 1 things
+            self.join_features_len = max(self.join_features_len, 2)
             self.featurizer_type_idxs["join_onehot"] = (0, len(self.joins))
 
         if use_stats:
@@ -1208,7 +1310,12 @@ class Featurizer():
 
             self.join_features_len += joinstats_len
 
+        ## avoids size 1 broadcasting edge cases
+        if self.join_features_len <= 1:
+            self.join_features_len = 2
+
         self.join_onehot_mask = np.ones(self.join_features_len)
+
         if "join_onehot" in self.featurizer_type_idxs:
             a,b = self.featurizer_type_idxs["join_onehot"]
             self.join_onehot_mask[a:b] = 0.0
@@ -1290,10 +1397,17 @@ class Featurizer():
         min_val = float(col_info["min_value"])
         max_val = float(col_info["max_value"])
 
+        if "synth" in self.db_name:
+            val = val[0] if val[0] is not None else val[1]
+            cur_val = float(val)
+            norm_val = (cur_val - min_val) / (max_val - min_val)
+            norm_val = max(norm_val, 0.00)
+            norm_val = min(norm_val, 1.00)
+            pfeats[pred_idx_start] = norm_val
+            return
+
         # assert isinstance(val, list)
         if not isinstance(val, list):
-            # print(val)
-            # pdb.set_trace()
             val = [None, val]
 
         for vi, v in enumerate(val):
@@ -1323,7 +1437,7 @@ class Featurizer():
         '''
         col_info = self.column_stats[col]
         if self.featurization_type == "combined":
-            num_buckets = min(self.max_like_featurizing_buckets,
+            num_buckets = min(self.max_discrete_featurizing_buckets,
                     col_info["num_values"])
         else:
             num_buckets = self.max_discrete_featurizing_buckets
@@ -1515,7 +1629,8 @@ class Featurizer():
 
                     if c not in self.join_col_map:
                         print("{} still not in JOIN COL MAP".format(c))
-                        pdb.set_trace()
+                        # pdb.set_trace()
+                        continue
 
                     rcol = self.join_col_map[c]
                     tabname = c[0:c.find(".")]
@@ -1557,6 +1672,8 @@ class Featurizer():
                             continue
 
                         bitmap = set(alias_bm[bitmap_key])
+                        print(bitmap)
+                        pdb.set_trace()
 
                     real_join_cols[rcol].append(bitmap)
 
@@ -1619,11 +1736,28 @@ class Featurizer():
             return join_features
 
         seenjoins = set()
+        # print(">>>>>join bitmaps for: ", subplan)
+
         for alias1 in subplan:
             alias_jbitmaps  = self._find_join_bitmaps(alias1, join_bitmaps,
                                                          bitmaps, joingraph)
             for rcol, rbm in alias_jbitmaps.items():
+                if rcol != "result_id":
+                    continue
+                if "res3" in subplan:
+                    continue
+
+                if "1" in alias1:
+                    rcol += "1"
+                elif "2" in alias1:
+                    rcol += "2"
+
                 real_join_cols[rcol].append(rbm)
+
+            # if "res1" in subplan and "res2" in subplan and alias1 == "res1":
+                # print(alias1)
+                # print(alias_jbitmaps.keys())
+                # pdb.set_trace()
 
             ## maybe this stuff is just not required?
             ## probably need it for the id special case -- can handle that in
@@ -1632,21 +1766,60 @@ class Featurizer():
                 ekey = (alias1, alias2)
                 if ekey not in joingraph.edges():
                     continue
+
+                if "2" in alias1 and "2" in alias2:
+                    jgroup = "2"
+                elif "1" in alias1 and "1" in alias2:
+                    jgroup = "1"
+                elif "3" in alias1 and "3" in alias2:
+                    jgroup = "3"
+                elif "1" in alias1 and "2" in alias2:
+                    jgroup = "mix"
+                elif "2" in alias1 and "1" in alias2:
+                    jgroup = "mix"
+                elif "3" in alias1 and "2" in alias2:
+                    jgroup = "mix"
+                elif "3" in alias1 and "1" in alias2:
+                    jgroup = "mix"
+                else:
+                    jgroup = ""
+
                 join_str = joingraph.edges()[ekey]["join_condition"]
-                join_str = self.join_str_to_real_join(join_str)
-                if join_str in seenjoins:
+
+                if alias1 + "," + join_str in seenjoins:
                     continue
 
+                # assert len(seenjoins) == 0
+                seenjoins.add(alias1 + "," + join_str)
+
+                # strip alias info
+                join_str = self.join_str_to_real_join(join_str)
+
                 cols = join_str.split("=")
+
                 for ci, c in enumerate(cols):
                     if c not in self.join_col_map:
                         c = c.replace("\"", "")
 
                     if c not in self.join_col_map:
                         print("{} still not in JOIN COL MAP".format(c))
-                        pdb.set_trace()
+                        continue
+                        # pdb.set_trace()
 
                     rcol = self.join_col_map[c]
+                    rcol_orig = self.join_col_map[c]
+
+                    ## special casing driver id join for now
+                    # if jgroup != "mix" and rcol != "driver_id":
+                        # rcol += jgroup
+                    if jgroup != "mix":
+                        if not (rcol == "driver_id" and \
+                            "d1" in subplan and "d2" in subplan):
+                            rcol = rcol + jgroup
+                        elif not (rcol == "constructor_id" and \
+                            "c1" in subplan and "c2" in subplan):
+                            rcol = rcol + jgroup
+
                     tabname = c[0:c.find(".")]
                     real_join_tabs[rcol].append(tabname)
 
@@ -1654,9 +1827,11 @@ class Featurizer():
                     if self.aliases[alias1] == tabname:
                         curalias = alias1
                     elif self.aliases[alias2] == tabname:
-                        curalias = alias2
-                    else:
-                        assert False
+                        # alias2 will be alias1 later
+                        continue
+                        # curalias = alias2
+                    # else:
+                        # assert False
 
                     if ".id" in c.lower():
                         # sample bitmap
@@ -1676,13 +1851,26 @@ class Featurizer():
                     else:
                         bitmap_key = NEW_JOIN_TABLE_TEMPLATE.format(
                                 TABLE=tabname,
-                                JOINKEY=rcol,
+                                JOINKEY=rcol_orig,
                                 SS="sb",
                                 NUM=self.sample_bitmap_num)
+
                         try:
                             alias_bm = join_bitmaps[(curalias,)]
-                        except:
+                        except Exception as e:
+                            # print("exception in join bitmap")
+                            # print(e)
                             continue
+
+                        # print(alias1, alias2)
+                        # print(c)
+                        # print(join_str)
+                        # print(bitmap_key)
+                        # print(curalias)
+                        # print(curalias)
+                        # print(joingraph.nodes()[curalias])
+                        # print(set(alias_bm[bitmap_key]))
+                        # pdb.set_trace()
 
                         # TODO: maybe handle this some other way?
                         if bitmap_key not in alias_bm:
@@ -1692,7 +1880,17 @@ class Featurizer():
 
                     real_join_cols[rcol].append(bitmap)
 
+        # print("*****")
+        # print(subplan)
         for rc in real_join_cols:
+            ## debugging code
+            # print(rc)
+            # print(len(real_join_cols[rc]))
+            # for curvs in real_join_cols[rc]:
+                # print(len(curvs))
+
+            bitmap_int = set.intersection(*real_join_cols[rc])
+
             cur_idx = 0
             features = np.zeros(self.join_features_len)
             # num tables
@@ -1713,7 +1911,8 @@ class Featurizer():
 
             ## bitmap
             # real column on which we have bitmap
-            jcol_idx = self.real_join_col_mapping[rc]
+            rc_orig = "".join([ch for ch in rc if not ch.isdigit()])
+            jcol_idx = self.real_join_col_mapping[rc_orig]
             features[cur_idx + jcol_idx] = 1.0
             cur_idx += len(self.real_join_col_mapping)
 
@@ -1932,8 +2131,9 @@ class Featurizer():
 
         # set comparison operator 1-hot value, same for all types
         cmp_start,_ = self.featurizer_type_idxs["cmp_op"]
-        cmp_idx = self.cmp_ops_onehot[cmp_op]
-        pfeats[cmp_start + cmp_idx] = 1.00
+        if cmp_op in self.cmp_ops_onehot:
+            cmp_idx = self.cmp_ops_onehot[cmp_op]
+            pfeats[cmp_start + cmp_idx] = 1.00
 
         col_info = self.column_stats[col]
         toaddpfeats = True
@@ -1998,11 +2198,13 @@ class Featurizer():
                     pfeats[-2] = alias_est
                     pfeats[-1] = subp_est
             else:
-                pfeats[-2] = alias_est
+                hstart,_ = self.featurizer_type_idxs["heuristic_ests"]
+                if "synth" not in self.db_name:
+                    pfeats[-2] = alias_est
+                    assert pfeats[hstart] == alias_est
+
                 pfeats[-1] = subp_est
                 # test:
-                hstart,_ = self.featurizer_type_idxs["heuristic_ests"]
-                assert pfeats[hstart] == alias_est
                 assert pfeats[hstart+1] == subp_est
 
         if toaddpfeats:
@@ -2033,6 +2235,7 @@ class Featurizer():
             for alias in subplan:
                 if alias == SOURCE_NODE:
                     continue
+
                 tfeats = np.zeros(self.table_features_len)
                 # need to find its real table name from the join_graph
                 table = joingraph.nodes()[alias]["real_name"]
@@ -2054,16 +2257,23 @@ class Featurizer():
                 # Note: same table might be set to 1.0 twice, in case of aliases
                 tfeats[self.table_featurizer[table]] = 1.00
 
-                if self.sample_bitmap and bitmaps is not None:
+                # print(bitmaps)
+                # pdb.set_trace()
+                if self.sample_bitmap and bitmaps is not None \
+                        and (alias,) in bitmaps:
                     # assert bitmaps is not None
                     startidx = len(self.table_featurizer)
+                    # if alias not in bitmaps:
+                        # continue
                     sb = bitmaps[(alias,)]
+
                     if self.sample_bitmap_key in sb:
                         bitmap = sb[self.sample_bitmap_key]
                         if self.feat_onlyseen_preds:
                             if table not in self.seen_bitmaps:
-                                print(table, " not in seen bitmaps")
-                                pdb.set_trace()
+                                # print(table, " not in seen bitmaps")
+                                # pdb.set_trace()
+                                alltablefeats.append(tfeats)
                                 continue
                             train_seenvals = self.seen_bitmaps[table]
 
@@ -2086,6 +2296,8 @@ class Featurizer():
 
                 alltablefeats.append(tfeats)
 
+        # print(alltablefeats)
+        # pdb.set_trace()
         featdict["table"] = alltablefeats
 
         alljoinfeats = []
@@ -2147,14 +2359,16 @@ class Featurizer():
                 subp_est = 0.0
 
             seencols = set()
+
             for ci, col in enumerate(aliasinfo["pred_cols"]):
                 # we should have updated self.column_stats etc. to be appropriately
                 # updated
-                if not self.feat_separate_alias:
+                if not self.feat_separate_alias \
+                        and "synth" not in self.db_name:
                     col = ''.join([ck for ck in col if not ck.isdigit()])
 
                 if col not in self.column_stats:
-                    # print("col: {} not found in column stats".format(col))
+                    print("col: {} not found in column stats".format(col))
                     # assert False
                     continue
 
@@ -2164,11 +2378,19 @@ class Featurizer():
 
                 cmp_op = aliasinfo["pred_types"][ci]
 
+                if cmp_op == "lt":
+                    if len(aliasinfo["predicates"]) >= 1:
+                        if ">" in aliasinfo["predicates"][ci]:
+                            cmp_op = ">"
+                        elif "<" in aliasinfo["predicates"][ci]:
+                            cmp_op = "<"
+
                 # if jobquery and "like" in cmp_op.lower():
                     # # print("skipping featurizing likes for JOB")
                     # continue
 
-                continuous = self.column_stats[col]["continuous"]
+                continuous = self.column_stats[col]["continuous"] \
+                        and cmp_op in ["lt", "<", ">", "<=", ">="]
 
                 if continuous and not isinstance(allvals, list):
                     # FIXME: hack for jobm queries like = '1997'
@@ -2180,6 +2402,15 @@ class Featurizer():
                         cmp_op,
                         continuous, jobquery=jobquery)
 
+                # if subp_est != 0:
+                    # print(pfeats)
+                    # pdb.set_trace()
+
+                # if "10M" in qrep["workload"]:
+                    # print(col)
+                    # print(pfeats)
+                    # pdb.set_trace()
+
                 if continuous:
                     pass
                     # print(aliasinfo)
@@ -2187,6 +2418,9 @@ class Featurizer():
                     # print(pfeats)
 
                 allpredfeats += pfeats
+
+        # print(allpredfeats)
+        # pdb.set_trace()
 
         ## FIXME: need to test this
         # using mcvs for implied preds
@@ -2336,6 +2570,7 @@ class Featurizer():
         ## predicate filter features
         if self.pred_features:
             pfeats = np.zeros(self.pred_features_len)
+
             for alias in subplan:
                 aliasinfo = joingraph.nodes()[alias]
                 if len(aliasinfo["pred_cols"]) == 0:
@@ -2354,13 +2589,22 @@ class Featurizer():
                     val = val["literal"]
                 cmp_op = aliasinfo["pred_types"][0]
 
+                if cmp_op == "lt":
+                    if len(aliasinfo["predicates"]) >= 1:
+                        if ">" in aliasinfo["predicates"][0]:
+                            cmp_op = ">"
+                        elif "<" in aliasinfo["predicates"][0]:
+                            cmp_op = "<"
+
                 if col not in self.featurizer:
                     # print("col: {} not found in featurizer".format(col))
                     continue
 
                 cmp_op_idx, num_vals, continuous = self.featurizer[col]
-                cmp_idx = self.cmp_ops_onehot[cmp_op]
-                pfeats[cmp_op_idx+cmp_idx] = 1.00
+                if cmp_op in self.cmp_ops_onehot:
+                    cmp_idx = self.cmp_ops_onehot[cmp_op]
+                    pfeats[cmp_op_idx+cmp_idx] = 1.00
+
                 pred_idx_start = cmp_op_idx + len(self.cmp_ops)
 
                 if continuous:
@@ -2378,8 +2622,9 @@ class Featurizer():
                 num_pred_vals = num_vals - len(self.cmp_ops)
                 # add the appropriate postgresql estimate for this table in the
                 # subplan
-                if self.heuristic_features:
-                    assert pfeats[pred_idx_start + num_pred_vals-1] == 0.0
+                if self.heuristic_features \
+                        and len(subsetgraph.nodes()) > 1:
+                    # assert pfeats[pred_idx_start + num_pred_vals-1] == 0.0
                     node_key = tuple([alias])
                     subp_est = self._get_pg_est(subsetgraph.nodes()[node_key])
                     pfeats[pred_idx_start + num_pred_vals-1] = subp_est
@@ -2655,15 +2900,16 @@ class Featurizer():
             cur_idx += self.PG_EST_BUCKETS
 
         if self.card_type == "subplan":
-            if "expected" not in subsetg.nodes()[node]["cardinality"]:
-                print(node)
-                pdb.set_trace()
-            pg_est = subsetg.nodes()[node]["cardinality"]["expected"]
-            try:
-                total = subsetg.nodes()[node]["cardinality"]["total"]
-            except:
-                total = None
-            pg_est = self.normalize_val(pg_est, total)
+            pg_est = self._get_pg_est(subsetg.nodes()[node])
+            # if "expected" not in subsetg.nodes()[node]["cardinality"]:
+                # print(node)
+                # pdb.set_trace()
+            # pg_est = subsetg.nodes()[node]["cardinality"]["expected"]
+            # try:
+                # total = subsetg.nodes()[node]["cardinality"]["total"]
+            # except:
+                # total = None
+            # pg_est = self.normalize_val(pg_est, total)
 
         elif self.card_type == "joinkey":
             pg_est = pg_join_est
@@ -2818,7 +3064,7 @@ class Featurizer():
             assert len(mcvs) == len(mcvfreqs)
 
         total_count_query = COUNT_SIZE_TEMPLATE.format(FROM_CLAUSE =
-                table_real_name)
+                '"' + table_real_name + '"')
         count = int(self.execute(total_count_query)[0][0])
 
         mcvdict = {}

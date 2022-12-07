@@ -1188,6 +1188,47 @@ class SavedPreds(CardinalityEstimationAlg):
     def save_model(self, save_dir="./", suffix_name=""):
         pass
 
+class MSSQL(CardinalityEstimationAlg):
+    def test(self, test_samples, **kwargs):
+        assert isinstance(test_samples[0], dict)
+        preds = []
+        for sample in test_samples:
+            pred_dict = {}
+            nodes = list(sample["subset_graph"].nodes())
+
+            for alias_key in nodes:
+                info = sample["subset_graph"].nodes()[alias_key]
+                true_card = info["cardinality"]["actual"]
+                if "expected" not in info["cardinality"]:
+                    print("expected not in Postgres!")
+                    pdb.set_trace()
+                    continue
+                est = float(info["cardinality"]["ms"])
+                err = float(info["cardinality"]["actual"]) / float(est)
+
+                # if err >= 10000:
+                    # print(info["cardinality"])
+                    # print(alias_key)
+                    # print(err)
+                    # pdb.set_trace()
+
+                # elif err <= 0.00001:
+                    # print(info["cardinality"])
+                    # print(alias_key)
+                    # print(err)
+                    # pdb.set_trace()
+
+                pred_dict[(alias_key)] = est
+
+            preds.append(pred_dict)
+        return preds
+
+    def get_exp_name(self):
+        return self.__str__()
+
+    def __str__(self):
+        return "MSSQl"
+
 class Postgres(CardinalityEstimationAlg):
     def test(self, test_samples, **kwargs):
         assert isinstance(test_samples[0], dict)

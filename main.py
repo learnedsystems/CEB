@@ -132,6 +132,8 @@ def get_alg(alg):
         return SavedPreds(model_dir=args.model_dir)
     elif alg == "postgres":
         return Postgres()
+    elif alg == "ms":
+        return MSSQL()
     elif alg == "true":
         return TrueCardinalities()
     elif alg == "true_rank":
@@ -577,6 +579,11 @@ def load_qdata(fns, skip_timeouts=False):
                 break
 
             if "expected" not in qrep["subset_graph"].nodes()[node]["cardinality"]:
+                skip = True
+                # print("no expected!")
+                break
+
+            if "ms" not in qrep["subset_graph"].nodes()[node]["cardinality"]:
                 skip = True
                 # print("no expected!")
                 break

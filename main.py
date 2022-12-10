@@ -133,7 +133,9 @@ def get_alg(alg):
     elif alg == "postgres":
         return Postgres()
     elif alg == "ms":
-        return MSSQL()
+        return MSSQL(kind=alg)
+    elif alg == "legms":
+        return MSSQL(kind=alg)
     elif alg == "true":
         return TrueCardinalities()
     elif alg == "true_rank":

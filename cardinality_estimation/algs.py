@@ -1189,6 +1189,10 @@ class SavedPreds(CardinalityEstimationAlg):
         pass
 
 class MSSQL(CardinalityEstimationAlg):
+    def __init__(self, *args, **kwargs):
+        # TODO: set each of the kwargs as variables
+        self.kind = kwargs["kind"]
+
     def test(self, test_samples, **kwargs):
         assert isinstance(test_samples[0], dict)
         preds = []
@@ -1203,9 +1207,8 @@ class MSSQL(CardinalityEstimationAlg):
                     print("expected not in Postgres!")
                     pdb.set_trace()
                     continue
-                est = float(info["cardinality"]["ms"])
-                err = float(info["cardinality"]["actual"]) / float(est)
-
+                est = float(info["cardinality"][self.kind])
+                # err = float(info["cardinality"]["actual"]) / float(est)
                 # if err >= 10000:
                     # print(info["cardinality"])
                     # print(alias_key)
@@ -1224,7 +1227,7 @@ class MSSQL(CardinalityEstimationAlg):
         return preds
 
     def get_exp_name(self):
-        return self.__str__()
+        return self.__str__() + "-" + self.kind
 
     def __str__(self):
         return "MSSQl"

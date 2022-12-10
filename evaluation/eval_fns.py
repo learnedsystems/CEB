@@ -100,6 +100,7 @@ def fix_query(query):
 def _get_all_cardinalities(qreps, preds):
     ytrue = []
     yhat = []
+
     for i, pred_subsets in enumerate(preds):
         qrep = qreps[i]["subset_graph"].nodes()
         # assert len(qrep) == len(pred_subsets)
@@ -111,19 +112,21 @@ def _get_all_cardinalities(qreps, preds):
 
         keys.sort()
         for alias in keys:
-            if len(alias) == 1:
-                continue
-
             pred = pred_subsets[alias]
             if "actual" not in qrep[alias]["cardinality"]:
-                continue
+                assert False
+                # continue
 
             actual = qrep[alias]["cardinality"]["actual"]
             if actual < 0:
-                continue
+                actual = 1
+                pred = 1
+                # continue
+
             if actual >= TIMEOUT_CARD:
-                # print("skipping timeout card!")
-                continue
+                actual = TIMEOUT_CARD
+                pred = TIMEOUT_CARD
+                # continue
 
             if actual == 0:
                 # assert False
@@ -133,6 +136,7 @@ def _get_all_cardinalities(qreps, preds):
 
             ytrue.append(float(actual))
             yhat.append(float(pred))
+
     return np.array(ytrue), np.array(yhat)
 
 def _get_all_joinkeys(qreps, preds):
@@ -351,6 +355,15 @@ class QError(EvalFunc):
                 qnames.append(qrep["name"])
                 qidxs.append(qi)
                 curerr = errors[didx]
+                cards = qrep["subset_graph"].nodes()[node]["cardinality"]
+                # if numt == 1 and node[0] == "ci" and cards["actual"] < 100:
+                if numt == 1 and curerr >= 1000:
+                    print(curerr)
+                    print(qrep["template_name"])
+                    print(qrep["join_graph"].nodes()[node[0]])
+                    print(qrep["subset_graph"].nodes()[node]["cardinality"])
+                    print(node)
+                    pdb.set_trace()
 
                 num_table_errs[numt].append(curerr)
                 didx += 1
@@ -569,7 +582,10 @@ class PostgresPlanCost(EvalFunc):
             tmp_avg_err = np.round(np.mean(tmp_costs - tmp_opt_costs), 3)
             tmp_rel_costs[tmp] = tmp_relc
             tmp_avg_errs[tmp] = tmp_avg_err
-            print("Template: {}, Relative Cost: {}, Avg Err: {}".format(tmp,
+
+            print("Template: {}, Num: {} Relative Cost: {}, Avg Err: {}".format(
+                tmp,
+                len(tmp_costs),
                 tmp_relc, tmp_avg_err))
 
         if self.cost_model == "C":

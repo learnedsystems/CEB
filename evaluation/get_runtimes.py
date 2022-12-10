@@ -38,7 +38,7 @@ def read_flags():
     parser.add_argument("--rerun_timeouts", type=int, required=False,
             default=1)
     parser.add_argument("--db_name", type=str, required=False,
-            default="ergastf1")
+            default="imdb")
     parser.add_argument("--costs_fn_tmp", type=str, required=False,
             default="PostgresPlanCost-{}.csv")
 
@@ -184,6 +184,8 @@ def main():
             costs = costs[costs.samples_type.str.contains(args.samples_type)]
 
 
+    # print(set(costs["samples_type"]))
+    # pdb.set_trace()
     print("Going to execute {} queries, {} reps each".format(
         len(costs), args.reps))
 

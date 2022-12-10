@@ -1101,7 +1101,7 @@ class NN(CardinalityEstimationAlg):
 
         curloss = round(float(sum(epoch_losses))/len(epoch_losses),6)
 
-        if self.epoch % 100 == 0:
+        if self.epoch % 2 == 0:
             print("Epoch {} took {}, Avg Loss: {}, #samples: {}".format(self.epoch,
                 round(time.time()-start, 2), curloss, len(self.trainds)))
 

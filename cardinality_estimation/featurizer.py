@@ -201,19 +201,19 @@ JOIN_MAP_SYNTH = {}
 JOIN_MAP_SYNTH["synth_primary.id"] = "pid"
 JOIN_MAP_SYNTH["synth_foreign.tid"] = "pid"
 
-# JOIN_KEY_MAX_TMP = """SELECT COUNT(*), {COL} FROM {TABLE} GROUP BY {COL} ORDER BY COUNT(*) DESC LIMIT 1"""
-# JOIN_KEY_MIN_TMP = """SELECT COUNT(*), {COL} FROM {TABLE} GROUP BY {COL} ORDER BY COUNT(*) ASC LIMIT 1"""
-# JOIN_KEY_AVG_TMP = """SELECT AVG(count) FROM (SELECT COUNT(*) AS count, {COL} FROM {TABLE} GROUP BY {COL} ORDER BY COUNT(*)) AS tmp"""
-# JOIN_KEY_VAR_TMP = """SELECT VARIANCE(count) FROM (SELECT COUNT(*) AS count, {COL} FROM {TABLE} GROUP BY {COL} ORDER BY COUNT(*)) AS tmp"""
-# JOIN_KEY_COUNT_TMP = """SELECT COUNT({COL}) FROM {TABLE}"""
-# JOIN_KEY_DISTINCT_TMP = """SELECT COUNT(DISTINCT {COL}) FROM {TABLE}"""
+JOIN_KEY_MAX_TMP = """SELECT COUNT(*), {COL} FROM {TABLE} GROUP BY {COL} ORDER BY COUNT(*) DESC LIMIT 1"""
+JOIN_KEY_MIN_TMP = """SELECT COUNT(*), {COL} FROM {TABLE} GROUP BY {COL} ORDER BY COUNT(*) ASC LIMIT 1"""
+JOIN_KEY_AVG_TMP = """SELECT AVG(count) FROM (SELECT COUNT(*) AS count, {COL} FROM {TABLE} GROUP BY {COL} ORDER BY COUNT(*)) AS tmp"""
+JOIN_KEY_VAR_TMP = """SELECT VARIANCE(count) FROM (SELECT COUNT(*) AS count, {COL} FROM {TABLE} GROUP BY {COL} ORDER BY COUNT(*)) AS tmp"""
+JOIN_KEY_COUNT_TMP = """SELECT COUNT({COL}) FROM {TABLE}"""
+JOIN_KEY_DISTINCT_TMP = """SELECT COUNT(DISTINCT {COL}) FROM {TABLE}"""
 
-JOIN_KEY_MAX_TMP = """SELECT COUNT(*), "{COL}" FROM "{TABLE}" GROUP BY "{COL}" ORDER BY COUNT(*) DESC LIMIT 1"""
-JOIN_KEY_MIN_TMP = """SELECT COUNT(*), "{COL}" FROM "{TABLE}" GROUP BY "{COL}" ORDER BY COUNT(*) ASC LIMIT 1"""
-JOIN_KEY_AVG_TMP = """SELECT AVG(count) FROM (SELECT COUNT(*) AS count, "{COL}" FROM "{TABLE}" GROUP BY "{COL}" ORDER BY COUNT(*)) AS tmp"""
-JOIN_KEY_VAR_TMP = """SELECT VARIANCE(count) FROM (SELECT COUNT(*) AS count, "{COL}" FROM "{TABLE}" GROUP BY "{COL}" ORDER BY COUNT(*)) AS tmp"""
-JOIN_KEY_COUNT_TMP = """SELECT COUNT("{COL}") FROM "{TABLE}" """
-JOIN_KEY_DISTINCT_TMP = """SELECT COUNT(DISTINCT "{COL}") FROM "{TABLE}" """
+# JOIN_KEY_MAX_TMP = """SELECT COUNT(*), "{COL}" FROM "{TABLE}" GROUP BY "{COL}" ORDER BY COUNT(*) DESC LIMIT 1"""
+# JOIN_KEY_MIN_TMP = """SELECT COUNT(*), "{COL}" FROM "{TABLE}" GROUP BY "{COL}" ORDER BY COUNT(*) ASC LIMIT 1"""
+# JOIN_KEY_AVG_TMP = """SELECT AVG(count) FROM (SELECT COUNT(*) AS count, "{COL}" FROM "{TABLE}" GROUP BY "{COL}" ORDER BY COUNT(*)) AS tmp"""
+# JOIN_KEY_VAR_TMP = """SELECT VARIANCE(count) FROM (SELECT COUNT(*) AS count, "{COL}" FROM "{TABLE}" GROUP BY "{COL}" ORDER BY COUNT(*)) AS tmp"""
+# JOIN_KEY_COUNT_TMP = """SELECT COUNT("{COL}") FROM "{TABLE}" """
+# JOIN_KEY_DISTINCT_TMP = """SELECT COUNT(DISTINCT "{COL}") FROM "{TABLE}" """
 
 # TODO:
 NULL_FRAC_TMP = """SELECT null_frac FROM pg_stats WHERE tablename='{TABLE}' AND attname = '{COL}'"""
@@ -223,19 +223,24 @@ INSERT_TEMPLATE = "INSERT INTO {name} ({columns}) VALUES %s"
 
 NTILE_CLAUSE = "ntile({BINS}) OVER (ORDER BY {COLUMN}) AS {ALIAS}"
 GROUPBY_TEMPLATE = "SELECT {COLS}, COUNT(*) FROM {FROM_CLAUSE} GROUP BY {COLS}"
+# COUNT_SIZE_TEMPLATE = """SELECT COUNT(*) FROM "{FROM_CLAUSE}" """
 COUNT_SIZE_TEMPLATE = "SELECT COUNT(*) FROM {FROM_CLAUSE}"
-# COUNT_SIZE_TEMPLATE = "SELECT COUNT(*) FROM {FROM_CLAUSE}"
 
 SELECT_ALL_COL_TEMPLATE = "SELECT {COL} FROM {TABLE} WHERE {COL} IS NOT NULL"
-ALIAS_FORMAT = "{TABLE} AS {ALIAS}"
+# ALIAS_FORMAT = "{TABLE} AS {ALIAS}"
 MIN_TEMPLATE = "SELECT {COL} FROM {TABLE} WHERE {COL} IS NOT NULL ORDER BY {COL} ASC LIMIT 1"
 MAX_TEMPLATE = "SELECT {COL} FROM {TABLE} WHERE {COL} IS NOT NULL ORDER BY {COL} DESC LIMIT 1"
 
-# UNIQUE_VALS_TEMPLATE = """SELECT DISTINCT {COL} FROM {FROM_CLAUSE}"""
-# UNIQUE_COUNT_TEMPLATE = """SELECT COUNT(*) FROM (SELECT DISTINCT {COL} from {FROM_CLAUSE}) AS t"""
+# SELECT_ALL_COL_TEMPLATE = """ SELECT "{COL}" FROM "{TABLE}" WHERE "{COL}" IS NOT NULL """
+ALIAS_FORMAT = """ "{TABLE}" AS {ALIAS} """
+# MIN_TEMPLATE = """ SELECT {COL} FROM "{TABLE}" WHERE "{COL}" IS NOT NULL ORDER BY {COL} ASC LIMIT 1 """
+# MAX_TEMPLATE = """ SELECT "{COL}" FROM "{TABLE}" WHERE "{COL}" IS NOT NULL ORDER BY "{COL}" DESC LIMIT 1 """
 
-UNIQUE_VALS_TEMPLATE = """SELECT DISTINCT "{COL}" FROM {FROM_CLAUSE}"""
-UNIQUE_COUNT_TEMPLATE = """SELECT COUNT(*) FROM (SELECT DISTINCT "{COL}" from {FROM_CLAUSE}) AS t"""
+UNIQUE_VALS_TEMPLATE = """SELECT DISTINCT {COL} FROM {FROM_CLAUSE}"""
+UNIQUE_COUNT_TEMPLATE = """SELECT COUNT(*) FROM (SELECT DISTINCT {COL} from {FROM_CLAUSE}) AS t"""
+
+# UNIQUE_VALS_TEMPLATE = """SELECT DISTINCT "{COL}" FROM {FROM_CLAUSE}"""
+# UNIQUE_COUNT_TEMPLATE = """SELECT COUNT(*) FROM (SELECT DISTINCT "{COL}" from {FROM_CLAUSE}) AS t"""
 
 MCV_TEMPLATE= """SELECT most_common_vals,most_common_freqs FROM pg_stats WHERE tablename = '{TABLE}' and attname = '{COL}'"""
 
@@ -343,9 +348,11 @@ class Featurizer():
         self.join_key_normalizers = {}
         self.join_key_stat_names = ["null_frac", "count", "distinct",
                 "avg_key", "var_key", "max_key", "min_key"]
-        self.join_key_stat_tmps = [NULL_FRAC_TMP, JOIN_KEY_COUNT_TMP,
-                JOIN_KEY_DISTINCT_TMP, JOIN_KEY_AVG_TMP, JOIN_KEY_VAR_TMP,
-                JOIN_KEY_MAX_TMP, JOIN_KEY_MIN_TMP]
+        # self.join_key_stat_tmps = [NULL_FRAC_TMP, JOIN_KEY_COUNT_TMP,
+                # JOIN_KEY_DISTINCT_TMP, JOIN_KEY_AVG_TMP, JOIN_KEY_VAR_TMP,
+                # JOIN_KEY_MAX_TMP, JOIN_KEY_MIN_TMP]
+
+        self.join_key_stat_tmps = []
 
         # debug version
         # self.join_key_stat_names = ["max_key"]
@@ -1741,6 +1748,8 @@ class Featurizer():
         for alias1 in subplan:
             alias_jbitmaps  = self._find_join_bitmaps(alias1, join_bitmaps,
                                                          bitmaps, joingraph)
+
+            # print(alias_jbitmaps.keys())
             for rcol, rbm in alias_jbitmaps.items():
                 if rcol != "result_id":
                     continue
@@ -2368,8 +2377,10 @@ class Featurizer():
                     col = ''.join([ck for ck in col if not ck.isdigit()])
 
                 if col not in self.column_stats:
-                    print("col: {} not found in column stats".format(col))
+                    # print("col: {} not found in column stats".format(col))
                     # assert False
+                    # print(self.column_stats)
+                    # pdb.set_trace()
                     continue
 
                 allvals = aliasinfo["pred_vals"][ci]
@@ -3063,8 +3074,10 @@ class Featurizer():
             mcvs = newmcvs
             assert len(mcvs) == len(mcvfreqs)
 
+        # total_count_query = COUNT_SIZE_TEMPLATE.format(FROM_CLAUSE =
+                # '"' + table_real_name + '"')
         total_count_query = COUNT_SIZE_TEMPLATE.format(FROM_CLAUSE =
-                '"' + table_real_name + '"')
+                table_real_name)
         count = int(self.execute(total_count_query)[0][0])
 
         mcvdict = {}
@@ -3123,9 +3136,15 @@ class Featurizer():
                     self.primary_join_keys.add(jkey)
 
                 curtab = self.aliases[curalias]
+
+                # curtab = '"' + curtab + '"'
+
                 # print("skipping join stats for: ", jkey)
                 # continue
                 print(curcol)
+                csplit_idx = curcol.find(".")
+                curcol = curcol[0:csplit_idx+1] + '"' + curcol[csplit_idx+1:]+'"'
+
                 for si,tmp in enumerate(self.join_key_stat_tmps):
                     sname = self.join_key_stat_names[si]
                     execcmd = tmp.format(TABLE=curtab,
@@ -3212,10 +3231,16 @@ class Featurizer():
                 print(table)
                 pdb.set_trace()
 
+            table = '"' + table + '"'
+
+            csplit_idx = column.find(".")
+            column = column[0:csplit_idx+1] + '"' + column[csplit_idx+1:]+'"'
+
             min_query = MIN_TEMPLATE.format(TABLE = table,
                                             COL   = column)
             max_query = MAX_TEMPLATE.format(TABLE = table,
                                             COL   = column)
+
             unique_count_query = UNIQUE_COUNT_TEMPLATE.format(FROM_CLAUSE = table,
                                                       COL = column)
             total_count_query = COUNT_SIZE_TEMPLATE.format(FROM_CLAUSE = table)

@@ -445,6 +445,9 @@ def get_query_fns():
             with open("ceb_runtime_qnames.pkl", "rb") as f:
                 qkeys = pickle.load(f)
             print("going to read only {} CEB queries".format(len(qkeys)))
+        elif "ergast" in qdir:
+            with open("ergast_runtime_qnames.pkl", "rb") as f:
+                qkeys = pickle.load(f)
         else:
             qkeys = None
 
@@ -609,7 +612,7 @@ def load_qdata(fns, skip_timeouts=False):
                 break
 
             if "actual" not in qrep["subset_graph"].nodes()[node]["cardinality"]:
-                # print("no actual")
+                print("no actual")
                 skip = True
                 continue
                 # break
@@ -618,7 +621,6 @@ def load_qdata(fns, skip_timeouts=False):
                     >= TIMEOUT_CARD and skip_timeouts:
                 skip = True
                 # print(qfn)
-                # print("timeout card skipped!")
                 break
 
             if qrep["subset_graph"].nodes()[node]["cardinality"]["actual"] \
@@ -628,13 +630,13 @@ def load_qdata(fns, skip_timeouts=False):
 
             if "expected" not in qrep["subset_graph"].nodes()[node]["cardinality"]:
                 skip = True
-                # print("no expected!")
+                print("no expected!")
                 break
 
-            if "ms" not in qrep["subset_graph"].nodes()[node]["cardinality"]:
-                skip = True
-                # print("no expected!")
-                break
+            # if "ms" not in qrep["subset_graph"].nodes()[node]["cardinality"]:
+                # skip = True
+                # # print("no expected!")
+                # break
 
             # if qrep["subset_graph"].nodes()[node]["cardinality"]["expected"] \
                     # == 0:
@@ -756,10 +758,9 @@ def get_featurizer(trainqs, valqs, testqs, eval_qs):
 
     featurizer.update_max_sets(trainqs+valqs+testqs+all_evalqs)
 
-    if True:
-        featurizer.update_workload_stats(trainqs)
-    else:
-        featurizer.update_workload_stats(trainqs+valqs+testqs+all_evalqs)
+    # just updates stuff like max-num-tables etc. for some implementation
+    # things
+    featurizer.update_workload_stats(trainqs+valqs+testqs+all_evalqs)
 
     featurizer.init_feature_mapping()
 
@@ -845,6 +846,12 @@ def main():
     # keep around the qfns and load them as needed
     valqs = load_qdata(val_qfns, skip_timeouts=True)
     testqs = load_qdata(test_qfns, skip_timeouts=True)
+
+    # testqnames = [tq["name"] for tq in testqs]
+    # with open("ergast_runtime_qnames.pkl", "wb") as f:
+        # pickle.dump(testqnames, f)
+
+    # pdb.set_trace()
 
     eval_qdirs = args.eval_query_dir.split(",")
     print(eval_qdirs)
@@ -988,7 +995,7 @@ def read_flags():
 
     ## db credentials
     parser.add_argument("--db_name", type=str, required=False,
-            default="imdb")
+            default="ergastf1")
     parser.add_argument("--db_host", type=str, required=False,
             default="localhost")
     parser.add_argument("--user", type=str, required=False,
@@ -1045,7 +1052,7 @@ def read_flags():
     parser.add_argument("--eval_fns", type=str, required=False,
             default="ppc,qerr")
     parser.add_argument("--evalq_eval_fns", type=str, required=False,
-            default="qerr")
+            default="qerr,ppc")
 
     parser.add_argument("--cost_model", type=str, required=False,
             default="C")

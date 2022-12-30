@@ -484,7 +484,7 @@ class Featurizer():
             tab_alias = jsplits[0]
             if tab_alias not in self.aliases:
                 print("tab alias not in self.aliases: ", tab_alias)
-                pdb.set_trace()
+                # pdb.set_trace()
             real_jkey = self.aliases[tab_alias] + "." + jsplits[1]
             real_jkey = real_jkey.replace(" ", "")
             real_join_tabs.append(real_jkey)
@@ -652,6 +652,9 @@ class Featurizer():
 
         if self.max_joins <= 1:
             self.max_joins = 2
+
+        if self.max_tables <= 1:
+            self.max_tables = 2
 
         if self.join_bitmap:
             self.max_joins = len(set(self.join_col_map.values()))

@@ -606,6 +606,7 @@ def load_qdata(fns, skip_timeouts=False):
         if "constructorr" in qrep["sql"]:
             print(qrep["sql"])
             pdb.set_trace()
+
         for node in qrep["subset_graph"].nodes():
             if "cardinality" not in qrep["subset_graph"].nodes()[node]:
                 skip = True
@@ -617,11 +618,11 @@ def load_qdata(fns, skip_timeouts=False):
                 continue
                 # break
 
-            if qrep["subset_graph"].nodes()[node]["cardinality"]["actual"] \
-                    >= TIMEOUT_CARD and skip_timeouts:
-                skip = True
-                # print(qfn)
-                break
+            # if qrep["subset_graph"].nodes()[node]["cardinality"]["actual"] \
+                    # >= TIMEOUT_CARD and skip_timeouts:
+                # skip = True
+                # # print(qfn)
+                # break
 
             if qrep["subset_graph"].nodes()[node]["cardinality"]["actual"] \
                     < 1:
@@ -633,10 +634,14 @@ def load_qdata(fns, skip_timeouts=False):
                 print("no expected!")
                 break
 
-            # if "ms" not in qrep["subset_graph"].nodes()[node]["cardinality"]:
-                # skip = True
-                # # print("no expected!")
-                # break
+            # if "ms" not in qrep["subset_graph"].nodes()[node]["cardinality"] \
+                    # and (args.algs == "ms" or args.algs == "legms"):
+            if "ms" not in qrep["subset_graph"].nodes()[node]["cardinality"] \
+                    and args.db_name == "imdb":
+                skip = True
+                # print(qfn)
+                print("no ms!")
+                break
 
             # if qrep["subset_graph"].nodes()[node]["cardinality"]["expected"] \
                     # == 0:

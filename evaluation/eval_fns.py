@@ -357,13 +357,13 @@ class QError(EvalFunc):
                 curerr = errors[didx]
                 cards = qrep["subset_graph"].nodes()[node]["cardinality"]
                 # if numt == 1 and node[0] == "ci" and cards["actual"] < 100:
-                if numt == 1 and curerr >= 1000:
-                    print(curerr)
-                    print(qrep["template_name"])
-                    print(qrep["join_graph"].nodes()[node[0]])
-                    print(qrep["subset_graph"].nodes()[node]["cardinality"])
-                    print(node)
-                    pdb.set_trace()
+                # if numt == 1 and curerr >= 1000 and "mi" not in node[0]:
+                    # print(curerr)
+                    # print(qrep["template_name"])
+                    # print(qrep["join_graph"].nodes()[node[0]])
+                    # print(qrep["subset_graph"].nodes()[node]["cardinality"])
+                    # print(node)
+                    # pdb.set_trace()
 
                 num_table_errs[numt].append(curerr)
                 didx += 1

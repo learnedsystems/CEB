@@ -1,0 +1,36 @@
+title = ""
+
+[base_sql]
+
+sql = '''SELECT COUNT(*)
+FROM
+name as n,
+cast_info as ci,
+title as t
+WHERE
+n.id = ci.person_id
+AND ci.movie_id = t.id
+AND (Xname)
+'''
+
+# template 1
+[[templates]]
+
+  [[templates.predicates]]
+  [[templates.predicates.multi]]
+
+  type = "sql"
+  columns = ["n.id"]
+  keys = ["Xname"]
+  pred_type = "<"
+  dependencies = 0
+
+  sql = '''
+  SELECT n.id
+  FROM name as n
+  '''
+
+  sampling_method = ""
+  min_samples = 1
+  max_samples = 1
+

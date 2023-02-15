@@ -1,0 +1,71 @@
+title = ""
+ #- [ ] results, drivers, races
+#- [ ] driverStandings, drivers, races
+[base_sql]
+
+sql = '''SELECT COUNT(*)
+FROM
+drivers as d,
+"driverStandings" as ds,
+races as r
+WHERE
+ds."raceId" = r."raceId"
+AND ds."driverId" = d."driverId"
+AND (Xds)
+'''
+
+# template 1
+[[templates]]
+
+  [[templates.predicates]]
+  [[templates.predicates.multi]]
+
+  type = "sql"
+  columns = ['ds."driverStandingsId"']
+  keys = ["Xds"]
+  pred_type = "<"
+  dependencies = 0
+
+  sql = '''
+  SELECT ds."driverStandingsId"
+  FROM "driverStandings" as ds
+  '''
+
+  sampling_method = "random"
+  min_samples = 1
+  max_samples = 1
+
+
+  [[templates.predicates.multi]]
+
+  type = "sql"
+  columns = ['ds."driverId"']
+  keys = ["Xds"]
+  pred_type = "<"
+  dependencies = 0
+
+  sql = '''
+  SELECT ds."driverId"
+  FROM "driverStandings" as ds
+  '''
+
+  sampling_method = "random"
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates.multi]]
+
+  type = "sql"
+  columns = ['ds."raceId"']
+  keys = ["Xds"]
+  pred_type = "<"
+  dependencies = 0
+
+  sql = '''
+  SELECT ds."raceId"
+  FROM "driverStandings" as ds
+  '''
+
+  sampling_method = "random"
+  min_samples = 1
+  max_samples = 1

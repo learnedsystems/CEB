@@ -1,0 +1,88 @@
+title = "Template 1a"
+
+[base_sql]
+sql = '''SELECT COUNT(*)
+FROM "synth_2d_gaussian_10K" AS s
+WHERE
+(Xcol0)
+AND (Ycol0)
+AND (Xcol1)
+AND (Ycol1)
+'''
+
+# template 1
+[[templates]]
+
+  name = "1a"
+
+  [[templates.predicates]]
+  type = "sql"
+  columns = ["s.col0"]
+  keys = ["Xcol0"]
+  pred_type = "<"
+  dependencies = 0
+
+  sql = '''
+  SELECT col0
+  FROM "synth_2d_gaussian_10K"
+  WHERE col0 <= 13.5
+  AND col0 >= 10.0
+  '''
+
+  sampling_method = "random"
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates]]
+  type = "sql"
+  columns = ["s.col0"]
+  keys = ["Ycol0"]
+  pred_type = ">"
+  dependencies = 1
+
+  sql = '''
+  SELECT DISTINCT col0
+  FROM "synth_2d_gaussian_10K" AS s
+  WHERE (Xcol0)
+  AND col0 >= 10.0
+  '''
+
+  sampling_method = "random"
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates]]
+  type = "sql"
+  columns = ["s.col1"]
+  keys = ["Xcol1"]
+  pred_type = "<"
+  dependencies = 0
+
+  sql = '''
+  SELECT col1
+  FROM "synth_2d_gaussian_10K"
+  WHERE col1 <= 23.5
+  AND col1 >= 20
+  '''
+
+  sampling_method = "random"
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates]]
+  type = "sql"
+  columns = ["s.col1"]
+  keys = ["Ycol1"]
+  pred_type = ">"
+  dependencies = 1
+
+  sql = '''
+  SELECT col1
+  FROM "synth_2d_gaussian_10K" AS s
+  WHERE (Xcol1)
+  AND col1 >= 20
+  '''
+
+  sampling_method = "random"
+  min_samples = 1
+  max_samples = 1

@@ -1,0 +1,31 @@
+title = "Template 1a"
+
+[base_sql]
+sql = '''SELECT COUNT(*)
+FROM title as t,
+cast_info as ci
+WHERE
+t.id = ci.movie_id
+AND (Xtitle)
+'''
+
+# template 1
+[[templates]]
+
+  name = "1a"
+
+  [[templates.predicates]]
+  type = "sql"
+  columns = ["t.kind_id"]
+  keys = ["Xtitle"]
+  pred_type = "IN"
+  dependencies = 0
+
+  sql = '''
+  SELECT t.kind_id
+  FROM title as t
+  '''
+
+  sampling_method = "random"
+  min_samples = 1
+  max_samples = 2

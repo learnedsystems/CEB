@@ -1,0 +1,104 @@
+title = ""
+# - [ ] results, drivers, races
+[base_sql]
+
+sql = '''SELECT COUNT(*)
+FROM
+results as res,
+drivers as d,
+races as r
+WHERE
+res."raceId" = r."raceId"
+AND res."driverId" = d."driverId"
+AND (Xres)
+'''
+
+# template 1
+[[templates]]
+
+  [[templates.predicates]]
+  [[templates.predicates.multi]]
+
+  type = "sql"
+  columns = ['res."resultId"']
+  keys = ["Xres"]
+  pred_type = "<"
+  dependencies = 0
+
+  sql = '''
+  SELECT res."resultId"
+  FROM results as res
+  '''
+
+  sampling_method = ""
+  min_samples = 1
+  max_samples = 1
+
+
+  [[templates.predicates.multi]]
+
+  type = "sql"
+  columns = ['res."statusId"']
+  keys = ["Xres"]
+  pred_type = "<"
+  dependencies = 0
+
+  sql = '''
+  SELECT res."statusId"
+  FROM results as res
+  '''
+
+  sampling_method = ""
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates.multi]]
+
+  type = "sql"
+  columns = ['res."constructorId"']
+  keys = ["Xres"]
+  pred_type = "<"
+  dependencies = 0
+
+  sql = '''
+  SELECT res."statusId"
+  FROM results as res
+  '''
+
+  sampling_method = ""
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates.multi]]
+
+  type = "sql"
+  columns = ['res."raceId"']
+  keys = ["Xres"]
+  pred_type = "<"
+  dependencies = 0
+
+  sql = '''
+  SELECT res."statusId"
+  FROM results as res
+  '''
+
+  sampling_method = ""
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates.multi]]
+
+  type = "sql"
+  columns = ['res."driverId"']
+  keys = ["Xres"]
+  pred_type = "<"
+  dependencies = 0
+
+  sql = '''
+  SELECT res."statusId"
+  FROM results as res
+  '''
+
+  sampling_method = ""
+  min_samples = 1
+  max_samples = 1

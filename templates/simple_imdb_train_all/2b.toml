@@ -1,0 +1,88 @@
+title = ""
+
+[base_sql]
+
+sql = '''SELECT COUNT(*)
+FROM
+cast_info as ci,
+role_type as rt,
+name as n
+WHERE
+ci.person_id = n.id
+AND ci.role_id = rt.id
+AND (Xcast)
+AND (Xrole)
+'''
+
+# template 1
+[[templates]]
+
+  [[templates.predicates]]
+  [[templates.predicates.multi]]
+
+  type = "sql"
+  columns = ["ci.person_id"]
+  keys = ["Xcast"]
+  pred_type = "<"
+  dependencies = 0
+
+  sql = '''
+  SELECT ci.person_id
+  FROM cast_info as ci
+  '''
+
+  sampling_method = ""
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates.multi]]
+
+  type = "sql"
+  columns = ["ci.movie_id"]
+  keys = ["Xcast"]
+  pred_type = "<"
+  dependencies = 0
+
+  sql = '''
+  select ci.movie_id
+  from cast_info as ci
+  '''
+
+  sampling_method = ""
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates.multi]]
+
+  type = "sql"
+  columns = ["ci.person_role_id"]
+  keys = ["Xcast"]
+  pred_type = "="
+  dependencies = 0
+
+  sql = '''
+  select ci.person_role_id
+  from cast_info as ci
+  '''
+
+  sampling_method = ""
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates]]
+  [[templates.predicates.multi]]
+
+  type = "sql"
+  columns = ["rt.id"]
+  keys = ["Xrole"]
+  pred_type = "="
+  dependencies = 0
+
+  sql = '''
+  SELECT rt.id
+  FROM role_type as rt
+  '''
+
+  sampling_method = ""
+  min_samples = 1
+  max_samples = 1

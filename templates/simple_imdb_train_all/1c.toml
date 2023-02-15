@@ -1,0 +1,141 @@
+title = ""
+
+[base_sql]
+
+sql = '''SELECT COUNT(*)
+FROM
+title as t,
+kind_type as kt,
+cast_info as ci
+WHERE
+t.id = ci.movie_id
+AND t.kind_id = kt.id
+AND (Xcast)
+AND (Xtitle)
+'''
+
+# template 1
+[[templates]]
+
+  [[templates.predicates]]
+  [[templates.predicates.multi]]
+
+  type = "sql"
+  columns = ["ci.person_id"]
+  keys = ["Xcast"]
+  pred_type = "<"
+  dependencies = 0
+
+  sql = '''
+  SELECT ci.person_id
+  FROM cast_info as ci
+  '''
+
+  sampling_method = ""
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates.multi]]
+
+  type = "sql"
+  columns = ["ci.role_id"]
+  keys = ["Xcast"]
+  pred_type = "="
+  dependencies = 0
+
+  sql = '''
+  select ci.role_id
+  from cast_info as ci
+  '''
+
+  sampling_method = ""
+  min_samples = 1
+  max_samples = 1
+
+
+  [[templates.predicates.multi]]
+
+  type = "sql"
+  columns = ["ci.person_role_id"]
+  keys = ["Xcast"]
+  pred_type = "="
+  dependencies = 0
+
+  sql = '''
+  select ci.person_role_id
+  from cast_info as ci
+  '''
+
+  sampling_method = ""
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates]]
+  [[templates.predicates.multi]]
+
+  type = "sql"
+  columns = ["t.id"]
+  keys = ["Xtitle"]
+  pred_type = "<"
+  dependencies = 0
+
+  sql = '''
+  SELECT t.id
+  FROM title as t
+  '''
+
+  sampling_method = ""
+  min_samples = 1
+  max_samples = 1
+
+
+  [[templates.predicates.multi]]
+
+  type = "sql"
+  columns = ["t.production_year"]
+  keys = ["Xtitle"]
+  pred_type = "<"
+  dependencies = 0
+
+  sql = '''
+  SELECT t.production_year
+  FROM title as t
+  '''
+
+  sampling_method = ""
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates.multi]]
+
+  type = "sql"
+  columns = ["t.kind_id"]
+  keys = ["Xtitle"]
+  pred_type = "="
+  dependencies = 0
+
+  sql = '''
+  SELECT t.kind_id
+  FROM title as t
+  '''
+
+  sampling_method = ""
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates.multi]]
+
+  type = "sql"
+  columns = ["t.kind_id"]
+  keys = ["Xtitle"]
+  pred_type = "<"
+  dependencies = 0
+
+  sql = '''
+  SELECT t.kind_id
+  FROM title as t
+  '''
+
+  sampling_method = ""
+  min_samples = 1
+  max_samples = 1

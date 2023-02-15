@@ -1,0 +1,94 @@
+title = ""
+
+[base_sql]
+
+sql = '''
+SELECT COUNT(*)
+FROM
+district d1,
+account a1,
+trans t1,
+district d2,
+account a2,
+trans t2
+WHERE
+d1.district_id = a1.district_id
+AND a1.account_id = t1.account_id
+AND d2.district_id = a2.district_id
+AND a2.account_id = t2.account_id
+AND a1.account_id = a2.account_id
+AND (Xtrans1)
+AND (Xtrans2)
+'''
+
+[[templates]]
+
+  name = ""
+
+  [[templates.predicates]]
+  [[templates.predicates.multi]]
+  type = "sqls"
+  columns = ["t1.bank"]
+  keys = ["Xtrans1"]
+  dependencies = 0
+  sqls=["""SELECT t.bank, COUNT(*)
+  FROM trans t
+  GROUP BY
+  t.bank ORDER BY COUNT(*) DESC"""]
+
+  sampling_method = "quantile"
+  num_quantiles = 4
+  pred_type = "in"
+  min_samples = 1
+  max_samples = 4
+
+  [[templates.predicates.multi]]
+  type = "sqls"
+  columns = ["t1.k_symbol"]
+  keys = ["Xtrans1"]
+  dependencies = 0
+  sqls=["""SELECT t.k_symbol, COUNT(*)
+  FROM trans t
+  GROUP BY
+  t.k_symbol ORDER BY COUNT(*) DESC"""]
+
+  sampling_method = "quantile"
+  num_quantiles = 4
+  pred_type = "in"
+  min_samples = 1
+  max_samples = 4
+
+
+
+  [[templates.predicates]]
+  [[templates.predicates.multi]]
+  type = "sqls"
+  columns = ["t2.bank"]
+  keys = ["Xtrans2"]
+  dependencies = 0
+  sqls=["""SELECT t.bank, COUNT(*)
+  FROM trans t
+  GROUP BY
+  t.bank ORDER BY COUNT(*) DESC"""]
+
+  sampling_method = "quantile"
+  num_quantiles = 4
+  pred_type = "in"
+  min_samples = 1
+  max_samples = 4
+
+  [[templates.predicates.multi]]
+  type = "sqls"
+  columns = ["t2.k_symbol"]
+  keys = ["Xtrans2"]
+  dependencies = 0
+  sqls=["""SELECT t.k_symbol, COUNT(*)
+  FROM trans t
+  GROUP BY
+  t.k_symbol ORDER BY COUNT(*) DESC"""]
+
+  sampling_method = "quantile"
+  num_quantiles = 4
+  pred_type = "in"
+  min_samples = 1
+  max_samples = 4

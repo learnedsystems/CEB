@@ -1,0 +1,29 @@
+title = "Template 1a"
+
+[base_sql]
+sql = '''SELECT COUNT(*)
+FROM synth_columns_gaussian AS s
+WHERE
+(Xcol2)
+'''
+
+# template 1
+[[templates]]
+
+  name = "1a"
+
+  [[templates.predicates]]
+  type = "sql"
+  columns = ["s.col2"]
+  keys = ["Xcol2"]
+  pred_type = "IN"
+  dependencies = 0
+
+  sql = '''
+  SELECT DISTINCT col2
+  FROM synth_columns_gaussian
+  '''
+
+  sampling_method = "random"
+  min_samples = 1
+  max_samples = 3

@@ -1,0 +1,59 @@
+# trying to merge toml6 and toml5
+
+title = "Template 1a"
+
+[base_sql]
+sql = '''SELECT COUNT(*)
+FROM title as t,
+aka_title as at,
+name as n,
+cast_info as ci
+WHERE
+t.id = ci.movie_id
+AND t.id = at.movie_id
+AND n.id = ci.person_id
+AND (Xname)
+AND (Xtitle)
+'''
+
+# template 1
+[[templates]]
+
+  name = "1a"
+
+  [[templates.predicates]]
+  type = "sql"
+  columns = ["n.gender"]
+  keys = ["Xname"]
+  pred_type = "in"
+  dependencies = 0
+  sampling_method = "uniform"
+
+  sql = '''
+  SELECT n.gender
+  FROM name as n
+  '''
+
+  min_samples = 1
+  max_samples = 3
+
+  [[templates.predicates]]
+  type = "sql"
+  columns = ["t.kind_id"]
+  keys = ["Xtitle"]
+  pred_type = "IN"
+  dependencies = 0
+
+  sql = '''
+  SELECT t.kind_id, count(*)
+  FROM title as t
+  GROUP BY t.kind_id
+  HAVING COUNT(*) > 10000
+  ORDER BY count(*) desc
+  '''
+
+  sampling_method = "quantile"
+  num_quantiles = 2
+  min_samples = 1
+  max_samples = 3
+

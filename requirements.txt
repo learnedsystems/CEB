@@ -11,3 +11,5 @@ xgboost
 scikit-learn
 torch
 pygtrie
+wandb
+seaborn

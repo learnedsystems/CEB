@@ -1,0 +1,73 @@
+title = ""
+
+[base_sql]
+
+sql = '''SELECT COUNT(*)
+FROM
+name as n,
+person_info as pi,
+info_type as it
+WHERE
+n.id = pi.person_id
+AND pi.info_type_id = it.id
+AND (Xname)
+AND (Xit)
+'''
+
+# template 1
+[[templates]]
+
+  [[templates.predicates]]
+  [[templates.predicates.multi]]
+
+  type = "sql"
+  columns = ["n.id"]
+  keys = ["Xname"]
+  pred_type = "<"
+  dependencies = 0
+
+  sql = '''
+  SELECT n.id
+  FROM name as n
+  '''
+
+  sampling_method = ""
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates]]
+  [[templates.predicates.multi]]
+
+  type = "sql"
+  columns = ["it.id"]
+  keys = ["Xit"]
+  pred_type = "<"
+  dependencies = 0
+
+  sql = '''
+  SELECT it.id
+  FROM info_type as it
+  '''
+
+  sampling_method = ""
+  min_samples = 1
+  max_samples = 1
+
+
+  [[templates.predicates.multi]]
+
+  type = "sql"
+  columns = ["it.id"]
+  keys = ["Xit"]
+  pred_type = "="
+  dependencies = 0
+
+  sql = '''
+  SELECT it.id
+  FROM info_type as it
+  '''
+
+  sampling_method = ""
+  min_samples = 1
+  max_samples = 1
+

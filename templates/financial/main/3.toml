@@ -1,0 +1,130 @@
+title = ""
+
+[base_sql]
+
+sql = '''
+SELECT COUNT(*)
+FROM
+district d1,
+account a1,
+trans t1,
+district d2,
+account a2,
+trans t2
+WHERE
+d1.district_id = a1.district_id
+AND a1.account_id = t1.account_id
+AND d2.district_id = a2.district_id
+AND a2.account_id = t2.account_id
+AND a1.account_id = a2.account_id
+AND (Xdate1)
+AND (Xamount1)
+AND (Xdate2)
+AND (Xamount2)
+'''
+
+[[templates]]
+
+  name = ""
+
+  [[templates.predicates]]
+  [[templates.predicates.multi]]
+  type = "list"
+  columns = ["t1.date"]
+  keys = ["Xdate1"]
+  dependencies = 0
+  options = ['%1993%', '%1994%', '%1995%', '%1996%', '%1997%', '%1998%']
+  sampling_method = "uniform"
+  pred_type = "ILIKE"
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates]]
+  [[templates.predicates.multi]]
+  #type = "list"
+  type = "sqls"
+  columns = ["t1.amount"]
+  keys = ["Xamount1"]
+  dependencies = 0
+  sampling_method = "random"
+  #options = [100, 1000, 10000, 2500]
+  sqls = ["""SELECT t.amount from trans as t WHERE t.amount >= 100
+  AND t.amount <= 1000""",
+  """SELECT t.amount from trans as t WHERE t.amount >= 1000
+  AND t.amount <= 10000""",
+  """SELECT t.amount from trans as t WHERE t.amount >= 10000
+  AND t.amount <= 500000""",]
+
+  pred_type = ">"
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates.multi]]
+  #type = "list"
+  type = "sqls"
+  columns = ["t1.amount"]
+  keys = ["Xamount1"]
+  dependencies = 0
+  sampling_method = "random"
+  #options = [100, 1000, 10000, 2500]
+  sqls = ["""SELECT t.amount from trans as t WHERE t.amount >= 100
+  AND t.amount <= 1000""",
+  """SELECT t.amount from trans as t WHERE t.amount >= 1000
+  AND t.amount <= 10000""",
+  """SELECT t.amount from trans as t WHERE t.amount >= 10000
+  AND t.amount <= 500000""",]
+
+  pred_type = "<"
+  min_samples = 1
+  max_samples = 1
+
+
+  [[templates.predicates]]
+  [[templates.predicates.multi]]
+  type = "list"
+  columns = ["t2.date"]
+  keys = ["Xdate2"]
+  dependencies = 0
+  options = ['%1993%', '%1994%', '%1995%', '%1996%', '%1997%', '%1998%']
+  sampling_method = "uniform"
+  pred_type = "ILIKE"
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates]]
+  [[templates.predicates.multi]]
+  #type = "list"
+  type = "sqls"
+  columns = ["t2.amount"]
+  keys = ["Xamount2"]
+  dependencies = 0
+  sampling_method = "random"
+  #options = [100, 1000, 10000, 2500]
+  sqls = ["""SELECT t.amount from trans as t WHERE t.amount >= 100
+  AND t.amount <= 1000""",
+  """SELECT t.amount from trans as t WHERE t.amount >= 1000
+  AND t.amount <= 10000""",
+  """SELECT t.amount from trans as t WHERE t.amount >= 10000
+  AND t.amount <= 500000""",]
+  pred_type = ">"
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates.multi]]
+  #type = "list"
+  type = "sqls"
+  columns = ["t2.amount"]
+  keys = ["Xamount2"]
+  dependencies = 0
+  sampling_method = "random"
+  #options = [100, 1000, 10000, 2500]
+  sqls = ["""SELECT t.amount from trans as t WHERE t.amount >= 100
+  AND t.amount <= 1000""",
+  """SELECT t.amount from trans as t WHERE t.amount >= 1000
+  AND t.amount <= 10000""",
+  """SELECT t.amount from trans as t WHERE t.amount >= 10000
+  AND t.amount <= 500000""",]
+
+  pred_type = "<"
+  min_samples = 1
+  max_samples = 1

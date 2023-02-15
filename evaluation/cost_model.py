@@ -1,7 +1,7 @@
 import pdb
 
 NILJ_CONSTANT = 0.001
-MAX_JOINS = 32
+MAX_JOINS = 20
 
 def set_cost_model(cursor, cost_model):
     '''
@@ -13,12 +13,11 @@ def set_cost_model(cursor, cost_model):
     cursor.execute("SET join_collapse_limit = {}".format(MAX_JOINS))
     cursor.execute("SET from_collapse_limit = {}".format(MAX_JOINS))
 
-    if cost_model == "cm1":
+    if cost_model == "cm1" or cost_model == "C":
         cursor.execute("SET max_parallel_workers = 0")
         cursor.execute("SET max_parallel_workers_per_gather = 0")
 
         cursor.execute("SET enable_material = off")
-
         cursor.execute("SET enable_hashjoin = on")
         cursor.execute("SET enable_mergejoin = on")
         cursor.execute("SET enable_nestloop = on")
@@ -28,6 +27,21 @@ def set_cost_model(cursor, cost_model):
         cursor.execute("SET enable_indexonlyscan = {}".format("on"))
         cursor.execute("SET enable_bitmapscan = {}".format("on"))
         cursor.execute("SET enable_tidscan = {}".format("on"))
+
+    elif cost_model == "C2":
+        cursor.execute("SET max_parallel_workers = 0")
+        cursor.execute("SET max_parallel_workers_per_gather = 0")
+
+        cursor.execute("SET enable_material = off")
+        cursor.execute("SET enable_hashjoin = on")
+        cursor.execute("SET enable_mergejoin = on")
+        cursor.execute("SET enable_nestloop = on")
+
+        cursor.execute("SET enable_indexscan = {}".format("off"))
+        cursor.execute("SET enable_seqscan = {}".format("on"))
+        cursor.execute("SET enable_indexonlyscan = {}".format("off"))
+        cursor.execute("SET enable_bitmapscan = {}".format("off"))
+        cursor.execute("SET enable_tidscan = {}".format("off"))
     else:
         assert False, "{} cost model unknown".format(cost_model)
 

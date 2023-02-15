@@ -1,7 +1,7 @@
 import sqlparse
 from sqlparse.sql import IdentifierList, Identifier
 from sqlparse.tokens import Keyword, DML
-from moz_sql_parser import parse
+# from moz_sql_parser import parse
 import time
 # from networkx.drawing.nx_agraph import graphviz_layout, to_agraph
 # from networkx.algorithms import bipartite
@@ -27,6 +27,199 @@ ALIAS_FORMAT = "{TABLE} AS {ALIAS}"
 RANGE_PREDS = ["gt", "gte", "lt", "lte"]
 COUNT_SIZE_TEMPLATE = "SELECT COUNT(*) FROM {FROM_CLAUSE}"
 
+import glob
+from .query import *
+import random
+
+def _find_all_tables(plan):
+    '''
+    '''
+    # find all the scan nodes under the current level, and return those
+    table_names = extract_values(plan, "Relation Name")
+    alias_names = extract_values(plan, "Alias")
+    table_names.sort()
+    alias_names.sort()
+
+    return table_names, alias_names
+
+def extract_aliases2(plan):
+    aliases = extract_values(plan, "Alias")
+    return aliases
+
+
+def explain_to_nx(explain):
+    '''
+    '''
+    # JOIN_KEYS = ["Hash Join", "Nested Loop", "Join"]
+    base_table_nodes = []
+    join_nodes = []
+
+    def _get_node_name(tables):
+        name = ""
+        if len(tables) > 1:
+            name = str(deterministic_hash(str(tables)))[0:5]
+            join_nodes.append(name)
+        else:
+            name = tables[0]
+            if len(name) >= 6:
+                # no aliases, shorten it
+                name = "".join([n[0] for n in name.split("_")])
+                if name in base_table_nodes:
+                    name = name + "2"
+            base_table_nodes.append(name)
+        return name
+
+    def _add_node_stats(node, plan):
+        # add stats for the join
+        G.nodes[node]["Plan Rows"] = plan["Plan Rows"]
+        if "Actual Rows" in plan:
+            G.nodes[node]["Actual Rows"] = plan["Actual Rows"]
+        else:
+            G.nodes[node]["Actual Rows"] = -1.0
+        if "Actual Total Time" in plan:
+            G.nodes[node]["total_time"] = plan["Actual Total Time"]
+
+            if "Plans" not in plan:
+                children_time = 0.0
+            elif len(plan["Plans"]) == 2:
+                children_time = plan["Plans"][0]["Actual Total Time"] \
+                        + plan["Plans"][1]["Actual Total Time"]
+            elif len(plan["Plans"]) == 1:
+                children_time = plan["Plans"][0]["Actual Total Time"]
+            else:
+                assert False
+
+            G.nodes[node]["cur_time"] = plan["Actual Total Time"]-children_time
+
+        else:
+            G.nodes[node]["Actual Total Time"] = -1.0
+
+        if "Node Type" in plan:
+            G.nodes[node]["Node Type"] = plan["Node Type"]
+
+        total_cost = plan["Total Cost"]
+        G.nodes[node]["Total Cost"] = total_cost
+        aliases = G.nodes[node]["aliases"]
+        if len(G.nodes[node]["tables"]) > 1:
+            children_cost = plan["Plans"][0]["Total Cost"] \
+                    + plan["Plans"][1]["Total Cost"]
+
+            # +1 to avoid cases which are very close
+            if not total_cost+1 >= children_cost:
+                print("aliases: {} children cost: {}, total cost: {}".format(\
+                        aliases, children_cost, total_cost))
+                # pdb.set_trace()
+            G.nodes[node]["cur_cost"] = total_cost - children_cost
+            G.nodes[node]["node_label"] = plan["Node Type"][0]
+            G.nodes[node]["scan_type"] = ""
+        else:
+            G.nodes[node]["cur_cost"] = total_cost
+            G.nodes[node]["node_label"] = node
+            # what type of scan was this?
+            node_types = extract_values(plan, "Node Type")
+            for i, full_n in enumerate(node_types):
+                shortn = ""
+                for n in full_n.split(" "):
+                    shortn += n[0]
+                node_types[i] = shortn
+
+            scan_type = "\n".join(node_types)
+            G.nodes[node]["scan_type"] = scan_type
+
+    def traverse(obj):
+        if isinstance(obj, dict):
+            if "Plans" in obj:
+                if len(obj["Plans"]) == 2:
+                    # these are all the joins
+                    left_tables, left_aliases = _find_all_tables(obj["Plans"][0])
+                    right_tables, right_aliases = _find_all_tables(obj["Plans"][1])
+                    if len(left_tables) == 0 or len(right_tables) == 0:
+                        return
+                    all_tables = left_tables + right_tables
+                    all_aliases = left_aliases + right_aliases
+                    all_aliases.sort()
+                    all_tables.sort()
+
+                    if len(left_aliases) > 0:
+                        node0 = _get_node_name(left_aliases)
+                        node1 = _get_node_name(right_aliases)
+                        node_new = _get_node_name(all_aliases)
+                    else:
+                        node0 = _get_node_name(left_tables)
+                        node1 = _get_node_name(right_tables)
+                        node_new = _get_node_name(all_tables)
+
+                    # update graph
+                    # G.add_edge(node0, node_new)
+                    # G.add_edge(node1, node_new)
+                    G.add_edge(node_new, node0)
+                    G.add_edge(node_new, node1)
+                    G.edges[(node_new, node0)]["join_direction"] = "left"
+                    G.edges[(node_new, node1)]["join_direction"] = "right"
+
+                    # add other parameters on the nodes
+                    G.nodes[node0]["tables"] = left_tables
+                    G.nodes[node1]["tables"] = right_tables
+                    G.nodes[node0]["aliases"] = left_aliases
+                    G.nodes[node1]["aliases"] = right_aliases
+                    G.nodes[node_new]["tables"] = all_tables
+                    G.nodes[node_new]["aliases"] = all_aliases
+
+                    # TODO: if either the left, or right were a scan, then add
+                    # scan stats
+                    _add_node_stats(node_new, obj)
+
+                    if len(left_tables) == 1:
+                        _add_node_stats(node0, obj["Plans"][0])
+                    if len(right_tables) == 1:
+                        _add_node_stats(node1, obj["Plans"][1])
+
+            for k, v in obj.items():
+                if isinstance(v, (dict, list)):
+                    traverse(v)
+
+        elif isinstance(obj, list) or isinstance(obj,tuple):
+            for item in obj:
+                traverse(item)
+
+    G = nx.DiGraph()
+    traverse(explain)
+    G.base_table_nodes = base_table_nodes
+    G.join_nodes = join_nodes
+    return G
+
+'''
+loading functions
+'''
+def load_qdata(fns):
+    qreps = []
+    for qfn in fns:
+        qrep = load_qrep(qfn)
+        # TODO: can do checks like no queries with zero cardinalities etc.
+        qreps.append(qrep)
+        template_name = os.path.basename(os.path.dirname(qfn))
+        qrep["name"] = os.path.basename(qfn)
+        qrep["template_name"] = template_name
+    return qreps
+
+def get_query_fns(basedir, template_fraction=1.0):
+    fns = []
+    tmpnames = list(glob.glob(os.path.join(basedir, "*")))
+    assert template_fraction <= 1.0
+
+    for qi,qdir in enumerate(tmpnames):
+        if os.path.isfile(qdir):
+            continue
+        template_name = os.path.basename(qdir)
+        # let's first select all the qfns we are going to load
+        qfns = list(glob.glob(os.path.join(qdir, "*.pkl")))
+        qfns.sort()
+        num_samples = max(int(len(qfns)*template_fraction), 1)
+        random.seed(1234)
+        qfns = random.sample(qfns, num_samples)
+        fns += qfns
+    return fns
+
 '''
 functions copied over from ryan's utils files
 '''
@@ -43,7 +236,6 @@ def generate_subset_graph(g):
     subset_graph = nx.DiGraph()
     for csg in connected_subgraphs(g):
         subset_graph.add_node(csg)
-
     # group by size
     max_subgraph_size = max(len(x) for x in subset_graph.nodes)
     subgraph_groups = [[] for _ in range(max_subgraph_size)]
@@ -183,7 +375,8 @@ def extract_aliases(plan, jg=None):
             alias = plan["Alias"]
             real_name = jg.nodes[alias]["real_name"]
             # yield f"{real_name} as {alias}"
-            yield "{} as {}".format(real_name, alias)
+            # yield "{} as {}".format(real_name, alias)
+            yield "\"{}\" as {}".format(real_name, alias)
         else:
             yield plan["Alias"]
 
@@ -232,6 +425,10 @@ def nodes_to_sql(nodes, join_graph):
     return sql_str
 
 def nx_graph_to_query(G, from_clause=None):
+    '''
+    @G: join_graph in the query_represntation format
+    '''
+
     froms = []
     conds = []
     for nd in G.nodes(data=True):
@@ -257,8 +454,58 @@ def nx_graph_to_query(G, from_clause=None):
     if len(conds) > 0:
         wheres = ' AND '.join(conds)
         from_clause += " WHERE " + wheres
-    count_query = COUNT_SIZE_TEMPLATE.format(FROM_CLAUSE=from_clause)
-    return count_query
+
+    if "aggr_cmd" not in G.graph or G.graph["aggr_cmd"] == "":
+        ret_query = COUNT_SIZE_TEMPLATE.format(FROM_CLAUSE=from_clause)
+    else:
+        SQL_TMP = "{} FROM {}"
+        ret_query = SQL_TMP.format(G.graph["aggr_cmd"],
+                        from_clause)
+
+    return ret_query
+
+# def extract_join_clause(query):
+    # '''
+    # FIXME: this can be optimized further / or made to handle more cases
+    # '''
+    # parsed = sqlparse.parse(query)[0]
+    # # let us go over all the where clauses
+    # start = time.time()
+    # where_clauses = None
+    # for token in parsed.tokens:
+        # if (type(token) == sqlparse.sql.Where):
+            # where_clauses = token
+    # if where_clauses is None:
+        # return []
+    # join_clauses = []
+
+    # froms, aliases, table_names = extract_from_clause(query)
+    # if len(aliases) > 0:
+        # tables = [k for k in aliases]
+    # else:
+        # tables = table_names
+    # matches = find_all_clauses(tables, where_clauses)
+
+    # for match in matches:
+        # if "=" not in match or match.count("=") > 1:
+            # continue
+        # if "<=" in match or ">=" in match:
+            # continue
+        # match = match.replace(";", "")
+        # if "!" in match:
+            # left, right = match.split("!=")
+            # if "." in right:
+                # # must be a join, so add it.
+                # join_clauses.append(left.strip() + " != " + right.strip())
+            # continue
+        # left, right = match.split("=")
+
+        # # ugh dumb hack
+        # if "." in right:
+            # # must be a join, so add it.
+            # join_clauses.append(left.strip() + " = " + right.strip())
+
+    # return join_clauses
 
 def extract_join_clause(query):
     '''
@@ -288,15 +535,25 @@ def extract_join_clause(query):
         if "<=" in match or ">=" in match:
             continue
         match = match.replace(";", "")
-        if "!" in match:
+
+        if "!=" in match:
             left, right = match.split("!=")
-            if "." in right:
+
+            if not ("id" in left.lower() and "id" in right.lower()):
+                continue
+
+            if right.count(".") == 1 and "'" not in right:
                 # must be a join, so add it.
                 join_clauses.append(left.strip() + " != " + right.strip())
             continue
+
         left, right = match.split("=")
+
+        if not ("id" in left.lower() and "id" in right.lower()):
+            continue
+
         # ugh dumb hack
-        if "." in right:
+        if right.count(".") == 1 and "'" not in right:
             # must be a join, so add it.
             join_clauses.append(left.strip() + " = " + right.strip())
 
@@ -707,8 +964,9 @@ def get_pg_join_order(join_graph, explain):
 
     try:
         return __extract_jo(explain[0][0][0]["Plan"]), physical_join_ops, scan_ops
-    except:
-        print(explain)
+    except Exception as e:
+        # print(explain)
+        print(e)
         pdb.set_trace()
 
 def extract_join_graph(sql):
@@ -736,6 +994,7 @@ def extract_join_graph(sql):
 
         join_graph.add_edge(t1, t2)
         join_graph[t1][t2]["join_condition"] = j
+
         if t1 in aliases:
             table1 = aliases[t1]
             table2 = aliases[t2]
@@ -750,6 +1009,11 @@ def extract_join_graph(sql):
         if (type(token) == sqlparse.sql.Where):
             where_clauses = token
     assert where_clauses is not None
+
+    if len(join_graph.nodes()) == 0:
+        for alias in aliases:
+            join_graph.add_node(alias)
+            join_graph.nodes()[alias]["real_name"] = aliases[alias]
 
     for t1 in join_graph.nodes():
         tables = [t1]
@@ -819,7 +1083,8 @@ def cached_execute_query(sql, user, db_host, port, pwd, db_name,
     try:
         cursor.execute(sql)
     except Exception as e:
-        # print("query failed to execute: ", sql)
+        print(e)
+        print("query failed to execute: ", sql)
         # FIXME: better way to do this.
         cursor.execute("ROLLBACK")
         con.commit()

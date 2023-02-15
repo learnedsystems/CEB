@@ -1,0 +1,84 @@
+title = ""
+# not X (british) drivers, who have driven for X constructor, and also driven
+# for a constructor from their home country AND have scored good / bad results
+# in races
+
+[base_sql]
+
+sql = '''
+SELECT COUNT(*)
+FROM
+constructors c,
+drivers d,
+results res,
+constructors c2,
+drivers d2,
+results res2
+WHERE c."constructorId" = res."constructorId"
+AND res."driverId" = d."driverId"
+AND d.nationality != c.nationality
+AND c2."constructorId" = res2."constructorId"
+AND res2."driverId" = d2."driverId"
+AND d2.nationality = c2.nationality
+AND d2."driverId" = d."driverId"
+AND (Xc1nation)
+AND (Xposition1)
+AND (Xposition2)
+AND (Xpoints1)
+AND (Xpoints2)
+'''
+
+[[templates]]
+
+  name = ""
+
+  [[templates.predicates]]
+  [[templates.predicates.multi]]
+  type = "list"
+  columns = ["c.nationality"]
+  keys = ["Xc1nation"]
+  dependencies = 0
+  options = ['%brit%', '%amer%', '%ind%', '%chin%', '%ital%', '%ger%',
+            '%a%', '%i%', '%mex%', '%span%', '%braz%']
+  sampling_method = "uniform"
+  pred_type = "ILIKE"
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates]]
+  [[templates.predicates.multi]]
+  type = "sqls"
+  columns = ["res.position", "res.points"]
+  keys = ["Xposition1", "Xpoints1"]
+  dependencies = 0
+  sampling_method = "uniform"
+  pred_type = "IN"
+  sqls = ["""SELECT position, points, COUNT(*) FROM results WHERE position < 3
+  GROUP BY position,points ORDER BY COUNT(*) DESC""",
+   """SELECT position, points, COUNT(*) FROM results WHERE position > 6 AND
+   position < 8 GROUP BY position,points ORDER BY COUNT(*) DESC;""",
+   """SELECT position, points, COUNT(*) FROM results WHERE position > 8 GROUP
+   BY position,points ORDER BY COUNT(*) DESC;"""]
+
+  min_samples = 1
+  max_samples = 4
+
+
+  [[templates.predicates]]
+  [[templates.predicates.multi]]
+  type = "sqls"
+  columns = ["res2.position", "res2.points"]
+  keys = ["Xposition2", "Xpoints2"]
+  dependencies = 0
+  sampling_method = "uniform"
+  pred_type = "IN"
+  sqls = ["""SELECT position, points, COUNT(*) FROM results WHERE position < 3
+  GROUP BY position,points ORDER BY COUNT(*) DESC""",
+   """SELECT position, points, COUNT(*) FROM results WHERE position > 6 AND
+   position < 8 GROUP BY position,points ORDER BY COUNT(*) DESC;""",
+   """SELECT position, points, COUNT(*) FROM results WHERE position > 8 GROUP
+   BY position,points ORDER BY COUNT(*) DESC;"""]
+
+  min_samples = 1
+  max_samples = 4
+

@@ -132,7 +132,8 @@ def get_pghint_modified_sql(sql, cardinalities, join_ops,
     sql = pg_hint_str + sql
     return sql
 
-def _get_pg_plancost(query, est_cardinalities, true_cardinalities,
+def _get_pg_plancost(query, est_cardinalities,
+        true_cardinalities,
         join_graph, cursor, sql_costs):
     '''
     Main function for computing Postgres Plan Costs.
@@ -144,12 +145,22 @@ def _get_pg_plancost(query, est_cardinalities, true_cardinalities,
     cursor.execute(est_card_sql)
     explain = cursor.fetchall()
 
+    # print(join_graph.nodes(data=True))
     est_join_order_sql, est_join_ops, scan_ops = get_pg_join_order(join_graph,
             explain)
     leading_hint = get_leading_hint(join_graph, explain)
 
+    # print(est_join_order_sql)
+    # print(leading_hint)
+
     est_opt_sql = nx_graph_to_query(join_graph,
             from_clause=est_join_order_sql)
+
+    # if "COUNT(*)" in est_opt_sql:
+        # print(est_opt_sql[0:100])
+        # print("COUNT* in est_opt_sql!")
+        # pdb.set_trace()
+    # return "", 0.0, ""
 
     # add the join ops etc. information
     cost_sql = get_pghint_modified_sql(est_opt_sql, true_cardinalities,
@@ -164,6 +175,7 @@ def _get_pg_plancost(query, est_cardinalities, true_cardinalities,
     # ops, and other pg hints  in the sql string -- thus if the exact same
     # string is repeated, then its PostgreSQL cost would be the same too.
     cost_sql_key = deterministic_hash(cost_sql)
+
     if sql_costs is not None:
         if cost_sql_key in sql_costs.archive:
             try:
@@ -178,6 +190,11 @@ def _get_pg_plancost(query, est_cardinalities, true_cardinalities,
     else:
         # without caching
         est_cost, est_explain = get_pg_cost_from_sql(cost_sql, cursor)
+        leading_hint2 = get_leading_hint(join_graph, est_explain)
+
+        # if leading_hint != leading_hint2:
+            # print("leading hint NOT matches!")
+            # assert False
 
     # set this to sql to be executed, as pg_hint_plan will enforce the
     # estimated cardinalities, and let postgres make decisions for join order
@@ -203,11 +220,15 @@ def compute_cost_pg_single(queries, join_graphs, true_cardinalities,
         con = pg.connect(port=port,dbname=db_name,
                 user=user,password=pwd, host=db_host)
     except:
+        print("connection failed")
+
+        pdb.set_trace()
         con = pg.connect(port=port,dbname=db_name,
                 user=user,password=pwd)
 
     # can take a lot of space
-    if use_qplan_cache:
+    # if use_qplan_cache:
+    if False:
         archive_fn = "./.lc_cache/sql_costs_" + cost_model
         sql_costs_archive = klepto.archives.dir_archive(archive_fn,
                 cached=True, serialized=True)
@@ -304,6 +325,7 @@ class PPC():
 
         if pool is None:
             # single threaded case, useful for debugging
+            # assert False
             all_costs = [compute_cost_pg_single(sqls, join_graphs,
                     true_cardinalities, est_cardinalities, opt_costs,
                     self.user,
@@ -326,6 +348,7 @@ class PPC():
                     self.user, self.pwd, self.db_host,
                     self.port, self.db_name, use_qplan_cache, self.cost_model))
 
+            # pdb.set_trace()
             all_costs = pool.starmap(compute_cost_pg_single, par_args)
 
         new_seen = False
@@ -469,5 +492,9 @@ class PlanCost():
             # we are ignoring the paths (c[1]) for now; but those can be used
             # to analyze the common plans; or inject those plans into postgres
             # etc.
+
+        # remove the ndoe we added temporarily
+        for qrep in qreps:
+            qrep["subset_graph"].remove_node(SOURCE_NODE)
 
         return np.array(all_costs), np.array(all_opt_costs)

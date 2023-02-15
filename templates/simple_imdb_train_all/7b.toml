@@ -1,0 +1,56 @@
+title = ""
+
+[base_sql]
+
+sql = '''SELECT COUNT(*)
+FROM
+title as t,
+movie_keyword as mk,
+keyword as k
+WHERE
+t.id = mk.movie_id
+AND mk.keyword_id = k.id
+AND (Xkeyword)
+'''
+
+# template 1
+[[templates]]
+
+  [[templates.predicates]]
+  [[templates.predicates.multi]]
+
+  type = "sql"
+  columns = ["mk.keyword_id"]
+  keys = ["Xkeyword"]
+  pred_type = "<"
+  dependencies = 0
+
+  sql = '''
+  SELECT mk.keyword_id
+  FROM movie_keyword as mk
+  '''
+
+  sampling_method = ""
+  min_samples = 1
+  max_samples = 1
+
+
+  [[templates.predicates]]
+  [[templates.predicates.multi]]
+
+  type = "sql"
+  columns = ["mk.keyword_id"]
+  keys = ["Xkeyword"]
+  pred_type = "="
+  dependencies = 0
+
+  sql = '''
+  SELECT mk.keyword_id
+  FROM movie_keyword as mk
+  '''
+
+  sampling_method = ""
+  min_samples = 1
+  max_samples = 1
+
+

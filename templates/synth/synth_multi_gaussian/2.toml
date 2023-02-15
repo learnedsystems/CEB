@@ -1,0 +1,33 @@
+title = "Template 1a"
+
+[base_sql]
+sql = '''SELECT COUNT(*)
+FROM synth_multi_gaussian AS s
+WHERE
+(Xcol2)
+AND (Xcol3)
+'''
+
+# template 1
+[[templates]]
+
+  name = "1a"
+
+  [[templates.predicates]]
+  type = "sql"
+  columns = ["s.col2", "s.col3"]
+  keys = ["Xcol2", "Xcol3"]
+  pred_type = "IN"
+  dependencies = 0
+
+  sql = '''
+  SELECT col2,col3,COUNT(*)
+  FROM synth_multi_gaussian
+  GROUP BY col2,col3
+  ORDER BY COUNT(*)
+  '''
+
+  sampling_method = "quantile"
+  num_quantiles = 3
+  min_samples = 1
+  max_samples = 3

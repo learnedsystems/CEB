@@ -1,0 +1,36 @@
+title = "Template 1a"
+
+[base_sql]
+sql = '''SELECT COUNT(*)
+FROM "synth_primary" AS p,
+"synth_foreign" as f
+WHERE p.id = f.tid
+AND (Xid)
+'''
+
+# template 1
+[[templates]]
+
+  name = "1a"
+
+  [[templates.predicates]]
+  type = "sql"
+  columns = ["p.id"]
+  keys = ["Xid"]
+  pred_type = "in"
+  dependencies = 0
+
+  sql = '''
+  SELECT p.id,COUNT(*)
+  FROM "synth_primary" AS p,
+  "synth_foreign" AS f
+  WHERE p.id = f.tid
+  GROUP BY p.id
+  HAVING COUNT(*) > 10
+  ORDER BY COUNT(*)
+  '''
+
+  sampling_method = "quantile"
+  num_quantiles = 2
+  min_samples = 10
+  max_samples = 50

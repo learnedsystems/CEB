@@ -81,7 +81,10 @@ class MSCN(NN):
 
 class MSCN_JoinKeyCards(NN):
 
-    def init_dataset(self, samples, load_query_together):
+    def init_dataset(self, samples, load_query_together,
+            max_num_tables = -1,
+            load_padded_mscn_feats=False,
+            subplan_mask=None):
         ds = QueryDataset(samples, self.featurizer,
                 load_query_together,
                 load_padded_mscn_feats=self.load_padded_mscn_feats,

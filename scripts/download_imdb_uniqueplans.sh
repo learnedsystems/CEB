@@ -20,3 +20,4 @@ rm imdb_bitmaps2.tar.gz
 ## downloading data about imdb schema etc.
 wget -O imdb_data.json https://www.dropbox.com/s/nxtt17s4gdt21r5/imdb_data.json?dl=1
 mv imdb_data.json queries/imdb-unique-plans/dbdata.json
+

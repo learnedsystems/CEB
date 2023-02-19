@@ -303,36 +303,19 @@ def preprocess_word(word, exclude_nums=False, exclude_the=False,
 
     return " ".join(final_words)
 
-def qrep_to_df(qrep):
-    '''
-    Every subplan will be a row in the returned dataframe.
-    Since each subplan can contain multiple tables / columns etc., we will have
-    a unique column for each table/column accessed (FEAT_TYPE), and then it can
-    have a bit-value to indicate presence, or a more complex value to indicate
-    the predicate filter on that column etc.
-
-    Format of dataframe column will be:
-        {FEAT_TYPE}-{FEAT_NAME}
-        table-table_name
-        predicate_mi1-column_present
-        predicate_ci-pg_est
-        predicate_ci-filter_values
-
-    Each such column name should map to a unique value
-    '''
-    pass
-
 class Featurizer():
-    def __init__(self, user, pwd, db_name, db_host ,port):
+    def __init__(self, **kwargs):
         '''
         '''
-        self.user = user
-        self.pwd = pwd
-        self.db_host = db_host
-        self.port = port
-        self.db_name = db_name
-        self.ckey = "cardinality"
+        # self.user = user
+        # self.pwd = pwd
+        # self.db_host = db_host
+        # self.port = port
+        # self.db_name = db_name
+        for k, val in kwargs.items():
+            self.__setattr__(k, val)
 
+        self.ckey = "cardinality"
         self.regex_templates = set()
         # stats on the used columns
         #   table_name : column_name : attribute : value
@@ -510,7 +493,6 @@ class Featurizer():
 
             if self.sample_bitmap:
                 sbitmaps = None
-                # sbitdir = os.path.join(self.bitmap_dir, "sample_bitmap")
                 sbitdir = os.path.join(self.bitmap_dir, qrep["workload"],
                         "sample_bitmap")
 
@@ -660,8 +642,8 @@ class Featurizer():
             self.max_joins = len(set(self.join_col_map.values()))
             self.max_joins += self.max_tables
 
-        print("Max tables: ", self.max_tables, "Max pred vals: ", self.max_pred_vals,
-                "Max joins: ", self.max_joins)
+        print("Max tables:", self.max_tables, ", Max pred vals:", self.max_pred_vals,
+                ",Max joins:", self.max_joins)
 
     def get_cont_pred_kind(info):
         pass
@@ -671,11 +653,12 @@ class Featurizer():
             cur_columns = []
             for node, info in qrep["join_graph"].nodes(data=True):
                 if "pred_types" not in info:
+                    print("pred types not in info!")
                     continue
 
                 for i, cmp_op in enumerate(info["pred_types"]):
                     if cmp_op == "lt":
-                        if len(info["predicates"]) >= 1:
+                        if len(info["predicates"]) > i:
                             if ">" in info["predicates"][i]:
                                 cmp_op = ">"
                             elif "<" in info["predicates"][i]:
@@ -718,7 +701,7 @@ class Featurizer():
             # print(self.cmp_ops)
             # pdb.set_trace()
 
-    def update_ystats_joinkey(self, qreps, clamp_timeouts=False,
+    def update_ystats_joinkey(self, qreps,
             max_num_tables=-1):
         y = []
         for qrep in qreps:
@@ -741,11 +724,10 @@ class Featurizer():
 
         print("min y: {}, max y: {}".format(self.min_val, self.max_val))
 
-    def update_ystats(self, qreps, clamp_timeouts=False,
+    def update_ystats(self, qreps,
             max_num_tables=-1):
 
-        self.clamp_timeouts = clamp_timeouts
-        if clamp_timeouts:
+        if self.clamp_timeouts:
             y0 = []
             # get max value, so we can replace timeout values with it
             for qrep in qreps:
@@ -774,7 +756,7 @@ class Featurizer():
                     continue
 
                 actual = data[self.ckey]["actual"]
-                if clamp_timeouts:
+                if self.clamp_timeouts:
                     if actual >= TIMEOUT_CARD:
                         y.append(maxval)
                     else:
@@ -924,8 +906,10 @@ class Featurizer():
         for cidx, col_name in enumerate(all_cols):
             col_splits = col_name.split(".")
             col_alias = col_splits[0]
+            # we can have new aliases here because column_stats is created on
+            # all used imdb columns from before --- not just in the current
+            # workload
             if col_alias not in self.aliases:
-                print("new alias: ", col_alias)
                 continue
 
             real_col = self.aliases[col_alias] + "." + col_splits[1]
@@ -936,8 +920,6 @@ class Featurizer():
                 real_col_idxs[real_col] = ridx
                 self.columns_onehot_idx[col_name] = ridx
                 ridx += 1
-
-        # print(real_col_idxs)
 
         # these comparator operator will be used for each predicate filter
         for i, cmp_op in enumerate(sorted(self.cmp_ops)):
@@ -1049,7 +1031,6 @@ class Featurizer():
 
     def setup(self,
             bitmap_dir = None,
-            # random_bitmap_idx = False,
             join_bitmap_dir = None,
             use_saved_feats = True,
             feat_onlyseen_maxy = False,
@@ -1062,7 +1043,7 @@ class Featurizer():
             feat_separate_like_ests=False,
             separate_ilike_bins=False,
             separate_cont_bins=False,
-            onehot_dropout=False,
+            # onehot_dropout=False,
             ynormalization="log",
             table_features = True,
             pred_features = True,
@@ -1070,19 +1051,20 @@ class Featurizer():
             seen_preds = False,
             set_column_feature = "onehot",
             join_features = "onehot",
-            flow_features = False,
+            global_features = False,
             embedding_fn = None,
             embedding_pooling = None,
             num_tables_feature=False,
             featurization_type="combined",
             card_type = "subplan",
+            clamp_timeouts = 1,
             max_discrete_featurizing_buckets=10,
             max_like_featurizing_buckets=10,
             feat_num_paths= False, feat_flows=False,
             feat_pg_costs = False, feat_tolerance=False,
             feat_pg_path=False,
-            flow_feat_degrees = False,
-            flow_feat_tables = False,
+            global_feat_degrees = False,
+            global_feat_tables = False,
             feat_rel_pg_ests=False, feat_join_graph_neighbors=False,
             feat_rel_pg_ests_onehot=False,
             feat_pg_est_one_hot=False,
@@ -1130,10 +1112,10 @@ class Featurizer():
 
             @ynormalization: `log` or `selectivity`.
 
-            Other features areflags for various minor tweaks / additional
+            Other features are flags for various minor tweaks / additional
             features. For most use cases, the default values should suffice.
 
-        This Generates a featurizer dict:
+        This generates a featurizer dict:
             {table_name: (idx, num_vals)}
             {join_key: (idx, num_vals)}
             {pred_column: (idx, num_vals)}
@@ -1150,6 +1132,7 @@ class Featurizer():
                 continue
             self.__setattr__(k, val)
             arg_key += str(val)
+
         self.featkey = str(deterministic_hash(arg_key))
 
         if self.embedding_fn == "none":
@@ -1172,11 +1155,10 @@ class Featurizer():
                     newk = ''.join([ck for ck in k if not ck.isdigit()])
                     jkey_stats[newk] = v
                 self.join_key_stats = jkey_stats
-
                 print("Updated stats to remove alias based columns")
 
             if self.loss_func == "flowloss":
-                print("updating features to include flowloss specific ones")
+                print("updating global features to include flowloss specific ones")
                 self.feat_num_paths= False
                 self.feat_flows=False
                 self.feat_pg_costs = True
@@ -1186,8 +1168,7 @@ class Featurizer():
                 self.feat_join_graph_neighbors=True
                 self.feat_rel_pg_ests_onehot=True
                 self.feat_pg_est_one_hot=True
-                self.flow_feat_degrees = True
-                # self.flow_feat_tables = True
+                self.global_feat_degrees = True
 
     def init_feature_mapping(self):
 
@@ -1278,12 +1259,6 @@ class Featurizer():
                 if not self.bitmap_onehotmask:
                     self.featurizer_type_idxs["join_onehot"] = (0, bitmap_feat_len)
 
-                # for bitmap
-
-                ## because we were not using it, and it should be fixed
-                # self.featurizer_type_idxs["join_bitmap"] = (bitmap_feat_len,
-                        # bitmap_feat_len+self.sample_bitmap_buckets)
-
                 bitmap_feat_len += self.sample_bitmap_buckets
 
             ## includes everything for the onehot-mask
@@ -1343,61 +1318,59 @@ class Featurizer():
             self.real_join_col_mapping[rc] = rci
 
         self.PG_EST_BUCKETS = 7
-        if self.flow_features:
+        if self.global_features:
             # num flow features: concat of 1-hot vectors
-            self.num_flow_features = 0
+            self.num_global_features = 0
 
             if self.card_type == "joinkey":
-                self.num_flow_features += len(self.real_join_col_mapping)
+                self.num_global_features += len(self.real_join_col_mapping)
 
-            if self.flow_feat_degrees:
-                self.num_flow_features += self.max_in_degree+1
-                self.num_flow_features += self.max_out_degree+1
+            if self.global_feat_degrees:
+                self.num_global_features += self.max_in_degree+1
+                self.num_global_features += self.max_out_degree+1
 
-            if self.flow_feat_tables:
-                self.num_flow_features += len(self.aliases)
+            if self.global_feat_tables:
+                self.num_global_features += len(self.aliases)
 
             # for heuristic estimate for the node
-            self.num_flow_features += 1
+            self.num_global_features += 1
 
             # for normalized value of num_paths
             if self.feat_num_paths:
-                self.num_flow_features += 1
+                self.num_global_features += 1
             if self.feat_pg_costs:
-                self.num_flow_features += 1
+                self.num_global_features += 1
             if self.feat_tolerance:
                 # 1-hot vector based on dividing/multiplying value by 10...10^4
-                self.num_flow_features += 4
+                self.num_global_features += 4
             if self.feat_flows:
-                self.num_flow_features += 1
+                self.num_global_features += 1
 
             if self.feat_pg_path:
-                self.num_flow_features += 1
+                self.num_global_features += 1
 
             if self.feat_rel_pg_ests:
                 # current node size est, relative to total cost
-                self.num_flow_features += 1
+                self.num_global_features += 1
 
                 # current node est, relative to all neighbors in the join graph
                 # we will hard code the neighbor into a 1-hot vector
-                self.num_flow_features += len(self.table_featurizer)
+                self.num_global_features += len(self.table_featurizer)
 
             if self.feat_rel_pg_ests_onehot:
-                self.num_flow_features += self.PG_EST_BUCKETS
+                self.num_global_features += self.PG_EST_BUCKETS
                 # 2x because it can be smaller or larger
-                self.num_flow_features += \
+                self.num_global_features += \
                     2*len(self.table_featurizer)*self.PG_EST_BUCKETS
 
             if self.feat_join_graph_neighbors:
-                self.num_flow_features += len(self.table_featurizer)
+                self.num_global_features += len(self.table_featurizer)
 
             if self.feat_pg_est_one_hot:
                 # upto 10^7
-                self.num_flow_features += self.PG_EST_BUCKETS
+                self.num_global_features += self.PG_EST_BUCKETS
 
-            print("flow feat tables: ", self.flow_feat_tables)
-            print("num flow features: ", self.num_flow_features)
-
+            print("Number of global features: ", self.num_global_features)
 
     def _handle_continuous_feature(self, pfeats, pred_idx_start,
             col, val):
@@ -2031,82 +2004,6 @@ class Featurizer():
 
         return jfeats
 
-        # if self.join_features == "onehot_tables":
-            # jfeats  = np.zeros(self.join_features_len)
-            # keys = join_str.split("=")
-            # for key in keys:
-                # curalias = key[0:key.find(".")]
-                # curtab = self.aliases[curalias]
-                # tidx = self.table_featurizer[curtab]
-                # jfeats[tidx] = 1.0
-            # return jfeats
-
-        # elif self.join_features == "onehot":
-            # jfeats  = np.zeros(self.join_features_len)
-            # if not self.feat_separate_alias:
-                # join_str = ''.join([ck for ck in join_str if not ck.isdigit()])
-
-            # keys = join_str.split("=")
-            # keys.sort()
-            # keys = ",".join(keys)
-            # if keys not in self.join_featurizer:
-                # print("join_str: {} not found in featurizer".format(join_str))
-                # return jfeats
-            # jfeats[self.join_featurizer[keys]] = 1.00
-            # return jfeats
-
-        # elif self.join_features == "stats":
-            # jfeats = np.zeros(self.join_features_len)
-            # join_keys = join_str.split("=")
-            # ordered_join_keys = [None]*2
-
-            # found_primary_key = False
-            # join_keys.sort()
-            # for ji, joinkey in enumerate(join_keys):
-                # if joinkey in self.primary_join_keys:
-                    # ordered_join_keys[0] = joinkey
-                    # found_primary_key = True
-                    # other_key = None
-                    # for joinkey2 in join_keys:
-                        # # joinkey2 = joinkey2.strip()
-                        # if joinkey2 != joinkey:
-                            # other_key = joinkey2
-                    # assert other_key is not None
-                    # ordered_join_keys[1] = other_key
-                    # break
-
-                # ordered_join_keys[ji] = joinkey
-
-            # if found_primary_key:
-                # jfeats[0] = 1.0
-            # else:
-                # jfeats[1] = 1.0
-
-            # key1 = ordered_join_keys[0]
-            # key2 = ordered_join_keys[1]
-            # jk1 = ''.join([ck for ck in key1 if not ck.isdigit()])
-            # jk2 = ''.join([ck for ck in key2 if not ck.isdigit()])
-
-            # if jk1 == jk2:
-                # jfeats[2] = 1.0
-            # else:
-                # jfeats[2] = 0.0
-
-            # jfeats[3] = float(self.join_key_stats[key1]["distinct"]) \
-                    # / self.join_key_stats[key2]["distinct"]
-
-            # for ji, joinkey in enumerate(ordered_join_keys):
-                # sidx = 4 + ji*len(self.join_key_stat_names)
-                # statdata = self.join_key_stats[joinkey]
-                # for si, statname in enumerate(self.join_key_stat_names):
-                    # val = statdata[statname]
-                    # statmean, statstd = self.join_key_normalizers[statname]
-                    # jfeats[sidx+si] = (val-statmean) / statstd
-
-            # return jfeats
-        # else:
-            # assert False
-
     def _update_set_column_features(self, col, pfeats):
         assert col in self.column_stats
         use_onehot = "onehot" in self.set_column_feature
@@ -2380,10 +2277,6 @@ class Featurizer():
                     col = ''.join([ck for ck in col if not ck.isdigit()])
 
                 if col not in self.column_stats:
-                    # print("col: {} not found in column stats".format(col))
-                    # assert False
-                    # print(self.column_stats)
-                    # pdb.set_trace()
                     continue
 
                 allvals = aliasinfo["pred_vals"][ci]
@@ -2393,7 +2286,7 @@ class Featurizer():
                 cmp_op = aliasinfo["pred_types"][ci]
 
                 if cmp_op == "lt":
-                    if len(aliasinfo["predicates"]) >= 1:
+                    if len(aliasinfo["predicates"]) > ci:
                         if ">" in aliasinfo["predicates"][ci]:
                             cmp_op = ">"
                         elif "<" in aliasinfo["predicates"][ci]:
@@ -2485,14 +2378,14 @@ class Featurizer():
         else:
             featdict["pred"] = []
 
-        flow_features = []
+        global_features = []
 
-        if self.flow_features:
-            flow_features = self.get_flow_features(subplan,
+        if self.global_features:
+            global_features = self.get_global_features(subplan,
                     qrep["subset_graph"], qrep["template_name"],
                     qrep["join_graph"], subset_edge=subset_edge)
 
-        featdict["flow"] = flow_features
+        featdict["flow"] = global_features
 
         return featdict
 
@@ -2652,11 +2545,11 @@ class Featurizer():
 
             featvectors.append(pfeats)
 
-        if self.flow_features:
-            flow_features = self.get_flow_features(subplan,
+        if self.global_features:
+            global_features = self.get_global_features(subplan,
                     qrep["subset_graph"], qrep["template_name"],
                     qrep["join_graph"])
-            featvectors.append(flow_features)
+            featvectors.append(global_features)
 
         feat = np.concatenate(featvectors)
 
@@ -2737,12 +2630,12 @@ class Featurizer():
 
         return num_buckets
 
-    def get_flow_features(self, node, subsetg,
+    def get_global_features(self, node, subsetg,
             template_name, join_graph, subset_edge=None):
 
         assert node != SOURCE_NODE
         ckey = "cardinality"
-        flow_features = np.zeros(self.num_flow_features, dtype=np.float32)
+        global_features = np.zeros(self.num_global_features, dtype=np.float32)
         cur_idx = 0
 
         if self.card_type == "joinkey":
@@ -2759,29 +2652,29 @@ class Featurizer():
 
             realcol = self.join_col_map[joincol]
             jcol_idx = self.real_join_col_mapping[realcol]
-            flow_features[cur_idx + jcol_idx] = 1.0
+            global_features[cur_idx + jcol_idx] = 1.0
             cur_idx += len(self.real_join_col_mapping)
 
         # incoming edges
-        if self.flow_feat_degrees:
+        if self.global_feat_degrees:
             in_degree = subsetg.in_degree(node)
             in_degree = min(in_degree, self.max_in_degree)
-            flow_features[cur_idx + in_degree] = 1.0
+            global_features[cur_idx + in_degree] = 1.0
             cur_idx += self.max_in_degree+1
 
             # outgoing edges
             out_degree = subsetg.out_degree(node)
             out_degree = min(out_degree, self.max_out_degree)
-            flow_features[cur_idx + out_degree] = 1.0
+            global_features[cur_idx + out_degree] = 1.0
             cur_idx += self.max_out_degree+1
 
-        if self.flow_feat_tables:
+        if self.global_feat_tables:
             # # num tables
             max_table_idx = len(self.aliases)-1
             nt = len(node)
             # assert nt <= max_tables
             nt = min(nt, max_table_idx)
-            flow_features[cur_idx + nt] = 1.0
+            global_features[cur_idx + nt] = 1.0
             cur_idx += len(self.aliases)
 
         # precomputed based stuff
@@ -2792,7 +2685,7 @@ class Featurizer():
                 num_paths = 0
 
             # assuming min num_paths = 0, min-max normalization
-            flow_features[cur_idx] = num_paths / self.max_paths
+            global_features[cur_idx] = num_paths / self.max_paths
             cur_idx += 1
 
         if self.feat_pg_costs and self.heuristic_features and \
@@ -2802,14 +2695,14 @@ class Featurizer():
             for edge in in_edges:
                 in_cost += subsetg[edge[0]][edge[1]][self.cost_model + "pg_cost"]
             # normalized pg cost
-            flow_features[cur_idx] = in_cost / subsetg.graph[self.cost_model + "total_cost"]
+            global_features[cur_idx] = in_cost / subsetg.graph[self.cost_model + "total_cost"]
             cur_idx += 1
 
         if self.feat_tolerance:
             tol = subsetg.nodes()[node]["tolerance"]
             tol_idx = int(np.log10(tol))
             assert tol_idx <= 4
-            flow_features[cur_idx + tol_idx-1] = 1.0
+            global_features[cur_idx + tol_idx-1] = 1.0
             cur_idx += 4
 
         if self.feat_flows and self.heuristic_features:
@@ -2818,12 +2711,12 @@ class Featurizer():
             for edge in in_edges:
                 in_flows += subsetg[edge[0]][edge[1]]["pg_flow"]
             # normalized pg flow
-            flow_features[cur_idx] = in_flows
+            global_features[cur_idx] = in_flows
             cur_idx += 1
 
         if self.feat_pg_path:
             if "pg_path" in subsetg.nodes()[node]:
-                flow_features[cur_idx] = 1.0
+                global_features[cur_idx] = 1.0
 
         if self.feat_join_graph_neighbors:
             # neighbors = nx.node_boundary(join_graph, node)
@@ -2838,14 +2731,14 @@ class Featurizer():
                     continue
                 table = self.aliases[al]
                 tidx = self.table_featurizer[table]
-                flow_features[cur_idx + tidx] = 1.0
+                global_features[cur_idx + tidx] = 1.0
             cur_idx += len(self.table_featurizer)
 
         if self.feat_rel_pg_ests and self.heuristic_features \
                 and self.cost_model is not None:
             total_cost = subsetg.graph[self.cost_model+"total_cost"]
             pg_est = subsetg.nodes()[node][ckey]["expected"]
-            flow_features[cur_idx] = pg_est / total_cost
+            global_features[cur_idx] = pg_est / total_cost
             cur_idx += 1
             neighbors = list(nx.node_boundary(join_graph, node))
             neighbors.sort()
@@ -2858,8 +2751,8 @@ class Featurizer():
                 tidx = self.table_featurizer[table]
                 ncard = subsetg.nodes()[tuple([al])][ckey]["expected"]
                 # TODO: should this be normalized? how?
-                flow_features[cur_idx + tidx] = pg_est / ncard
-                flow_features[cur_idx + tidx] /= 1e5
+                global_features[cur_idx + tidx] = pg_est / ncard
+                global_features[cur_idx + tidx] /= 1e5
 
             cur_idx += len(self.table_featurizer)
 
@@ -2868,11 +2761,11 @@ class Featurizer():
                 and self.cost_model is not None:
             total_cost = subsetg.graph[self.cost_model+"total_cost"]
             pg_est = subsetg.nodes()[node][ckey]["expected"]
-            # flow_features[cur_idx] = pg_est / total_cost
+            # global_features[cur_idx] = pg_est / total_cost
             pg_ratio = total_cost / float(pg_est)
 
             bucket = self.get_onehot_bucket(self.PG_EST_BUCKETS, 10, pg_ratio)
-            flow_features[cur_idx+bucket] = 1.0
+            global_features[cur_idx+bucket] = 1.0
             cur_idx += self.PG_EST_BUCKETS
 
             # neighbors = nx.node_boundary(join_graph, node)
@@ -2887,17 +2780,17 @@ class Featurizer():
                 tidx = self.table_featurizer[table]
                 ncard = subsetg.nodes()[tuple([al])][ckey]["expected"]
                 # TODO: should this be normalized? how?
-                # flow_features[cur_idx + tidx] = pg_est / ncard
-                # flow_features[cur_idx + tidx] /= 1e5
+                # global_features[cur_idx + tidx] = pg_est / ncard
+                # global_features[cur_idx + tidx] /= 1e5
                 if pg_est > ncard:
                     # first self.PG_EST_BUCKETS
                     bucket = self.get_onehot_bucket(self.PG_EST_BUCKETS, 10,
                             pg_est / float(ncard))
-                    flow_features[cur_idx+bucket] = 1.0
+                    global_features[cur_idx+bucket] = 1.0
                 else:
                     bucket = self.get_onehot_bucket(self.PG_EST_BUCKETS, 10,
                             float(ncard) / pg_est)
-                    flow_features[cur_idx+self.PG_EST_BUCKETS+bucket] = 1.0
+                    global_features[cur_idx+self.PG_EST_BUCKETS+bucket] = 1.0
 
                 cur_idx += 2*self.PG_EST_BUCKETS
 
@@ -2906,11 +2799,11 @@ class Featurizer():
 
             for i in range(self.PG_EST_BUCKETS):
                 if pg_est > 10**i and pg_est < 10**(i+1):
-                    flow_features[cur_idx+i] = 1.0
+                    global_features[cur_idx+i] = 1.0
                     break
 
             if pg_est > 10**self.PG_EST_BUCKETS:
-                flow_features[cur_idx+self.PG_EST_BUCKETS] = 1.0
+                global_features[cur_idx+self.PG_EST_BUCKETS] = 1.0
             cur_idx += self.PG_EST_BUCKETS
 
         if self.card_type == "subplan":
@@ -2930,16 +2823,16 @@ class Featurizer():
         else:
             assert False
 
-        # assert flow_features[-1] == 0.0
-        if flow_features[-1] != 0.0:
+        # assert global_features[-1] == 0.0
+        if global_features[-1] != 0.0:
             print("BAD last val")
-            print(flow_features)
+            print(global_features)
             pdb.set_trace()
 
         if self.heuristic_features:
-            flow_features[-1] = pg_est
+            global_features[-1] = pg_est
 
-        return flow_features
+        return global_features
 
     def unnormalize_torch(self, y, total):
         if self.ynormalization == "log":
@@ -3158,8 +3051,6 @@ class Featurizer():
                         val = 0.0
                     self.join_key_stats[jkey][sname] = val
 
-        ## features required for plan-graph / flow-loss
-        flow_start = time.time()
         subsetg = qrep["subset_graph"]
         node_list = list(subsetg.nodes())
         node_list.sort(key = lambda v: len(v))

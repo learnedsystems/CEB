@@ -1,6 +1,4 @@
 from torch.autograd import Function
-# from utils.utils import *
-# from db_utils.utils import *
 from query_representation.utils import *
 from cardinality_estimation.dataset import to_variable
 
@@ -17,13 +15,21 @@ from ctypes import *
 import os
 import copy
 import pkg_resources
-# import tensorflow as tf
-# import pyamg
 from .cost_model import *
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 lib_file = None
+fl_cpp = None
+system = platform.system()
+if system == 'Linux':
+    dir_path = os.path.dirname(os.path.realpath(__file__))
+    lib_dir = os.path.join(dir_path, "..", "flow_loss_cpp")
+    lib_file = "libflowloss.so"
+    lib_file = lib_dir + "/" + lib_file
+    fl_cpp = CDLL(lib_file, mode=RTLD_GLOBAL)
+else:
+    print("flow loss C library not being used as we are not on linux")
 
 DEBUG_JAX = False
 DEBUG = False
@@ -660,15 +666,6 @@ class FlowLoss(Function):
             pool, cost_model):
         '''
         '''
-        global lib_file
-        system = platform.system()
-        lib_dir = "./flow_loss_cpp"
-        if system == 'Linux':
-            lib_file = "libflowloss.so"
-            lib_file = lib_dir + "/" + lib_file
-            fl_cpp = CDLL(lib_file, mode=RTLD_GLOBAL)
-        else:
-            print("flow loss C library not being used as we are not on linux")
 
         # Note: do flow loss computation and save G, invG etc. for backward
         # pass

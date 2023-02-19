@@ -3,7 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from .plan_losses import PPC, PlanCost,get_leading_hint
 from .cost_model import *
-from query_representation.utils import deterministic_hash,make_dir
+# from query_representation.utils import deterministic_hash,make_dir
+
 from query_representation.viz import *
 from matplotlib.backends.backend_pdf import PdfPages
 import matplotlib.pyplot as plt
@@ -20,7 +21,6 @@ import pickle
 import pdb
 
 TIMEOUT_CARD = 15000100000
-# TIMEOUT_CARD = 15000100000
 
 def get_eval_fn(loss_name):
     if loss_name == "qerr":
@@ -170,23 +170,6 @@ class LogicalConstraints(EvalFunc):
 
     def save_logs(self, qreps, errors, **kwargs):
         pass
-        # result_dir = kwargs["result_dir"]
-        # if result_dir is None:
-            # return
-
-        # if "samples_type" in kwargs:
-            # samples_type = kwargs["samples_type"]
-        # else:
-            # samples_type = ""
-
-        # resfn = os.path.join(result_dir, self.__str__() + ".csv")
-        # res = pd.DataFrame(data=errors, columns=["errors"])
-        # res["samples_type"] = samples_type
-        # # TODO: add other data?
-        # if os.path.exists(resfn):
-            # res.to_csv(resfn, mode="a",header=False)
-        # else:
-            # res.to_csv(resfn, header=True)
 
     def eval(self, qreps, preds, **kwargs):
         '''
@@ -281,8 +264,6 @@ class LogicalConstraints(EvalFunc):
     def __str__(self):
         return self.__class__.__name__
 
-    # TODO: stuff for saving logs
-
 class QErrorJoinKey(EvalFunc):
 
     def eval(self, qreps, preds, **kwargs):
@@ -294,8 +275,6 @@ class QErrorJoinKey(EvalFunc):
         ytrue, yhat = _get_all_joinkeys(qreps, preds)
 
         assert len(ytrue) == len(yhat)
-        # assert 0.00 not in ytrue
-        # assert 0.00 not in yhat
 
         errors = np.maximum((ytrue / yhat), (yhat / ytrue))
 
@@ -321,7 +300,6 @@ class QErrorJoinKey(EvalFunc):
             print("{} Tables, JoinKey-QError mean: {}, 99p: {}".format(
                 nt, np.mean(num_table_errs[nt]),
                 np.percentile(num_table_errs[nt], 99)))
-        # self.save_logs(qreps, errors, **kwargs)
 
         return errors
 
@@ -356,26 +334,9 @@ class QError(EvalFunc):
                 qidxs.append(qi)
                 curerr = errors[didx]
                 cards = qrep["subset_graph"].nodes()[node]["cardinality"]
-                # if numt == 1 and node[0] == "ci" and cards["actual"] < 100:
-                # if numt == 1 and curerr >= 1000 and "mi" not in node[0]:
-                    # print(curerr)
-                    # print(qrep["template_name"])
-                    # print(qrep["join_graph"].nodes()[node[0]])
-                    # print(qrep["subset_graph"].nodes()[node]["cardinality"])
-                    # print(node)
-                    # pdb.set_trace()
 
                 num_table_errs[numt].append(curerr)
                 didx += 1
-
-        nts = list(num_table_errs.keys())
-        nts.sort()
-        for nt in nts:
-            if nt <= 3:
-                print("{} Tables, QError mean: {}, 99p: {}".format(
-                    nt, np.mean(num_table_errs[nt]),
-                    np.percentile(num_table_errs[nt], 99)))
-
 
         resfn = os.path.join(result_dir, self.__str__() + ".csv")
 
@@ -403,16 +364,6 @@ class QError(EvalFunc):
         assert 0.00 not in yhat
 
         errors = np.maximum((ytrue / yhat), (yhat / ytrue))
-
-        ## debugging code
-        # eidxs = errors >= 7
-        # if len(ytrue[eidxs]) > 0:
-            # idxs = np.array(list(range(len(eidxs))))
-            # bad_idxs = idxs[eidxs]
-            # # print(ytrue[eidxs])
-            # # print(yhat[eidxs])
-            # print(bad_idxs)
-            # pdb.set_trace()
 
         if kwargs["result_dir"] is not None:
             self.save_logs(qreps, errors, **kwargs)
@@ -466,10 +417,11 @@ class PostgresPlanCost(EvalFunc):
         if "result_dir" not in kwargs:
             return
 
-        use_wandb = kwargs["use_wandb"]
         result_dir = kwargs["result_dir"]
-        if result_dir is None and not use_wandb:
+
+        if result_dir is None:
             return
+
         if "save_pdf_plans" in kwargs:
             save_pdf_plans = kwargs["save_pdf_plans"]
         else:
@@ -478,7 +430,6 @@ class PostgresPlanCost(EvalFunc):
         sqls = kwargs["sqls"]
         plans = kwargs["plans"]
         opt_costs = kwargs["opt_costs"]
-        pg_costs = kwargs["pg_costs"]
 
         true_cardinalities = kwargs["true_cardinalities"]
         est_cardinalities = kwargs["est_cardinalities"]
@@ -507,8 +458,6 @@ class PostgresPlanCost(EvalFunc):
             cur_costs = defaultdict(list)
 
             for i, qrep in enumerate(qreps):
-                # sql_key = str(deterministic_hash(qrep["sql"]))
-                # cur_costs["sql_key"].append(sql_key)
                 qname = os.path.basename(qrep["name"])
                 cur_costs["qname"].append(qname)
 
@@ -538,32 +487,22 @@ class PostgresPlanCost(EvalFunc):
                 title = title_fmt.format(qreps[i]["name"], opt_costs[i],
                         alg_name, costs[i], alg_name)
 
-                # no idea why explains we get from cursor.fetchall() have so
-                # many nested lists[][]
                 plot_explain_join_order(plan[0][0][0], true_cardinalities[i],
                         est_cardinalities[i], pdf, title)
 
             pdf.close()
 
         # Total costs
-        # compute total costs
         totalcost = np.sum(costs)
         opttotal = np.sum(opt_costs)
-
-        if len(pg_costs) == 0:
-            pgtotal = -1
-            relcost_pg = -1
-        else:
-            pgtotal = np.sum(pg_costs)
-            relcost_pg = np.round(float(totalcost) / pgtotal, 6)
 
         relcost = np.round(float(totalcost)/opttotal, 3)
 
         ppes = costs - opt_costs
 
-        print("{}, {}, #samples: {}, relative_cost: {}, pg_relative_cost: {}"\
+        print("{}, {}. All templates. #samples: {}, Relative Postgres Cost: {}"\
                 .format(samples_type, alg_name, len(costs),
-                    relcost, relcost_pg))
+                    relcost))
 
         template_costs = defaultdict(list)
         true_template_costs = defaultdict(list)
@@ -583,47 +522,16 @@ class PostgresPlanCost(EvalFunc):
             tmp_rel_costs[tmp] = tmp_relc
             tmp_avg_errs[tmp] = tmp_avg_err
 
-            print("Template: {}, Num: {} Relative Cost: {}, Avg Err: {}".format(
-                tmp,
-                len(tmp_costs),
-                tmp_relc, tmp_avg_err))
+            print("Template: {}, #samples: {} Relative Postgres Cost: {}, Avg Err: {}"\
+                    .format( tmp, len(tmp_costs), tmp_relc, tmp_avg_err))
 
-        if self.cost_model == "C":
-            suffix = ""
-        else:
-            suffix = "-" + self.cost_model
-
-        if use_wandb:
-            loss_key = "Final-{}-{}{}".format("Relative-TotalPPCost",
-                                                   samples_type,
-                                                   suffix)
-            wandb.run.summary[loss_key] = relcost
-
-            if relcost_pg != 0.0:
-                loss_key = "Final-{}-{}{}".format("Relative-PG-TotalPPCost",
-                                                       samples_type,
-                                                       suffix)
-                wandb.run.summary[loss_key] = relcost_pg
-
-            loss_key = "Final-{}-{}{}-mean".format("PPError",
-                                                samples_type,
-                                                suffix)
-            wandb.run.summary[loss_key] = np.mean(ppes)
-
-            loss_key = "Final-{}-{}{}-99p".format("PPError",
-                                                samples_type,
-                                                suffix)
-            wandb.run.summary[loss_key] = np.percentile(ppes, 99)
-
-            for tmp, tmpcost in tmp_rel_costs.items():
-                loss_key = "Final-{}-{}{}-{}".format("Relative-TotalPPCost",
-                                                       samples_type,
-                                                       suffix, tmp)
-                wandb.run.summary[loss_key] = tmpcost
-
-    def eval(self, qreps, preds, user="imdb",
+    def eval(self, qreps, preds,
+            user="ceb",
             pwd="password",
-            db_name="imdb", db_host="localhost", port=5432, num_processes=-1,
+            port=5432,
+            db_name="imdb",
+            db_host="localhost",
+            num_processes=-1,
             save_pdf_plans=False,
             result_dir=None, **kwargs):
         ''''
@@ -650,36 +558,18 @@ class PostgresPlanCost(EvalFunc):
             pool = None
         else:
             pool = mp.Pool(num_processes)
+        # db_args = kwargs["db_args"]
 
-        ppc = PPC(cost_model, user, pwd, db_host,
-                port, db_name)
+        ppc = PPC(cost_model, user, pwd,
+                db_host, port, db_name)
 
         est_cardinalities = []
         true_cardinalities = []
-
         sqls = []
         join_graphs = []
 
         pg_query_costs = {}
         pg_costs = []
-        if "query_dir" in kwargs and kwargs["query_dir"] is not None:
-            pgfn = os.path.join(kwargs["query_dir"],
-                    "postgres-{}.pkl".format(str(self)))
-            if os.path.exists(pgfn):
-                with open(pgfn, "rb") as f:
-                    pg_query_costs = pickle.load(f)
-            else:
-                pg_query_costs = {}
-
-        for i, qrep in enumerate(qreps):
-            if not "job" in qrep["template_name"]:
-                continue
-            # open saved scores
-            if qrep["name"] in pg_query_costs:
-                pg_costs.append(pg_query_costs[qrep["name"]])
-
-        if len(pg_costs) != len(qreps):
-            pg_costs = []
 
         for i, qrep in enumerate(qreps):
             sqls.append(qrep["sql"])
@@ -693,12 +583,8 @@ class PostgresPlanCost(EvalFunc):
                 est_card = predq[node]
                 alias_key = ' '.join(node)
                 trues[alias_key] = node_info["cardinality"]["actual"]
-                # pgs[alias_key] = node_info["cardinality"]["expected"]
                 if est_card == 0:
                     est_card += 1
-                # if est_card >= TIMEOUT_CARD:
-                    # pdb.set_trace()
-
                 ests[alias_key] = est_card
 
             est_cardinalities.append(ests)
@@ -714,9 +600,9 @@ class PostgresPlanCost(EvalFunc):
                             num_processes=num_processes,
                             pool=pool)
 
-        self.save_logs(qreps, costs, **kwargs, sqls=sqls,
+        self.save_logs(qreps, costs, **kwargs,
+                sqls=sqls,
                 plans=plans, opt_costs=opt_costs,
-                pg_costs = pg_costs,
                 true_cardinalities=true_cardinalities,
                 est_cardinalities=est_cardinalities,
                 result_dir=result_dir)
@@ -732,7 +618,6 @@ class SimplePlanCost(EvalFunc):
         assert isinstance(qreps, list)
         assert isinstance(preds, list)
         assert isinstance(qreps[0], dict)
-        use_wandb = kwargs["use_wandb"]
         if "samples_type" in kwargs:
             samples_type = kwargs["samples_type"]
         else:
@@ -751,13 +636,8 @@ class SimplePlanCost(EvalFunc):
         opttotal = np.sum(opt_costs)
         relcost = np.round(float(totalcost)/opttotal, 3)
 
-        print("{}, #samples: {}, plancost relative: {}"\
+        print("{}, #samples: {}, Relative Plan Cost: {}"\
                 .format(samples_type, len(costs),
                     relcost))
-
-        if use_wandb:
-            loss_key = "Final-{}-{}".format("Relative-TotalSimplePlanCost",
-                                                   samples_type)
-            wandb.run.summary[loss_key] = relcost
 
         return costs

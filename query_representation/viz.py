@@ -14,8 +14,7 @@ import matplotlib.patches as mpatches
 import grandalf
 from grandalf.layouts import SugiyamaLayout
 
-
-from .utils import *
+from .utils import SOURCE_NODE
 from evaluation.cost_model import update_subplan_costs
 
 CROSS_JOIN_CARD = 19329323

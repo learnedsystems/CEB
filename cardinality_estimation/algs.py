@@ -212,9 +212,12 @@ def format_model_test_output(pred, samples, featurizer):
 
 class NN(CardinalityEstimationAlg):
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, model_params, *args, **kwargs):
         self.kwargs = kwargs
         for k, val in kwargs.items():
+            self.__setattr__(k, val)
+
+        for k, val in model_params.items():
             self.__setattr__(k, val)
 
         # when estimates are log-normalized, then optimizing for mse is
@@ -235,7 +238,6 @@ class NN(CardinalityEstimationAlg):
             if self.mb_size > 16:
                 self.mb_size = 1
             self.num_workers = 1
-            # self.collate_fn = None
         elif self.loss_func_name == "mse+ranknet":
             self.loss_func = mse_ranknet
             self.load_query_together = True
@@ -386,7 +388,6 @@ class NN(CardinalityEstimationAlg):
             self.all_errs.append(curerrs)
 
         print("Epoch ", self.epoch, curerrs)
-        print("periodic_eval took: ", time.time()-start)
 
     def update_flow_training_info(self):
         fstart = time.time()
@@ -543,6 +544,10 @@ class NN(CardinalityEstimationAlg):
                     evalqname = eval_qdirs[ei]
                     if "job" in evalqname:
                         evalqname = "JOB"
+                        print("Going to remove JOB Q29 from evaluation because it takes too long for computing PPC")
+                        cur_evalqs = [q for q in cur_evalqs if "29" not in
+                                q["name"]]
+
                     elif "imdb-regex" in evalqname:
                         evalqname = "CEB-IMDb-Regex"
                     elif "imdb-noregex" in evalqname:
@@ -553,6 +558,7 @@ class NN(CardinalityEstimationAlg):
                         evalqname = "Stats-CEB"
 
                     if len(cur_evalqs) > 400:
+                        print("Going to load only 10% of evaluation queries for periodically recording losses")
                         ns = int(len(cur_evalqs) / 10)
                         random.seed(42)
                         cur_evalqs = random.sample(cur_evalqs, ns)
@@ -595,9 +601,6 @@ class NN(CardinalityEstimationAlg):
             pct_chngs = []
 
         for self.epoch in range(0,total_epochs):
-
-            # if self.epoch % self.eval_epoch == 0 \
-                    # and self.epoch != 0:
             if self.epoch % self.eval_epoch == 0:
                 self.periodic_eval()
 
@@ -786,139 +789,23 @@ class NN(CardinalityEstimationAlg):
         tmask = torch.from_numpy(tmask).float()
         return tmask
 
-    def _get_onehot_mask2(self, xbatch):
+    # def _get_onehot_mask2(self, xbatch):
 
-        if self.onehot_dropout == 2:
-            # doesn't depend on xbatch at all
-            tf_mask = self._get_onehot_mask(self.featurizer.table_onehot_mask)
-            jf_mask = self._get_onehot_mask(self.featurizer.join_onehot_mask)
-            pf_mask = self._get_onehot_mask(self.featurizer.pred_onehot_mask)
-
-            return tf_mask, jf_mask, pf_mask
-
-        elif self.onehot_dropout == 3:
-            # don't distinguish between onehot vs stats features, just apply
-            # dropout everywhere
-            ptrue = self.onehot_mask_truep
-            pfalse = 1-self.onehot_mask_truep
-            tf_mask = np.random.choice(a=[True, False],
-                    size=(xbatch["table"].shape[0], len(self.featurizer.table_onehot_mask),),
-                    p=[ptrue,pfalse])
-            tf_mask = tf_mask[:,None,:]
-            jf_mask = np.random.choice(a=[True, False],
-                    size=(xbatch["join"].shape[0], len(self.featurizer.join_onehot_mask),),
-                    p=[ptrue,pfalse])
-            jf_mask = jf_mask[:,None,:]
-            pf_mask = np.random.choice(a=[True, False],
-                    size=(xbatch["pred"].shape[0], len(self.featurizer.pred_onehot_mask),),
-                    p=[ptrue,pfalse])
-            pf_mask = pf_mask[:,None,:]
-        elif self.onehot_dropout == 4:
-            # note: we need to do extra work here because we don't want the
-            # stats features to be affected by the onehot mask
-            ptrue = self.onehot_mask_truep
-            pfalse = 1-self.onehot_mask_truep
-            tf_mask = np.random.choice(a=[False, True],
-                    size=(xbatch["table"].shape[0], len(self.featurizer.table_onehot_mask),),
-                    p=[ptrue,pfalse])
-            # negating, turns stats features to zero, and onehot features to
-            # one
-            tmask = ~np.array(self.featurizer.table_onehot_mask, dtype="bool")
-            tf_mask *= tmask
-            # at this point, the stats features would have become zero; now we
-            # can negate it, and we'll get a dropout on only the onehot
-            # features
-            tf_mask = ~tf_mask
-            # fixing dimensions to match xbatch
-            tf_mask = tf_mask[:,None,:]
-
-            ## repeating process with join features and pred features
-            jf_mask = np.random.choice(a=[False, True],
-                    size=(xbatch["join"].shape[0], len(self.featurizer.join_onehot_mask),),
-                    p=[ptrue,pfalse])
-            jmask = ~np.array(self.featurizer.join_onehot_mask, dtype="bool")
-            jf_mask *= jmask
-            jf_mask = ~jf_mask
-            jf_mask = jf_mask[:,None,:]
-
-            pf_mask = np.random.choice(a=[False, True],
-                    size=(xbatch["pred"].shape[0], len(self.featurizer.pred_onehot_mask),),
-                    p=[ptrue,pfalse])
-            pmask = ~np.array(self.featurizer.pred_onehot_mask, dtype="bool")
-            pf_mask *= pmask
-            pf_mask = ~pf_mask
-            pf_mask = pf_mask[:,None,:]
-        elif self.onehot_dropout == 5:
-            # print(xbatch["pred"].shape)
-            # pdb.set_trace()
-            pf_mask = self._get_onehot_mask(self.featurizer.pred_onehot_mask_consts)
-            tmask_ones = np.ones(len(self.featurizer.table_onehot_mask))
-            tf_mask = torch.from_numpy(tmask_ones).float()
+        # if self.onehot_dropout:
+            # # doesn't depend on xbatch at all
             # tf_mask = self._get_onehot_mask(self.featurizer.table_onehot_mask)
-            jmask_ones = np.ones(len(self.featurizer.join_onehot_mask))
-            # jf_mask = self._get_onehot_mask(jmask_ones)
-            jf_mask = torch.from_numpy(jmask_ones).float()
-            return tf_mask, jf_mask, pf_mask
-        elif self.onehot_dropout == 6:
-            rval = random.random()
-            tmask_ones = np.ones(len(self.featurizer.table_onehot_mask))
-            tf_mask = torch.from_numpy(tmask_ones).float()
-            jmask_ones = np.ones(len(self.featurizer.join_onehot_mask))
-            jf_mask = torch.from_numpy(jmask_ones).float()
-            pmask_ones = np.ones(len(self.featurizer.pred_onehot_mask))
-            pf_mask = torch.from_numpy(pmask_ones).float()
-            # knock out nothing
-            if rval <= 0.1:
-                return tf_mask, jf_mask, pf_mask
-            elif rval > 0.1 and rval <= 0.2:
-                # knock out a table + joins + relevant columns
-                # FIXME:
-                return tf_mask, jf_mask, pf_mask
+            # jf_mask = self._get_onehot_mask(self.featurizer.join_onehot_mask)
+            # pf_mask = self._get_onehot_mask(self.featurizer.pred_onehot_mask)
 
-            elif rval > 0.2 and rval <= 0.3:
-                # TODO: knock out some joins; leave everything else in place
-                jf_mask = self._get_onehot_mask(self.featurizer.join_onehot_mask)
-                return tf_mask, jf_mask, pf_mask
-            elif rval > 0.3 and rval <= 0.65:
-                # knock out a column
-                p1 = xbatch["pred"]
-                # TODO: drop columns;
-                colidx,collen = self.featurizer.featurizer_type_idxs["col_onehot"]
-                colend = colidx+collen
-                # choose which column to drop from the batch
-                dropcol = random.choice(range(colidx,colend))
-                p1[:,:,dropcol] = 0.0
-                pcols = p1[:,:,colidx:colend]
+            # return tf_mask, jf_mask, pf_mask
 
-                pcols_sum = pcols.sum(axis=2)
-                pcols_zero = pcols_sum == 0
-                pm = torch.from_numpy(self.featurizer.pred_onehot_mask)
-                pmall = pm.repeat(p1.shape[0],p1.shape[1], 1).bool()
-                # because we will reverse it again after multiplying by 0s/1s
-                pmall = ~pmall
-                # When no columns are turned on, then we want to multiply each
-                # feature by pred_onehot_mask; otherwise, we want to multiply by 1
-                pm2 = pmall*pcols_zero[:,:,None]
+        # else:
+            # assert False
 
-                pmall = ~pmall
-                pm2 = ~pm2
-                pf_mask = pm2.float()
-            elif rval > 0.65 and rval <= 1.0:
-                # knock out only constants
-                pf_mask = self._get_onehot_mask(self.featurizer.pred_onehot_mask_consts)
-                return tf_mask, jf_mask, pf_mask
-            else:
-                assert False
-
-            return tf_mask, jf_mask, pf_mask
-
-        else:
-            assert False
-
-        tf_mask = torch.from_numpy(tf_mask).float()
-        jf_mask = torch.from_numpy(jf_mask).float()
-        pf_mask = torch.from_numpy(pf_mask).float()
-        return tf_mask, jf_mask, pf_mask
+        # tf_mask = torch.from_numpy(tf_mask).float()
+        # jf_mask = torch.from_numpy(jf_mask).float()
+        # pf_mask = torch.from_numpy(pf_mask).float()
+        # return tf_mask, jf_mask, pf_mask
 
     def train_one_epoch(self):
         if self.loss_func_name == "flowloss":
@@ -940,30 +827,13 @@ class NN(CardinalityEstimationAlg):
             if self.onehot_dropout == 0:
                 pass
 
-            elif self.onehot_dropout == 1:
-                if random.random() < 0.5:
-                    # want to change the inputs by selectively zero-ing out
-                    # some things
-                    pf_mask = torch.from_numpy(self.featurizer.pred_onehot_mask).float()
-                    jf_mask = torch.from_numpy(self.featurizer.join_onehot_mask).float()
-                    tf_mask = torch.from_numpy(self.featurizer.table_onehot_mask).float()
-
-                    if self.featurizer.pred_features:
-                        xbatch["pred"] = xbatch["pred"] * pf_mask
-                    if self.featurizer.join_features:
-                        xbatch["join"] = xbatch["join"] * jf_mask
-                    if self.featurizer.table_features:
-                        xbatch["table"] = xbatch["table"] * tf_mask
-
-            elif self.onehot_dropout == 2:
+            elif self.onehot_dropout:
                 if self.featurizer.featurization_type == "combined":
                     mask = np.zeros(xbatch.shape[1])
                     mask[-1] = 1
-                    # mask[-2] = 1
                     mask[-3] = 1
                     mask[-4] = 1
                     mask = self._get_onehot_mask(mask)
-
                     xbatch = xbatch*mask
                 else:
                     tf_mask = self._get_onehot_mask(self.featurizer.table_onehot_mask)
@@ -976,18 +846,18 @@ class NN(CardinalityEstimationAlg):
                         xbatch["join"] = xbatch["join"] * jf_mask
                     if self.featurizer.table_features:
                         xbatch["table"] = xbatch["table"] * tf_mask
-            else:
-                # tf_mask = self._get_onehot_mask(self.featurizer.table_onehot_mask)
-                # jf_mask = self._get_onehot_mask(self.featurizer.join_onehot_mask)
-                # pf_mask = self._get_onehot_mask(self.featurizer.pred_onehot_mask)
-                tf_mask, jf_mask, pf_mask = self._get_onehot_mask2(xbatch)
+            # else:
+                # # tf_mask = self._get_onehot_mask(self.featurizer.table_onehot_mask)
+                # # jf_mask = self._get_onehot_mask(self.featurizer.join_onehot_mask)
+                # # pf_mask = self._get_onehot_mask(self.featurizer.pred_onehot_mask)
+                # tf_mask, jf_mask, pf_mask = self._get_onehot_mask2(xbatch)
 
-                if self.featurizer.pred_features:
-                    xbatch["pred"] = xbatch["pred"] * pf_mask
-                if self.featurizer.join_features:
-                    xbatch["join"] = xbatch["join"] * jf_mask
-                if self.featurizer.table_features:
-                    xbatch["table"] = xbatch["table"] * tf_mask
+                # if self.featurizer.pred_features:
+                    # xbatch["pred"] = xbatch["pred"] * pf_mask
+                # if self.featurizer.join_features:
+                    # xbatch["join"] = xbatch["join"] * jf_mask
+                # if self.featurizer.table_features:
+                    # xbatch["table"] = xbatch["table"] * tf_mask
 
             if self.subplan_level_outputs:
                 pred = self.net(xbatch).squeeze(1)
@@ -1120,19 +990,12 @@ class NN(CardinalityEstimationAlg):
         for each subset graph node (subplan). Each key should be ' ' separated
         list of aliases / table names
         '''
-        # self.trainds = self.init_dataset(training_samples,
-                # self.load_query_together,
-                # max_num_tables = self.max_num_tables,
-                # load_padded_mscn_feats=self.load_padded_mscn_feats)
         testds = self.init_dataset(test_samples, False,
                 max_num_tables = -1,
                 load_padded_mscn_feats=self.load_padded_mscn_feats)
 
         start = time.time()
         preds, _ = self._eval_ds(testds, test_samples)
-
-        print("samples: {}, _eval_ds took: {}".format(len(preds),
-            (time.time()-start)))
 
         if self.featurizer.card_type == "joinkey":
             return format_model_test_output_joinkey(preds, test_samples, self.featurizer)

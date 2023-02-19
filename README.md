@@ -27,80 +27,40 @@
 
 ## Setup
 
-<!--TODO: move description later.-->
-<!--If you are only interested in evaluating the cardinalities, using an evaluation-->
-<!--function such as Q-Error, or if you just want to use the queries for some other-->
-<!--task, then you just need to download the workload. But the main goal of this-->
-<!--dataset is to make it easy to evaluate the impact of cardinality estimates on-->
-<!--query optimization. For this, we use PostgreSQL (and eventually plan to add-->
-<!--support for other open source DBMS' like MySQL). We provide a dockerized-->
-<!--setup with the appropriate setup to get started right away; Instead, you can-->
-<!--also easily adapt it to your own installation of PostgreSQL.-->
-
 ### Workload
 
 Our goal is to use multiple database / query workloads to evaluate learned
 models for estimation accuracy, and performance on downstream query
-optimization tasks. We use a custom networkx based format for representing the query data
-(see [Query Format](#query-format) for details). This is because CEB contains
-ground truth data, and bitmap features, for millions of SQLs (query + all its
-    subplans), and storing everything in plain-text is very inefficient.
+optimization tasks. We use a custom networkx based format for representing the
+query data (see [Query Format](#query-format) for details). This is because CEB
+contains ground truth data, and bitmap features, for millions of SQLs (query +
+    all its subplans), and storing everything in plain-text is very
+inefficient.
 
-<!--CEB contains IMDb and StackExchange databases. On IMDb, we also release-->
-<!--the cardinalities and bitmaps from other public workloads (JOB, JOB-M,-->
-<!--JOBLight) in the same format-->
-
-Note that you only need to download one of these workloads in order to get
-started with CEB, and can choose which one fits your needs best.
-
-#### IMDb CEB
+#### IMDb Workloads
 
 We'll suggest to start with around 3000 representative queries from the 16 IMDb
 CEB templates with:
 
-```bash
-bash scripts/download_imdb_uniqueplans.sh
-```
-
-This downloads all the queries to queries/imdb-unique-plans. It also downloads
-sample bitmaps and join bitmaps (used for featurizing queries) to
-queries/allbitmaps/imdb. In our experiments, these 3K queries give similar
-results to using the full workload of 13K queries. All the data is also
-available for the full workload:
+There have been several query workloads released on IMDb over the years.
+Download all the cardinalities, and featurization bitmap information for JOB,CEB, and JOBLight-train with:
 
 ```bash
 bash scripts/download_imdb_workload.sh
 ```
 
-<!--Each directory represents a query template. Each query, and all it's subplans, is represented using a pickle file, of the form `1a100.pkl`. This workload has over 13k queries; for most purposes, especially when testing out new models, you should probably use a smaller subset of the workload as evaluating on the whole dataset takes more time. For instance, we provide flags to run on only some templates, or to have only up to N queries per template.-->
-
-<!--One useful subset of the data is by considering the PostgreSQL query plans when-->
-<!--using true cardinalities. We can deduplicate all the queries where the true-->
-<!--cardinalities map to the same query plan. This has about 3k queries.-->
-<!--We have not explored the difference in the model performance' in these two scenarios, but for most practical purposes, this should be a sufficiently large dataset as well. We can download this by:-->
-
-#### JOB
+This downloads all the queries to queries/\<workload\>. It also downloads
+sample bitmaps and join bitmaps (used for featurizing queries) to
+queries/allbitmaps/\<workload\>. Note: there are two versions of the IMDb-CEB
+workload: the full version, `ceb-imdb-full` with ~13K queries, and a smaller subset,
+  with ~3K queries, `ceb-imdb`. In most experiments, the 3k queries
+  version seems good enough to use.
 
 ```bash
-bash scripts/download_job_workloads.sh
+bash scripts/download_imdb_workload.sh
 ```
 
-This will download the ground truth cardinalities + bitmaps for both the JOB and JOBLight workloads.
-
-<!--both the JOB and JOBLight workloads to the queries/job or queries/joblight\_train directories.-->
-
-<!--Note that the JOBLight workload just contains joins with 3 tables ----->
-<!--therefore, we only use it as a training workload.-->
-
-<!--In terms of the various Plan-Cost metrics (see Section [Evaluating Estimates](#evaluating-estimates)), these workloads are somewhat less challenging than CEB, but they do have non-trivial queries where cardinality estimates become very important.-->
-
-<!--For the JOBLight workload, see the [generating-->
-<!--cardinalities](#generating-cardinalities) section. Since the JOB-light workload-->
-<!--has relatively small queries, it serves as a nice example of the tools to take-->
-<!--in input sqls and generate the cardinalities of all the subplans, and store-->
-<!--them in the format we support. As a drawback, even PostgreSQL estimates do very-->
-<!--well on JOB-light in terms of the Plan Cost metrics, thus it is not very-->
-<!--challenging from the perspective of query optimization.-->
+#### Ergast CEB
 
 #### StackExchange CEB
 
@@ -111,7 +71,7 @@ bash scripts/download_stack_workload.sh
 ### Notebooks
 
 Standalone training / evaluation notebooks. These should be convenient to get
-started, but using the command line flags, as described in [Learned
+started, but using the main.py script, as described in [Learned
 Models](#learned-models) is more flexible for running experiments.
 
 Also, for PostgreSQL based evaluation (e.g., for plan costs or runtimes, you
@@ -133,7 +93,7 @@ pip3 install captum
 sudo apt-get install graphviz
 ```
 
-And then go to <b> mlsys-1.ipynb </b> and execute the cells in order.
+And then go to any of the notebooks in <b> Notebooks/ </b> and execute the cells in order.
 
 ### PostgreSQL
 

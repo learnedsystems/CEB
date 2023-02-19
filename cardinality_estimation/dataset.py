@@ -240,14 +240,12 @@ class QueryDataset(data.Dataset):
                     self.save_mscn_feats = True
                     os.remove(self.featdir)
             else:
-                print("features NOT saved before")
+                print("Features not saved before.")
 
             if self.featurizer.use_saved_feats:
                 self.save_mscn_feats = True
                 make_dir("./mscn_features")
                 make_dir(self.featdir)
-        else:
-            print("load mscn feats False")
 
         if self.max_num_tables != -1:
             self.save_mscn_feats = False
@@ -455,7 +453,6 @@ class QueryDataset(data.Dataset):
 
             bitdir = os.path.join(self.featurizer.bitmap_dir, qrep["workload"],
                     "sample_bitmap")
-            # bitdir = os.path.join(self.featurizer.bitmap_dir, "sample_bitmap")
 
             bitmapfn = os.path.join(bitdir, qrep["name"])
 
@@ -471,7 +468,6 @@ class QueryDataset(data.Dataset):
 
         # old code
         if self.featurizer.join_bitmap:
-            # bitdir = os.path.join(self.featurizer.bitmap_dir, "join_bitmap")
             bitdir = os.path.join(self.featurizer.bitmap_dir, qrep["workload"],
                     "join_bitmap")
             bitmapfn = os.path.join(bitdir, qrep["name"])

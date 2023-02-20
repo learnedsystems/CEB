@@ -557,11 +557,11 @@ class NN(CardinalityEstimationAlg):
                     elif "stats" in evalqname:
                         evalqname = "Stats-CEB"
 
-                    if len(cur_evalqs) > 400:
-                        print("Going to load only 10% of evaluation queries for periodically recording losses")
-                        ns = int(len(cur_evalqs) / 10)
-                        random.seed(42)
-                        cur_evalqs = random.sample(cur_evalqs, ns)
+                    # if len(cur_evalqs) > 400:
+                        # print("Going to load only 10% of evaluation queries for periodically recording losses")
+                        # ns = int(len(cur_evalqs) / 10)
+                        # random.seed(42)
+                        # cur_evalqs = random.sample(cur_evalqs, ns)
 
                     print("{}, num eval queries: {}".format(evalqname,
                         len(cur_evalqs)))
@@ -599,6 +599,29 @@ class NN(CardinalityEstimationAlg):
         if self.early_stopping:
             eplosses = []
             pct_chngs = []
+
+        ## debug code
+        # fkeys = list(dir(self.featurizer))
+        # fkeys.sort()
+        # attrs = ""
+        # for k in fkeys:
+            # attrvals = getattr(self.featurizer, k)
+            # if not hasattr(attrvals, "__len__") and \
+                # "method" not in str(attrvals):
+                # attr = str(k) + str(attrvals) + ";"
+                # print(attr)
+
+        # fkeys = list(dir(self))
+        # fkeys.sort()
+        # attrs = ""
+        # for k in fkeys:
+            # attrvals = getattr(self, k)
+            # if not hasattr(attrvals, "__len__") and \
+                # "method" not in str(attrvals):
+                # attr = str(k) + str(attrvals) + ";"
+                # print(attr)
+
+        # pdb.set_trace()
 
         for self.epoch in range(0,total_epochs):
             if self.epoch % self.eval_epoch == 0:
@@ -951,6 +974,7 @@ class NN(CardinalityEstimationAlg):
                         self.net.parameters())
 
             if reg_loss is not None:
+                assert False
                 loss += self.onehot_reg_decay * reg_loss
 
             if self.training_opt == "swa":

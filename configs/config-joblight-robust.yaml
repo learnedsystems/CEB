@@ -13,16 +13,16 @@ eval:
 
 data:
     query_dir: "./queries/joblight_train"
-    eval_query_dir: "./queries/job/,./queries/ceb-imdb/"
-    bitmap_dir: "./queries/allbitmaps/"
+    eval_query_dir: "./queries/job/"
+    bitmap_dir: "./queries/allbitmaps-debug2/"
     query_templates: "all"
     eval_templates: "all"
     num_samples_per_template : -1
 
     # query, custom, templates
     train_test_split_kind : "query"
-    test_size : 0.2
-    val_size : 0.2
+    test_size : 0.0
+    val_size : 0.0
     # only used if split == custom
     train_tmps : null
     test_tmps : null
@@ -55,14 +55,15 @@ featurizer:
   ynormalization : "log"
   join_bitmap : 1
 
+  # save feats and re-use them if all args match
+  use_saved_feats : 0
+
   # 1 :: set a maxy based only on the training workloads; or incl. all test
   # workloads
   feat_onlyseen_maxy : 1
   like_char_features : 0
   global_feat_tables : 0
-  # save feats and re-use them if all args match
-  use_saved_feats : 1
-  bitmap_dir : "./queries/allbitmaps/"
+  #bitmap_dir : "./queries/allbitmaps/"
 
   sample_bitmap : 0
   sample_bitmap_num : 1000
@@ -90,7 +91,6 @@ featurizer:
   # hashes if seen in training (else, won't make sense, so zero out).
   # e.g., in sample bitmap: if bitmap idxs never seen in training, dont use.
   feat_onlyseen_preds : 1
-
   clamp_timeouts : 1
 
   ### experimental

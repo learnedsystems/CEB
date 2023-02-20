@@ -123,16 +123,14 @@ def _get_all_cardinalities(qreps, preds):
                 pred = 1
                 # continue
 
-            if actual >= TIMEOUT_CARD:
-                actual = TIMEOUT_CARD
-                pred = TIMEOUT_CARD
-                # continue
+            # if actual >= TIMEOUT_CARD:
+                # actual = TIMEOUT_CARD
+                # pred = TIMEOUT_CARD
 
             if actual == 0:
-                # assert False
                 actual += 1
             if pred <= 0:
-                pred += 1
+                pred = 1
 
             ytrue.append(float(actual))
             yhat.append(float(pred))

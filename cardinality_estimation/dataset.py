@@ -199,8 +199,6 @@ class QueryDataset(data.Dataset):
         vectors belonging to all the subplans of a query.
         @subplan_mask: [], same length as samples;
         '''
-        self.min_num_tables = 2
-
         self.load_query_together = load_query_together
         if self.load_query_together:
             self.start_idxs, self.idx_lens = self._update_idxs(samples)
@@ -217,8 +215,7 @@ class QueryDataset(data.Dataset):
         self.save_mscn_feats = False
         self.subplan_mask = subplan_mask
 
-        # if self.load_padded_mscn_feats:
-        if False:
+        if self.load_padded_mscn_feats:
             fkeys = list(dir(self.featurizer))
             fkeys.sort()
             attrs = ""
@@ -390,13 +387,7 @@ class QueryDataset(data.Dataset):
             node_names.remove(SOURCE_NODE)
         node_names.sort()
 
-        # if self.min_num_tables != -1:
-            # print("minimum tables: ", self.min_num_tables)
-
         for node_idx, node in enumerate(node_names):
-            # if self.min_num_tables != -1 and \
-                    # self.min_num_tables > len(node):
-                # continue
 
             if self.max_num_tables != -1 \
                     and self.max_num_tables < len(node):

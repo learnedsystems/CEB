@@ -640,7 +640,6 @@ class Featurizer():
 
         if self.join_bitmap:
             self.max_joins = len(set(self.join_col_map.values()))
-            self.max_joins += self.max_tables
 
         print("Max tables:", self.max_tables, ", Max pred vals:", self.max_pred_vals,
                 ",Max joins:", self.max_joins)
@@ -657,13 +656,6 @@ class Featurizer():
                     continue
 
                 for i, cmp_op in enumerate(info["pred_types"]):
-                    if cmp_op == "lt":
-                        if len(info["predicates"]) > i:
-                            if ">" in info["predicates"][i]:
-                                cmp_op = ">"
-                            elif "<" in info["predicates"][i]:
-                               cmp_op = "<"
-
                     self.cmp_ops.add(cmp_op)
 
                     if "like" in cmp_op:
@@ -910,6 +902,7 @@ class Featurizer():
             # all used imdb columns from before --- not just in the current
             # workload
             if col_alias not in self.aliases:
+                print("new alias: ", col_alias)
                 continue
 
             real_col = self.aliases[col_alias] + "." + col_splits[1]
@@ -1410,8 +1403,9 @@ class Featurizer():
                 norm_val = max(norm_val, 0.00)
                 norm_val = min(norm_val, 1.00)
                 pfeats[pred_idx_start+vi] = norm_val
-            except:
-                pass
+            except Exception as e:
+                print(e)
+                print("Exception while featurizing continuous filter")
 
     def _handle_categorical_feature(self, pfeats,
             pred_idx_start, col, val):
@@ -1612,7 +1606,6 @@ class Featurizer():
 
                     if c not in self.join_col_map:
                         print("{} still not in JOIN COL MAP".format(c))
-                        # pdb.set_trace()
                         continue
 
                     rcol = self.join_col_map[c]
@@ -1627,6 +1620,7 @@ class Featurizer():
                     else:
                         assert False
 
+                    # print(c.lower())
                     if ".id" in c.lower():
                         # sample bitmap
                         if bitmaps is None:
@@ -1719,13 +1713,11 @@ class Featurizer():
             return join_features
 
         seenjoins = set()
-        # print(">>>>>join bitmaps for: ", subplan)
 
         for alias1 in subplan:
             alias_jbitmaps  = self._find_join_bitmaps(alias1, join_bitmaps,
                                                          bitmaps, joingraph)
 
-            # print(alias_jbitmaps.keys())
             for rcol, rbm in alias_jbitmaps.items():
                 if rcol != "result_id":
                     continue
@@ -1738,11 +1730,6 @@ class Featurizer():
                     rcol += "2"
 
                 real_join_cols[rcol].append(rbm)
-
-            # if "res1" in subplan and "res2" in subplan and alias1 == "res1":
-                # print(alias1)
-                # print(alias_jbitmaps.keys())
-                # pdb.set_trace()
 
             ## maybe this stuff is just not required?
             ## probably need it for the id special case -- can handle that in
@@ -1774,7 +1761,6 @@ class Featurizer():
                 if alias1 + "," + join_str in seenjoins:
                     continue
 
-                # assert len(seenjoins) == 0
                 seenjoins.add(alias1 + "," + join_str)
 
                 # strip alias info
@@ -1844,7 +1830,7 @@ class Featurizer():
                             alias_bm = join_bitmaps[(curalias,)]
                         except Exception as e:
                             # print("exception in join bitmap")
-                            # print(e)
+                            print(e)
                             continue
 
                         # print(alias1, alias2)
@@ -1873,6 +1859,7 @@ class Featurizer():
             # print(len(real_join_cols[rc]))
             # for curvs in real_join_cols[rc]:
                 # print(len(curvs))
+            # pdb.set_trace()
 
             bitmap_int = set.intersection(*real_join_cols[rc])
 
@@ -1901,21 +1888,10 @@ class Featurizer():
             features[cur_idx + jcol_idx] = 1.0
             cur_idx += len(self.real_join_col_mapping)
 
-            # if rc != "movie_id":
-                # print(rc, len(real_join_cols[rc]))
-                # pdb.set_trace()
-
             # bitmap intersection
             bitmap_int = set.intersection(*real_join_cols[rc])
-            # init_size = max([len(jc) for jc in real_join_cols[rc]])
 
             for val in bitmap_int:
-                # TODO: check if seen condition or no
-                # if self.random_bitmap_idx:
-                    # # more robust?
-                    # bitmapidx = random.randint(0, self.sample_bitmap_num-1)
-                    # features[cur_idx+bitmapidx] = 1.0
-                # else:
                 bitmapidx = val % self.sample_bitmap_buckets
                 features[cur_idx+bitmapidx] = 1.0
 
@@ -2013,7 +1989,6 @@ class Featurizer():
             feat_start,_ = self.featurizer_type_idxs["col_onehot"]
             # which column does the current feature belong to
             if col not in self.columns_onehot_idx:
-                # print("{} not in columns_onehot_idx".format(col))
                 return
             cidx = self.columns_onehot_idx[col]
             pfeats[feat_start + cidx] = 1.0
@@ -2034,69 +2009,15 @@ class Featurizer():
         feat_idx_start = 0
 
         pfeats = np.zeros(self.max_pred_len)
-        self._update_set_column_features(col, pfeats)
-
-        # feat_idx_start += self.set_column_features_len
-
-        # set comparison operator 1-hot value, same for all types
-        cmp_start,_ = self.featurizer_type_idxs["cmp_op"]
-        if cmp_op in self.cmp_ops_onehot:
-            cmp_idx = self.cmp_ops_onehot[cmp_op]
-            pfeats[cmp_start + cmp_idx] = 1.00
-
-        col_info = self.column_stats[col]
-        toaddpfeats = True
-        if continuous:
-            cstart,_ = self.featurizer_type_idxs["constant_continuous"]
-            self._handle_continuous_feature(pfeats, cstart, col, val)
-            ## will be done at the end
-            # ret_feats.append(pfeats)
-        else:
-            if "like" in cmp_op:
-                if not jobquery:
-                    lstart,_ = self.featurizer_type_idxs["constant_like"]
-                    self._handle_ilike_feature(pfeats,
-                            lstart, col, val)
-            else:
-                # look at _handle_ilike_feature to know how its used
-                # pred_idx_start += self.max_like_featurizing_buckets + 2
-                dstart,_ = self.featurizer_type_idxs["constant_discrete"]
-
-                if self.embedding_fn is None \
-                        or cmp_op == "eq":
-                    self._handle_categorical_feature(pfeats,
-                            dstart, col, val)
-                else:
-                    toaddpfeats = False
-                    # now do embeddings for each value
-                    assert isinstance(val, list)
-                    # node_key = tuple([alias])
-                    # alias_est = self._get_pg_est(subsetgraph.nodes()[node_key])
-                    curfeats = []
-                    for word in val:
-                        pf2 = copy.deepcopy(pfeats)
-                        self._handle_categorical_feature(pf2,
-                                dstart, col, [word])
-                        curfeats.append(pf2)
-                        assert pf2[-1] == 0.0
-                        assert pf2[-2] == 0.0
-                        pf2[-2] = alias_est
-                        pf2[-1] = subp_est
-
-                    if self.embedding_pooling == "sum":
-                        pooled_feats = np.sum(np.array(curfeats), axis=0)
-                        ret_feats.append(pooled_feats)
-                    else:
-                        ret_feats += curfeats
 
         # add the appropriate postgresql estimate for this table in the
         # subplan; Note that the last elements are reserved for the
         # heuristic estimates for both continuous / categorical
         # features
-        if self.heuristic_features \
-                and toaddpfeats:
+        if self.heuristic_features:
             assert pfeats[-1] == 0.0
             assert pfeats[-2] == 0.0
+            # TODO: might remove the feat_separate_like_ests condition
             if self.feat_separate_like_ests:
                 assert pfeats[-3] == 0.0
                 assert pfeats[-4] == 0.0
@@ -2111,14 +2032,54 @@ class Featurizer():
                 if "synth" not in self.db_name:
                     pfeats[-2] = alias_est
                     assert pfeats[hstart] == alias_est
-
                 pfeats[-1] = subp_est
                 # test:
                 assert pfeats[hstart+1] == subp_est
 
-        if toaddpfeats:
-            ret_feats.append(pfeats)
+        if col not in self.seen_preds:
+            # if not, then the column should just be zero, and we will only
+            # have the postgres estimate for the column as a useful feature
+            return [pfeats]
 
+        self._update_set_column_features(col, pfeats)
+
+        # print(self.aliases)
+        # print(self.columns_onehot_idx)
+        # print("Num column stats: ", len(self.column_stats))
+        # pdb.set_trace()
+        # feat_idx_start += self.set_column_features_len
+
+        # set comparison operator 1-hot value, same for all types
+        cmp_start,_ = self.featurizer_type_idxs["cmp_op"]
+        if cmp_op in self.cmp_ops_onehot:
+            cmp_idx = self.cmp_ops_onehot[cmp_op]
+            pfeats[cmp_start + cmp_idx] = 1.00
+        else:
+            assert False
+
+        col_info = self.column_stats[col]
+        if continuous:
+            cstart,_ = self.featurizer_type_idxs["constant_continuous"]
+            self._handle_continuous_feature(pfeats, cstart, col, val)
+        else:
+            if "like" in cmp_op:
+                if not jobquery:
+                    lstart,_ = self.featurizer_type_idxs["constant_like"]
+                    self._handle_ilike_feature(pfeats,
+                            lstart, col, val)
+            else:
+                # look at _handle_ilike_feature to know how its used
+                # pred_idx_start += self.max_like_featurizing_buckets + 2
+                dstart,_ = self.featurizer_type_idxs["constant_discrete"]
+
+                self._handle_categorical_feature(pfeats,
+                        dstart, col, val)
+
+        if self.heuristic_features:
+            assert pfeats[-1] == subp_est
+            assert pfeats[-2] == alias_est
+
+        ret_feats.append(pfeats)
         return ret_feats
 
     def get_subplan_features_set(self, qrep, subplan, bitmaps=None,
@@ -2285,19 +2246,10 @@ class Featurizer():
 
                 cmp_op = aliasinfo["pred_types"][ci]
 
-                if cmp_op == "lt":
-                    if len(aliasinfo["predicates"]) > ci:
-                        if ">" in aliasinfo["predicates"][ci]:
-                            cmp_op = ">"
-                        elif "<" in aliasinfo["predicates"][ci]:
-                            cmp_op = "<"
+                # continuous = self.column_stats[col]["continuous"] \
+                        # and cmp_op in ["lt", "<", ">", "<=", ">="]
 
-                # if jobquery and "like" in cmp_op.lower():
-                    # # print("skipping featurizing likes for JOB")
-                    # continue
-
-                continuous = self.column_stats[col]["continuous"] \
-                        and cmp_op in ["lt", "<", ">", "<=", ">="]
+                continuous = self.column_stats[col]["continuous"]
 
                 if continuous and not isinstance(allvals, list):
                     # FIXME: hack for jobm queries like = '1997'
@@ -2308,21 +2260,6 @@ class Featurizer():
                         alias_est, subp_est,
                         cmp_op,
                         continuous, jobquery=jobquery)
-
-                # if subp_est != 0:
-                    # print(pfeats)
-                    # pdb.set_trace()
-
-                # if "10M" in qrep["workload"]:
-                    # print(col)
-                    # print(pfeats)
-                    # pdb.set_trace()
-
-                if continuous:
-                    pass
-                    # print(aliasinfo)
-                    # print(allvals)
-                    # print(pfeats)
 
                 allpredfeats += pfeats
 
@@ -2495,13 +2432,6 @@ class Featurizer():
                 if isinstance(val, dict):
                     val = val["literal"]
                 cmp_op = aliasinfo["pred_types"][0]
-
-                if cmp_op == "lt":
-                    if len(aliasinfo["predicates"]) >= 1:
-                        if ">" in aliasinfo["predicates"][0]:
-                            cmp_op = ">"
-                        elif "<" in aliasinfo["predicates"][0]:
-                            cmp_op = "<"
 
                 if col not in self.featurizer:
                     # print("col: {} not found in featurizer".format(col))

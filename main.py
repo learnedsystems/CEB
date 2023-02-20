@@ -91,9 +91,13 @@ def get_featurizer(trainqs, valqs, testqs, eval_qs):
     featdata_fn = os.path.join(cfg["data"]["query_dir"],
             "dbdata.json")
 
+    all_evalqs = []
+    for e0 in eval_qs:
+        all_evalqs += e0
+
     if args.regen_featstats or not os.path.exists(featdata_fn):
         # we can assume that we have db stats for any column in the db
-        featurizer.update_column_stats(trainqs+valqs+testqs)
+        featurizer.update_column_stats(trainqs+valqs+testqs+all_evalqs)
         ATTRS_TO_SAVE = ['aliases', 'cmp_ops', 'column_stats', 'joins',
                 'max_in_degree', 'max_joins', 'max_out_degree', 'max_preds',
                 'max_tables', 'regex_cols', 'tables', 'join_key_stats',
@@ -134,18 +138,14 @@ def get_featurizer(trainqs, valqs, testqs, eval_qs):
     # collected in the featurizer.update_column_stats call; Therefore, we don't
     # include this in the cached version
 
-    all_evalqs = []
-    for e0 in eval_qs:
-        all_evalqs += e0
-
     qdir_name = os.path.basename(cfg["data"]["query_dir"])
     bitmap_dir = cfg["data"]["bitmap_dir"]
-
     # ** converts the dictionary into keyword args
     featurizer.setup(
             **cfg["featurizer"],
             loss_func = cfg["model"]["loss_func_name"],
             featurization_type = feat_type,
+            bitmap_dir = cfg["data"]["bitmap_dir"],
             card_type = card_type
             )
 
@@ -238,7 +238,7 @@ def main():
 
     if len(evalqs) > 0 and len(evalqs[0]) > 0:
         for ei, evalq in enumerate(evalqs):
-            eval_alg(alg, evalq_fns, evalq, cfg, eval_qdirs[ei], featurizer=featurizer)
+            eval_alg(alg, eval_fns, evalq, cfg, eval_qdirs[ei], featurizer=featurizer)
             del evalq[:]
 
 def read_flags():

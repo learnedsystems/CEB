@@ -50,7 +50,7 @@ featurizer:
   like_char_features : 0
   global_feat_tables : 0
   # save feats and re-use them if all args match
-  use_saved_feats : 1
+  use_saved_feats : 0
   bitmap_dir : "./queries/allbitmaps/"
 
   sample_bitmap : 0

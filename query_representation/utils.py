@@ -143,6 +143,11 @@ def load_qdata(fns):
                 skip = True
                 continue
 
+            if qrep["subset_graph"].nodes()[node]["cardinality"]["actual"] \
+                    >= TIMEOUT_CARD:
+                skip = True
+                continue
+
             # skips zeros
             if qrep["subset_graph"].nodes()[node]["cardinality"]["actual"] \
                     < 1:
@@ -314,8 +319,7 @@ def get_query_splits(data_params):
             with open(os.path.join("queries", "ceb_runtime_qnames.txt"), "r") as f:
                 qkeys = f.read()
             qkeys = qkeys.split("\n")
-            # print(qkeys)
-            print("going to read only {} CEB queries".format(len(qkeys)))
+            print("going to read only {} CEB queries".format(len(qkeys)-1))
 
         elif "ergast" in qdir:
             with open("ergast_runtime_qnames.pkl", "rb") as f:

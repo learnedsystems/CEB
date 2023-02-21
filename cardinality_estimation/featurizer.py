@@ -631,13 +631,14 @@ class Featurizer():
             if num_joins > self.max_joins:
                 self.max_joins = num_joins
 
-
         if self.max_joins <= 1:
             self.max_joins = 2
 
         if self.max_tables <= 1:
             self.max_tables = 2
 
+        # join features based on just the join_col_maps, and not for each
+        # individual join string
         if self.join_bitmap:
             self.max_joins = len(set(self.join_col_map.values()))
 
@@ -1707,8 +1708,10 @@ class Featurizer():
         real_join_cols = defaultdict(list)
         real_join_tabs = defaultdict(list)
 
+        ## TODO: do not return here; since we dont use sample bitmaps
         if len(subplan) == 1:
             return join_features
+
         if join_bitmaps is None:
             return join_features
 
@@ -1719,16 +1722,6 @@ class Featurizer():
                                                          bitmaps, joingraph)
 
             for rcol, rbm in alias_jbitmaps.items():
-                if rcol != "result_id":
-                    continue
-                if "res3" in subplan:
-                    continue
-
-                if "1" in alias1:
-                    rcol += "1"
-                elif "2" in alias1:
-                    rcol += "2"
-
                 real_join_cols[rcol].append(rbm)
 
             ## maybe this stuff is just not required?
@@ -1739,33 +1732,14 @@ class Featurizer():
                 if ekey not in joingraph.edges():
                     continue
 
-                if "2" in alias1 and "2" in alias2:
-                    jgroup = "2"
-                elif "1" in alias1 and "1" in alias2:
-                    jgroup = "1"
-                elif "3" in alias1 and "3" in alias2:
-                    jgroup = "3"
-                elif "1" in alias1 and "2" in alias2:
-                    jgroup = "mix"
-                elif "2" in alias1 and "1" in alias2:
-                    jgroup = "mix"
-                elif "3" in alias1 and "2" in alias2:
-                    jgroup = "mix"
-                elif "3" in alias1 and "1" in alias2:
-                    jgroup = "mix"
-                else:
-                    jgroup = ""
-
                 join_str = joingraph.edges()[ekey]["join_condition"]
 
                 if alias1 + "," + join_str in seenjoins:
                     continue
-
                 seenjoins.add(alias1 + "," + join_str)
 
                 # strip alias info
                 join_str = self.join_str_to_real_join(join_str)
-
                 cols = join_str.split("=")
 
                 for ci, c in enumerate(cols):
@@ -1775,21 +1749,9 @@ class Featurizer():
                     if c not in self.join_col_map:
                         print("{} still not in JOIN COL MAP".format(c))
                         continue
-                        # pdb.set_trace()
 
                     rcol = self.join_col_map[c]
-                    rcol_orig = self.join_col_map[c]
-
-                    ## special casing driver id join for now
-                    # if jgroup != "mix" and rcol != "driver_id":
-                        # rcol += jgroup
-                    if jgroup != "mix":
-                        if not (rcol == "driver_id" and \
-                            "d1" in subplan and "d2" in subplan):
-                            rcol = rcol + jgroup
-                        elif not (rcol == "constructor_id" and \
-                            "c1" in subplan and "c2" in subplan):
-                            rcol = rcol + jgroup
+                    # rcol_orig = self.join_col_map[c]
 
                     tabname = c[0:c.find(".")]
                     real_join_tabs[rcol].append(tabname)
@@ -1798,11 +1760,10 @@ class Featurizer():
                     if self.aliases[alias1] == tabname:
                         curalias = alias1
                     elif self.aliases[alias2] == tabname:
+                        ## Do this?
                         # alias2 will be alias1 later
-                        continue
-                        # curalias = alias2
-                    # else:
-                        # assert False
+                        # continue
+                        curalias = alias2
 
                     if ".id" in c.lower():
                         # sample bitmap
@@ -1822,7 +1783,7 @@ class Featurizer():
                     else:
                         bitmap_key = NEW_JOIN_TABLE_TEMPLATE.format(
                                 TABLE=tabname,
-                                JOINKEY=rcol_orig,
+                                JOINKEY=rcol,
                                 SS="sb",
                                 NUM=self.sample_bitmap_num)
 
@@ -1860,8 +1821,7 @@ class Featurizer():
             # for curvs in real_join_cols[rc]:
                 # print(len(curvs))
             # pdb.set_trace()
-
-            bitmap_int = set.intersection(*real_join_cols[rc])
+            # bitmap_int = set.intersection(*real_join_cols[rc])
 
             cur_idx = 0
             features = np.zeros(self.join_features_len)

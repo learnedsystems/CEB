@@ -48,7 +48,7 @@ rm jobm.tar.gz
 cp imdb_data.json queries/jobm/dbdata.json
 
 ## download bitmaps for all these workloads
-wget -O all_bitmaps.tar.gz https://www.dropbox.com/s/eph3q5a3dcqv7io/allbitmaps.tar.gz?dl=1
+wget -O allbitmaps.tar.gz https://www.dropbox.com/s/eph3q5a3dcqv7io/allbitmaps.tar.gz?dl=1
 tar -xvf allbitmaps.tar.gz
 
 mv allbitmaps queries/

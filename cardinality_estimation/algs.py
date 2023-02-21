@@ -548,23 +548,34 @@ class NN(CardinalityEstimationAlg):
                         cur_evalqs = [q for q in cur_evalqs if "29" not in
                                 q["name"]]
 
-                    elif "imdb-regex" in evalqname:
-                        evalqname = "CEB-IMDb-Regex"
-                    elif "imdb-noregex" in evalqname:
-                        evalqname = "CEB-IMDb-NoRegex"
                     elif "imdb" in evalqname:
-                        evalqname = "CEB-IMDb"
+                        # evalqname = "CEB-IMDb"
+                        group_evalqs = [q for q in cur_evalqs if "group" in
+                                q["sql"].lower()]
+                        not_group_evalqs = [q for q in cur_evalqs if "group" not in
+                                q["sql"].lower()]
+                        gqname = "CEB-IMDb-Complex"
+                        not_gqname = "CEB-IMDb-NoGroupNoLike"
+                        self.eval_ds[gqname] = \
+                                self.init_dataset(group_evalqs, False,
+                                load_padded_mscn_feats=self.load_padded_mscn_feats)
+                        self.true_costs[gqname] = 0.0
+                        self.samples[gqname] = group_evalqs
+
+                        self.eval_ds[not_gqname] = \
+                                self.init_dataset(not_group_evalqs, False,
+                                load_padded_mscn_feats=self.load_padded_mscn_feats)
+                        self.true_costs[not_gqname] = 0.0
+                        self.samples[not_gqname] = not_group_evalqs
+
+                        continue
+
                     elif "stats" in evalqname:
                         evalqname = "Stats-CEB"
 
-                    # if len(cur_evalqs) > 400:
-                        # print("Going to load only 10% of evaluation queries for periodically recording losses")
-                        # ns = int(len(cur_evalqs) / 10)
-                        # random.seed(42)
-                        # cur_evalqs = random.sample(cur_evalqs, ns)
-
                     print("{}, num eval queries: {}".format(evalqname,
                         len(cur_evalqs)))
+
                     if len(cur_evalqs) == 0:
                         continue
 
@@ -573,8 +584,6 @@ class NN(CardinalityEstimationAlg):
                             load_padded_mscn_feats=self.load_padded_mscn_feats)
                     self.true_costs[evalqname] = 0.0
                     self.samples[evalqname] = cur_evalqs
-
-        # self.true_costs["jobm"] = 0.0
 
         # TODO: initialize self.num_features
         self.net, self.optimizer = self.init_net(self.trainds[0])

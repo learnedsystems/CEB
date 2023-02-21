@@ -1,20 +1,10 @@
 %YAML 1.2
 ---
-## Train on JOBLight; Eval on JOB,CEB;
-### uses query masking + join bitmap
-
-eval:
-  use_wandb : 1
-  save_test_preds : 0
-  save_pdf_plans : 0
-
-  # for parallelizing computing plan costs
-  num_processes : -1
 
 data:
-    query_dir: "./queries/joblight_train"
-    eval_query_dir: "./queries/job/,./queries/ceb-imdb"
-    bitmap_dir: "./queries/allbitmaps-debug2/"
+    query_dir: "./queries/job2"
+    eval_query_dir: "./queries/ceb-imdb"
+    bitmap_dir: "./queries/allbitmaps/"
     query_templates: "all"
     eval_templates: "all"
     num_samples_per_template : -1
@@ -53,22 +43,21 @@ db:
 featurizer:
   # featureres for `y`, the output cardinalities
   ynormalization : "log"
-  join_bitmap : 1
-
-  # save feats and re-use them if all args match
-  use_saved_feats : 0
 
   # 1 :: set a maxy based only on the training workloads; or incl. all test
   # workloads
   feat_onlyseen_maxy : 1
   like_char_features : 0
   global_feat_tables : 0
-  #bitmap_dir : "./queries/allbitmaps/"
+  # save feats and re-use them if all args match
+  use_saved_feats : 0
+  bitmap_dir : "./queries/allbitmaps/"
 
   sample_bitmap : 0
   sample_bitmap_num : 1000
   sample_bitmap_buckets : 1000
-  bitmap_onehotmask : 1
+  join_bitmap : 1
+  bitmap_onehotmask : 1 # if using onehot_dropout
 
   feat_separate_alias : 0 # treat aliases as separate tables
   feat_separate_like_ests : 0
@@ -91,6 +80,7 @@ featurizer:
   # hashes if seen in training (else, won't make sense, so zero out).
   # e.g., in sample bitmap: if bitmap idxs never seen in training, dont use.
   feat_onlyseen_preds : 1
+
   clamp_timeouts : 1
 
   ### experimental
@@ -100,61 +90,61 @@ featurizer:
   implied_pred_features : 0
 
 model:
-  # robust-mscn features
-  onehot_dropout : 1
-  onehot_mask_truep : 0.8
-  # shuffling idea from robust-mscn paper
-  random_bitmap_idx : 0
-
-  # if loss == mse; combined with featurizer.ynormalization : log, this is optimizing q-error
-  # other options for loss: flowloss; qloss --> needs different ynormalization;
+  # note: combined with featurizer.ynormalization : log, this is essentially optimizing q-error
   loss_func_name : "mse"
-  normalize_flow_loss : 1
-
-  # important training / optimization flags
-  max_epochs : 100
-  eval_epoch : 2 # how often to evaluate on eval_fns during training
-  eval_fns : "qerr,ppc" # logging things during training
+  max_epochs : 50
   lr : 0.0001
-  num_hidden_layers : 2
-  hidden_layer_size : 128
-
-  # keep padded set features in memory; faster to train, takes more RAM
-  load_padded_mscn_feats : 1
-
-  cost_model : "C"
-
-
-  # standard args; don't seem to affect results a lot
-  mb_size : 1024
-  weight_decay : 0.0
-  optimizer_name : "adamw"
-  clip_gradient : 20.0
+  random_bitmap_idx : 0
+  test_random_bitmap : 0
+  reg_loss : 0
+  max_num_tables : -1
   early_stopping : 0
   inp_dropout : 0.0
   hl_dropout : 0.0
   comb_dropout : 0.0
+  normalize_flow_loss : 1
+  cost_model : "C"
+  hidden_layer_size : 128
 
-  # used just for flow-loss; should be set automatically in code if loss ==
-  # flowloss
-  load_query_together : 0
+  # logging things during training
+  eval_fns : "qerr,ppc"
+  eval_epoch : 1000 # how often to evaluate on eval_fns during training
+
+  load_padded_mscn_feats : 1
+  mb_size : 1024
+  weight_decay : 0.0
+  load_query_together : 0 # used just for flow-loss
+
+  onehot_dropout : 0
+  onehot_mask_truep : 0.8
+
+  num_hidden_layers : 2
+
+  optimizer_name : "adamw"
+  clip_gradient : 20.0
+
 
   ## experimental
   mask_unseen_subplans : 0
   subplan_level_outputs: 0
   heuristic_unseen_preds : null
   other_hid_units : null
+
   onehot_reg : 0
   onehot_reg_decay : 0.01
-  test_random_bitmap : 0
-
-
-  reg_loss : 0
-  max_num_tables : -1 # only consider samples with < N tables when training
 
   ## unused
   training_opt : ""
   opt_lr : 0.005
   swa_start : 5
+
+eval:
+  use_wandb : 0
+  #result_dir : "./results"
+  save_test_preds : 0
+  save_pdf_plans : 0
+
+  # for parallelizing computing plan costs
+  num_processes : -1
 
 ...

@@ -143,10 +143,10 @@ def load_qdata(fns):
                 skip = True
                 continue
 
-            if qrep["subset_graph"].nodes()[node]["cardinality"]["actual"] \
-                    >= TIMEOUT_CARD:
-                skip = True
-                continue
+            # if qrep["subset_graph"].nodes()[node]["cardinality"]["actual"] \
+                    # >= TIMEOUT_CARD:
+                # skip = True
+                # continue
 
             # skips zeros
             if qrep["subset_graph"].nodes()[node]["cardinality"]["actual"] \
@@ -339,6 +339,10 @@ def get_query_splits(data_params):
             if data_params.eval_templates != "all" and \
                 template_name not in data_params.eval_templates.split(","):
                 print("skipping eval template: ", template_name)
+                continue
+
+            if data_params.skip7a and template_name == "7a":
+                skipped_templates.append(template_name)
                 continue
 
             # let's first select all the qfns we are going to load

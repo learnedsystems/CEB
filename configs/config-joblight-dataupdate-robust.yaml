@@ -1,0 +1,160 @@
+%YAML 1.2
+---
+## Train on JOBLight; Eval on JOB,CEB;
+### uses query masking + join bitmap
+
+eval:
+  use_wandb : 1
+  save_test_preds : 0
+  save_pdf_plans : 0
+
+  # for parallelizing computing plan costs
+  num_processes : 4
+
+data:
+    query_dir: "./queries/joblight_train_1950"
+    eval_query_dir: "./queries/job/,./queries/ceb-imdb"
+    bitmap_dir: "./queries/allbitmaps/"
+    query_templates: "all"
+    eval_templates: "all"
+    num_samples_per_template : -1
+
+    # query, custom, templates
+    train_test_split_kind : "query"
+    test_size : 0.0
+    val_size : 0.0
+    # only used if split == custom
+    train_tmps : null
+    test_tmps : null
+
+    #=1, will skip templates having regex queries
+    no_regex_templates : 0
+
+    #since 7a  is a template with a very large joingraph, we have a flag to
+    #skip it to make things run faster
+    skip7a : 0
+
+    seed : 123
+    # Seed used when train_test_split_kind == template
+    diff_templates_seed : 1
+
+    ### experimental
+    only_pgplan_data : 0
+
+# only need these features for computing plan costs
+db:
+  db_name : "imdb"
+  db_host : "localhost"
+  user    : "pari"
+  pwd     : ""
+  port    : 5440
+
+## used for neural net featurization of queries;;
+featurizer:
+  # featureres for `y`, the output cardinalities
+  ynormalization : "log"
+  join_bitmap : 1
+
+  # save feats and re-use them if all args match
+  use_saved_feats : 1
+
+  # 1 :: set a maxy based only on the training workloads; or incl. all test
+  # workloads
+  feat_onlyseen_maxy : 1
+  like_char_features : 0
+  global_feat_tables : 0
+  #bitmap_dir : "./queries/allbitmaps/"
+
+  sample_bitmap : 0
+  sample_bitmap_num : 1000
+  sample_bitmap_buckets : 1000
+  bitmap_onehotmask : 1
+
+  feat_separate_alias : 0 # treat aliases as separate tables
+  feat_separate_like_ests : 0
+
+  feat_mcvs : 0
+  heuristic_features : 1
+
+  table_features: 1
+  pred_features : 1
+  global_features : 1
+
+  join_features : "onehot"
+  set_column_feature : "onehot"
+
+  max_discrete_featurizing_buckets : 1
+  max_like_featurizing_buckets : 1
+
+  # ignore predicate filter featurization using hashing if they are not seen
+  # e.g., in categorical filters, like genre = 'action', only featurize using
+  # hashes if seen in training (else, won't make sense, so zero out).
+  # e.g., in sample bitmap: if bitmap idxs never seen in training, dont use.
+  feat_onlyseen_preds : 1
+  clamp_timeouts : 1
+
+  ### experimental
+  true_base_cards : 0 # testing if true cardinalities of base tables makes a big diff
+  embedding_fn : null
+  embedding_pooling : null
+  implied_pred_features : 0
+
+model:
+  # robust-mscn features
+  onehot_dropout : 1
+  onehot_mask_truep : 0.8
+  # shuffling idea from robust-mscn paper
+  random_bitmap_idx : 0
+
+  # if loss == mse; combined with featurizer.ynormalization : log, this is optimizing q-error
+  # other options for loss: flowloss; qloss --> needs different ynormalization;
+  loss_func_name : "mse"
+  normalize_flow_loss : 1
+
+  # important training / optimization flags
+  max_epochs : 100
+  eval_epoch : 2 # how often to evaluate on eval_fns during training
+  eval_fns : "qerr,ppc" # logging things during training
+  lr : 0.0001
+  num_hidden_layers : 2
+  hidden_layer_size : 128
+
+  # keep padded set features in memory; faster to train, takes more RAM
+  load_padded_mscn_feats : 1
+
+  cost_model : "C"
+
+
+  # standard args; don't seem to affect results a lot
+  mb_size : 1024
+  weight_decay : 0.0
+  optimizer_name : "adamw"
+  clip_gradient : 20.0
+  early_stopping : 0
+  inp_dropout : 0.0
+  hl_dropout : 0.0
+  comb_dropout : 0.0
+
+  # used just for flow-loss; should be set automatically in code if loss ==
+  # flowloss
+  load_query_together : 0
+
+  ## experimental
+  mask_unseen_subplans : 0
+  subplan_level_outputs: 0
+  heuristic_unseen_preds : null
+  other_hid_units : null
+  onehot_reg : 0
+  onehot_reg_decay : 0.01
+  test_random_bitmap : 0
+
+
+  reg_loss : 0
+  max_num_tables : -1 # only consider samples with < N tables when training
+
+  ## unused
+  training_opt : ""
+  opt_lr : 0.005
+  swa_start : 5
+
+...

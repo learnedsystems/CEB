@@ -43,11 +43,11 @@ data:
 
 # only need these features for computing plan costs
 db:
-  db_name : "imdb"
+  db_name : "imdb1950"
   db_host : "localhost"
-  user    : "pari"
-  pwd     : ""
-  port    : 5440
+  user    : "ceb"
+  pwd     : "password"
+  port    : 5432
 
 ## used for neural net featurization of queries;;
 featurizer:
@@ -104,7 +104,7 @@ model:
   onehot_dropout : 1
   onehot_mask_truep : 0.8
   # shuffling idea from robust-mscn paper
-  random_bitmap_idx : 0
+  random_bitmap_idx : 1
 
   # if loss == mse; combined with featurizer.ynormalization : log, this is optimizing q-error
   # other options for loss: flowloss; qloss --> needs different ynormalization;

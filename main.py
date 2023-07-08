@@ -634,23 +634,6 @@ def load_qdata(fns, skip_timeouts=False):
                 print("no expected!")
                 break
 
-            # if "ms" not in qrep["subset_graph"].nodes()[node]["cardinality"] \
-                    # and (args.algs == "ms" or args.algs == "legms"):
-            if "ms" not in qrep["subset_graph"].nodes()[node]["cardinality"] \
-                    and args.db_name == "imdb":
-                skip = True
-                # print(qfn)
-                print("no ms!")
-                break
-
-            # if qrep["subset_graph"].nodes()[node]["cardinality"]["expected"] \
-                    # == 0:
-                # skip = True
-                # break
-
-        # if skip:
-            # continue
-
         if skip and skip_timeouts:
             # print("skip!")
             continue
@@ -1000,13 +983,11 @@ def read_flags():
 
     ## db credentials
     parser.add_argument("--db_name", type=str, required=False,
-            default="ergastf1")
+            default="imdb")
     parser.add_argument("--db_host", type=str, required=False,
             default="localhost")
     parser.add_argument("--user", type=str, required=False,
             default="ceb")
-    # parser.add_argument("--user", type=str, required=False,
-            # default="pari")
     parser.add_argument("--pwd", type=str, required=False,
             default="password")
     parser.add_argument("--port", type=int, required=False,

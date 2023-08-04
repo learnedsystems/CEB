@@ -533,7 +533,7 @@ def find_next_match(tables, wheres, index):
     tables_in_pred = find_all_tables_till_keyword(token)
     assert len(tables_in_pred) <= 2
 
-    token_list = sqlparse.sql.TokenList(wheres)
+    token_list = sqlparse.sql.TokenList(wheres).tokens
 
     while True:
         index, token = token_list.token_next(index)

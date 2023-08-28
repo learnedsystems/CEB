@@ -56,10 +56,6 @@ workload: the full version, `ceb-imdb-full` with ~13K queries, and a smaller sub
   with ~3K queries, `ceb-imdb`. In most experiments, the 3k queries
   version seems good enough to use.
 
-```bash
-bash scripts/download_imdb_workload.sh
-```
-
 #### Ergast CEB
 
 #### StackExchange CEB

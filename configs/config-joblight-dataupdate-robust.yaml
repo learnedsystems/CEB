@@ -114,7 +114,7 @@ model:
   # important training / optimization flags
   max_epochs : 100
   eval_epoch : 2 # how often to evaluate on eval_fns during training
-  eval_fns : "qerr,ppc" # logging things during training
+  eval_fns : "qerr" # logging things during training
   lr : 0.0001
   num_hidden_layers : 2
   hidden_layer_size : 128

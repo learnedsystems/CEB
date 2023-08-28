@@ -1,23 +1,30 @@
 import sys
 sys.path.append(".")
-from query_representation.query import *
-from evaluation.eval_fns import *
-from cardinality_estimation.featurizer import *
-from cardinality_estimation.algs import *
-from cardinality_estimation.fcnn import FCNN
-from cardinality_estimation.mscn import MSCN
+# from query_representation.query import *
+from query_representation.utils import get_query_splits
 
-import glob
+from cardinality_estimation.featurizer import *
+from cardinality_estimation import get_alg
+from evaluation.eval_fns import get_eval_fn
+# import glob
 import argparse
-import random
+# import random
 import json
 
-import klepto
-from sklearn.model_selection import train_test_split
 import pdb
 import copy
+import pickle
+import os
+import yaml
 
-def eval_alg(alg, eval_funcs, qreps, samples_type):
+import wandb
+import logging
+logger = logging.getLogger("wandb")
+logger.setLevel(logging.ERROR)
+
+def eval_alg(alg, eval_funcs, qreps, cfg,
+        samples_type,
+        featurizer=None):
     '''
     '''
     np.set_printoptions(formatter={'float': lambda x: "{0:0.3f}".format(x)})
@@ -25,192 +32,80 @@ def eval_alg(alg, eval_funcs, qreps, samples_type):
     start = time.time()
     alg_name = alg.__str__()
     exp_name = alg.get_exp_name()
+
     ests = alg.test(qreps)
 
+    rdir = None
+    if args.result_dir is not None:
+        rdir = os.path.join(args.result_dir, exp_name)
+        make_dir(rdir)
+        # print("Going to store results at: ", rdir)
+        args_fn = os.path.join(rdir, "cfg.json")
+        with open(args_fn, 'w', encoding='utf-8') as f:
+            json.dump(cfg, f, ensure_ascii=False, indent=4)
+
+    if samples_type != "train" and cfg["eval"]["save_test_preds"]:
+        preds_dir = os.path.join(rdir, samples_type + "-preds")
+        make_dir(preds_dir)
+        for i,qrep in enumerate(qreps):
+            newfn = os.path.basename(qrep["name"])
+            predfn = os.path.join(preds_dir, qrep["name"])
+            cur_ests = ests[i]
+            with open(predfn, "wb") as f:
+                pickle.dump(cur_ests, f)
+
     for efunc in eval_funcs:
-        rdir = None
+        if "plan" in str(efunc).lower() and "train" in qreps[0]["template_name"]:
+            print("skipping _train_ workload plan cost eval")
+            continue
 
-        if args.result_dir is not None:
-            rdir = os.path.join(args.result_dir, exp_name)
-            make_dir(rdir)
-
-        errors = efunc.eval(qreps, ests, args=args, samples_type=samples_type,
-                result_dir=rdir, user = args.user, db_name = args.db_name,
-                db_host = args.db_host, port = args.port,
-                num_processes = args.num_eval_processes,
-                alg_name = alg_name)
+        errors = efunc.eval(qreps, ests,
+                user = cfg["db"]["user"], pwd = cfg["db"]["pwd"],
+                port = cfg["db"]["port"], db_name = cfg["db"]["db_name"],
+                db_host = cfg["db"]["db_host"],
+                samples_type = samples_type,
+                num_processes = cfg["eval"]["num_processes"],
+                alg_name = alg_name,
+                save_pdf_plans= cfg["eval"]["save_pdf_plans"],
+                query_dir = cfg["data"]["query_dir"],
+                result_dir = args.result_dir,
+                use_wandb = cfg["eval"]["use_wandb"],
+                featurizer = featurizer, alg=alg)
 
         print("{}, {}, {}, #samples: {}, {}: mean: {}, median: {}, 99p: {}"\
-                .format(args.db_name, samples_type, alg, len(errors),
-                    efunc.__str__(),
-                    np.round(np.mean(errors),3),
+                .format(cfg["db"]["db_name"], samples_type, alg, len(errors),
+                    efunc.__str__(), np.round(np.mean(errors),3),
                     np.round(np.median(errors),3),
                     np.round(np.percentile(errors,99),3)))
 
-    print("all loss computations took: ", time.time()-start)
+        if cfg["eval"]["use_wandb"]:
+            loss_key = "Final-{}-{}-{}".format(str(efunc), samples_type,
+                    "mean")
+            wandb.run.summary[loss_key] = np.round(np.mean(errors),3)
 
-def get_alg(alg):
-    if alg == "saved":
-        assert args.model_dir is not None
-        return SavedPreds(model_dir=args.model_dir)
-    elif alg == "postgres":
-        return Postgres()
-    elif alg == "true":
-        return TrueCardinalities()
-    elif alg == "true_rank":
-        return TrueRank()
-    elif alg == "true_random":
-        return TrueRandom()
-    elif alg == "true_rank_tables":
-        return TrueRankTables()
-    elif alg == "random":
-        return Random()
-    elif alg == "rf":
-        return RandomForest(grid_search = False,
-                n_estimators = 100,
-                max_depth = 10,
-                lr = 0.01)
-    elif alg == "xgb":
-        return XGBoost(grid_search=False, tree_method="hist",
-                       subsample=1.0, n_estimators = 100,
-                       max_depth=10, lr = 0.01)
-    elif alg == "fcnn":
-        return FCNN(max_epochs = args.max_epochs, lr=args.lr,
-                mb_size = args.mb_size,
-                weight_decay = args.weight_decay,
-                load_query_together = args.load_query_together,
-                result_dir = args.result_dir,
-                num_hidden_layers=args.num_hidden_layers,
-                eval_epoch = args.eval_epoch,
-                optimizer_name=args.optimizer_name,
-                clip_gradient=args.clip_gradient,
-                loss_func_name = args.loss_func_name,
-                hidden_layer_size = args.hidden_layer_size)
-    elif alg == "mscn":
-        return MSCN(max_epochs = args.max_epochs, lr=args.lr,
-                load_padded_mscn_feats = args.load_padded_mscn_feats,
-                mb_size = args.mb_size,
-                weight_decay = args.weight_decay,
-                load_query_together = args.load_query_together,
-                result_dir = args.result_dir,
-                # num_hidden_layers=args.num_hidden_layers,
-                eval_epoch = args.eval_epoch,
-                optimizer_name=args.optimizer_name,
-                clip_gradient=args.clip_gradient,
-                loss_func_name = args.loss_func_name,
-                hidden_layer_size = args.hidden_layer_size)
+    print("All loss computations took: ", time.time()-start)
 
-    else:
-        assert False
+def get_featurizer(trainqs, valqs, testqs, eval_qs):
 
-def get_query_fns():
-    fns = list(glob.glob(args.query_dir + "/*"))
-    skipped_templates = []
-    train_qfns = []
-    test_qfns = []
-    val_qfns = []
+    featurizer = Featurizer(**cfg["db"])
+    featdata_fn = os.path.join(cfg["data"]["query_dir"],
+            "dbdata.json")
 
-    if args.train_test_split_kind == "template":
-        # the train/test split will be on the template names
-        sorted_fns = copy.deepcopy(fns)
-        sorted_fns.sort()
-        train_tmps, test_tmps = train_test_split(sorted_fns,
-                test_size=args.test_size,
-                random_state=args.diff_templates_seed)
+    all_evalqs = []
+    for e0 in eval_qs:
+        all_evalqs += e0
 
-    for qi,qdir in enumerate(fns):
-        if ".json" in qdir:
-            continue
-
-        template_name = os.path.basename(qdir)
-        if args.query_templates != "all":
-            query_templates = args.query_templates.split(",")
-            if template_name not in query_templates:
-                skipped_templates.append(template_name)
-                continue
-
-        # let's first select all the qfns we are going to load
-        qfns = list(glob.glob(qdir+"/*.pkl"))
-        qfns.sort()
-
-        if args.num_samples_per_template == -1:
-            qfns = qfns
-        elif args.num_samples_per_template < len(qfns):
-            qfns = qfns[0:args.num_samples_per_template]
-        else:
-            assert False
-
-        if args.train_test_split_kind == "template":
-            cur_val_fns = []
-            if qdir in train_tmps:
-                cur_train_fns = qfns
-                cur_test_fns = []
-            elif qdir in test_tmps:
-                cur_train_fns = []
-                cur_test_fns = qfns
-            else:
-                assert False
-        elif args.train_test_split_kind == "query":
-            if args.val_size == 0:
-                cur_val_fns = []
-            else:
-                cur_val_fns, qfns = train_test_split(qfns,
-                        test_size=1-args.val_size,
-                        random_state=args.seed)
-
-            cur_train_fns, cur_test_fns = train_test_split(qfns,
-                    test_size=args.test_size,
-                    random_state=args.seed)
-
-        train_qfns += cur_train_fns
-        val_qfns += cur_val_fns
-        test_qfns += cur_test_fns
-
-    print("Skipped templates: ", " ".join(skipped_templates))
-
-    if args.train_test_split_kind == "query":
-        print("""Selected {} train queries, {} test queries, and {} val queries"""\
-                .format(len(train_qfns), len(test_qfns), len(val_qfns)))
-    elif args.train_test_split_kind == "template":
-        train_tmp_names = [os.path.basename(tfn) for tfn in train_tmps]
-        test_tmp_names = [os.path.basename(tfn) for tfn in test_tmps]
-        print("""Selected {} train templates, {} test templates"""\
-                .format(len(train_tmp_names), len(test_tmp_names)))
-        print("""Training templates: {}\nEvaluation templates: {}""".\
-                format(",".join(train_tmp_names), ",".join(test_tmp_names)))
-
-    # going to shuffle all these lists, so queries are evenly distributed. Plan
-    # Cost functions for some of these templates take a lot longer; so when we
-    # compute them in parallel, we want the queries to be shuffled so the
-    # workload is divided evely
-    random.shuffle(train_qfns)
-    random.shuffle(test_qfns)
-    random.shuffle(val_qfns)
-
-    return train_qfns, test_qfns, val_qfns
-
-def load_qdata(fns):
-    qreps = []
-    for qfn in fns:
-        qrep = load_qrep(qfn)
-        # TODO: can do checks like no queries with zero cardinalities etc.
-        qreps.append(qrep)
-        template_name = os.path.basename(os.path.dirname(qfn))
-        qrep["name"] = os.path.basename(qfn)
-        qrep["template_name"] = template_name
-
-    return qreps
-
-def get_featurizer(trainqs, valqs, testqs):
-
-    featurizer = Featurizer(args.user, args.pwd, args.db_name,
-            args.db_host, args.port)
-    featdata_fn = os.path.join(args.query_dir, "featdata.json")
     if args.regen_featstats or not os.path.exists(featdata_fn):
-        featurizer.update_column_stats(trainqs+valqs+testqs)
+        # we can assume that we have db stats for any column in the db
+        featurizer.update_column_stats(trainqs+valqs+testqs+all_evalqs)
         ATTRS_TO_SAVE = ['aliases', 'cmp_ops', 'column_stats', 'joins',
                 'max_in_degree', 'max_joins', 'max_out_degree', 'max_preds',
-                'max_tables', 'regex_cols', 'tables']
+                'max_tables', 'regex_cols', 'tables', 'join_key_stats',
+                'primary_join_keys', 'join_key_normalizers',
+                'join_key_stat_names', 'join_key_stat_tmps'
+                'max_tables', 'regex_cols', 'tables',
+                'mcvs']
+
         featdata = {}
         for k in dir(featurizer):
             if k not in ATTRS_TO_SAVE:
@@ -219,144 +114,155 @@ def get_featurizer(trainqs, valqs, testqs):
             if isinstance(attrvals, set):
                 attrvals = list(attrvals)
             featdata[k] = attrvals
-        f = open(featdata_fn, "w")
-        json.dump(featdata, f)
-        f.close()
+
+        if args.save_featstats:
+            f = open(featdata_fn, "w")
+            json.dumps(featdata, f)
+            f.close()
     else:
         f = open(featdata_fn, "r")
         featdata = json.load(f)
         f.close()
         featurizer.update_using_saved_stats(featdata)
-        print("updated featdata from saved file!!")
-        pdb.set_trace()
 
-
-    if args.algs == "mscn":
+    if args.alg in ["mscn", "mscn_joinkey", "mstn"]:
         feat_type = "set"
     else:
         feat_type = "combined"
+
+    card_type = "subplan"
+
     # Look at the various keyword arguments to setup() to change the
     # featurization behavior; e.g., include certain features etc.
     # these configuration properties do not influence the basic statistics
     # collected in the featurizer.update_column_stats call; Therefore, we don't
     # include this in the cached version
-    featurizer.setup(ynormalization=args.ynormalization,
-            featurization_type=feat_type)
-    featurizer.update_ystats(trainqs+valqs+testqs)
+
+    qdir_name = os.path.basename(cfg["data"]["query_dir"])
+    bitmap_dir = cfg["data"]["bitmap_dir"]
+    # ** converts the dictionary into keyword args
+    featurizer.setup(
+            **cfg["featurizer"],
+            loss_func = cfg["model"]["loss_func_name"],
+            featurization_type = feat_type,
+            bitmap_dir = cfg["data"]["bitmap_dir"],
+            card_type = card_type
+            )
+
+    # just updates stuff like max-num-tables etc. for some implementation
+    # things
+    featurizer.update_max_sets(trainqs+valqs+testqs+all_evalqs)
+    featurizer.update_workload_stats(trainqs+valqs+testqs+all_evalqs)
+
+    featurizer.init_feature_mapping()
+
+    if cfg["featurizer"]["feat_onlyseen_maxy"]:
+        featurizer.update_ystats(trainqs,
+                max_num_tables=cfg["model"]["max_num_tables"])
+    else:
+        featurizer.update_ystats(trainqs+valqs+testqs+all_evalqs,
+                max_num_tables = cfg["model"]["max_num_tables"])
+
+    featurizer.update_seen_preds(trainqs)
 
     return featurizer
 
 def main():
+    global args,cfg
 
-    train_qfns, test_qfns, val_qfns = get_query_fns()
+    with open(args.config) as f:
+        cfg = yaml.safe_load(f.read())
+
+    print(yaml.dump(cfg, default_flow_style=False))
+
+    # set up wandb logging metrics
+    if cfg["eval"]["use_wandb"]:
+        wandbcfg = {}
+        for k,v in cfg.items():
+            if isinstance(v, dict):
+                for k2,v2 in v.items():
+                    wandbcfg.update({k+"-"+k2:v2})
+            else:
+                wandbcfg.update({k:v})
+
+        wandbcfg.update(vars(args))
+        # additional config tags
+        wandb_tags = ["1a"]
+        if args.wandb_tags is not None:
+            wandb_tags += args.wandb_tags.split(",")
+        wandb.init("ceb", config=wandbcfg,
+                tags=wandb_tags)
+
+    train_qfns, test_qfns, val_qfns, eval_qfns = get_query_splits(cfg["data"])
 
     trainqs = load_qdata(train_qfns)
-
     # Note: can be quite memory intensive to load them all; might want to just
     # keep around the qfns and load them as needed
     valqs = load_qdata(val_qfns)
     testqs = load_qdata(test_qfns)
 
+    eval_qdirs = cfg["data"]["eval_query_dir"].split(",")
+    evalqs = []
+    for eval_qfn in eval_qfns:
+        evalqs.append(load_qdata(eval_qfn))
+    eqs = [len(eq) for eq in evalqs]
+    print("""Selected Queries: {} train, {} test, {} val, {} eval"""\
+            .format(len(trainqs), len(testqs), len(valqs), sum(eqs)))
+
     # only needs featurizer for learned models
-    if args.algs in ["xgb", "fcnn", "mscn"]:
-        featurizer = get_featurizer(trainqs, valqs, testqs)
+    if args.alg in ["xgb", "fcnn", "mscn", "mscn_joinkey", "mstn"]:
+        featurizer = get_featurizer(trainqs, valqs, testqs, evalqs)
     else:
         featurizer = None
 
-    algs = []
-    for alg_name in args.algs.split(","):
-        algs.append(get_alg(alg_name))
+    alg = get_alg(args.alg, cfg)
 
     eval_fns = []
     for efn in args.eval_fns.split(","):
         eval_fns.append(get_eval_fn(efn))
 
-    for alg in algs:
-        alg.train(trainqs, valqs=valqs, testqs=testqs,
-                featurizer=featurizer, result_dir=args.result_dir)
-        eval_alg(alg, eval_fns, trainqs, "train")
+    if cfg["model"]["eval_epoch"] < cfg["model"]["max_epochs"]:
+        alg.train(trainqs, valqs=valqs, testqs=testqs, evalqs = evalqs,
+                eval_qdirs = eval_qdirs, featurizer=featurizer)
+    else:
+        alg.train(trainqs, valqs=valqs, testqs=None, evalqs = None,
+                eval_qdirs = eval_qdirs, featurizer=featurizer)
 
-        if len(valqs) > 0:
-            eval_alg(alg, eval_fns, valqs, "val")
+    eval_alg(alg, eval_fns, trainqs, cfg, "train", featurizer=featurizer)
 
-        if len(testqs) > 0:
-            eval_alg(alg, eval_fns, testqs, "test")
+    if len(valqs) > 0:
+        eval_alg(alg, eval_fns, valqs, cfg, "val", featurizer=featurizer)
+
+    if len(testqs) > 0:
+        eval_alg(alg, eval_fns, testqs, cfg, "test", featurizer=featurizer)
+
+    if len(evalqs) > 0 and len(evalqs[0]) > 0:
+        for ei, evalq in enumerate(evalqs):
+            eval_alg(alg, eval_fns, evalq, cfg, eval_qdirs[ei], featurizer=featurizer)
+            del evalq[:]
 
 def read_flags():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--query_dir", type=str, required=False,
-            default="./queries/imdb/")
+    parser.add_argument("--config", type=str, required=False,
+            default="configs/config.yaml")
+    parser.add_argument("--alg", type=str, required=False,
+            default="mscn")
 
-    ## db credentials
-    parser.add_argument("--db_name", type=str, required=False,
-            default="imdb")
-    parser.add_argument("--db_host", type=str, required=False,
-            default="localhost")
-    parser.add_argument("--user", type=str, required=False,
-            default="ceb")
-    parser.add_argument("--pwd", type=str, required=False,
-            default="password")
-    parser.add_argument("--port", type=int, required=False,
-            default=5432)
+    parser.add_argument("--regen_featstats", type=int, required=False,
+            default=0)
+    parser.add_argument("--save_featstats", type=int, required=False,
+            default=0)
+    parser.add_argument("--use_saved_feats", type=int, required=False,
+            default=1)
+
+    # logging arguments
+    parser.add_argument("--wandb_tags", type=str, required=False,
+        default=None, help="additional tags for wandb logs")
 
     parser.add_argument("--result_dir", type=str, required=False,
-            default="results")
-    parser.add_argument("--query_templates", type=str, required=False,
-            default="all")
-
-    parser.add_argument("--seed", type=int, required=False,
-            default=13)
-    parser.add_argument("--num_eval_processes", type=int, required=False,
-            default=-1, help="""Used for computing plan costs in parallel. -1 use all cpus; -2: use no cpus; else use n cpus. """)
-
-    parser.add_argument("--train_test_split_kind", type=str, required=False,
-            default="query", help="""query OR template.""")
-    parser.add_argument("--diff_templates_seed", type=int, required=False,
-            default=1, help="""Seed used when train_test_split_kind == template""")
-
-    parser.add_argument("-n", "--num_samples_per_template", type=int,
-            required=False, default=-1)
-    parser.add_argument("--test_size", type=float, required=False,
-            default=0.5)
-    parser.add_argument("--val_size", type=float, required=False,
-            default=0.2)
-    parser.add_argument("--algs", type=str, required=False,
-            default="postgres")
+            default="./results")
     parser.add_argument("--eval_fns", type=str, required=False,
-            default="qerr,ppc,plancost")
-
-    # featurizer arguments
-    parser.add_argument("--regen_featstats", type=int, required=False,
-            default=1)
-    parser.add_argument("--ynormalization", type=str, required=False,
-            default="log")
-
-    ## NN training features
-    parser.add_argument("--load_padded_mscn_feats", type=int, required=False, default=0, help="""==1 loads all the mscn features with padded zeros in memory -- speeds up training, but can take too much RAM.""")
-
-    parser.add_argument("--weight_decay", type=float, required=False,
-            default=0.0)
-    parser.add_argument("--max_epochs", type=int,
-            required=False, default=10)
-    parser.add_argument("--eval_epoch", type=int,
-            required=False, default=1)
-    parser.add_argument("--mb_size", type=int, required=False,
-            default=1024)
-
-    parser.add_argument("--num_hidden_layers", type=int,
-            required=False, default=2)
-    parser.add_argument("--hidden_layer_size", type=int,
-            required=False, default=128)
-    parser.add_argument("--load_query_together", type=int, required=False,
-            default=0)
-    parser.add_argument("--optimizer_name", type=str, required=False,
-            default="adamw")
-    parser.add_argument("--clip_gradient", type=float,
-            required=False, default=20.0)
-    parser.add_argument("--lr", type=float,
-            required=False, default=0.0001)
-    parser.add_argument("--loss_func_name", type=str, required=False,
-            default="mse")
+            default="ppc,qerr")
 
     return parser.parse_args()
 

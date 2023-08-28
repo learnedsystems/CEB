@@ -1,12 +1,15 @@
 # from db_utils.utils import *
-from utils.utils import *
+# from utils.utils import *
+from query_representation.utils import *
 import pdb
-from nltk.tokenize import word_tokenize
+# from nltk.tokenize import word_tokenize
 import pygtrie
 import klepto
 import random
 
 ILIKE_PRED_FMT = "'%{ILIKE_PRED}%'"
+EQ_PRED_GROUPS = ["=", ">", "<", ">=", "<="]
+
 class QueryGenerator():
     '''
     Generates sql queries based on a template.
@@ -61,6 +64,46 @@ class QueryGenerator():
 
         pred_str = columns[0] + " " + pred_type + " " + ilike_filter
         pred_vals[key] = pred_str
+
+    def _update_sql_eq(self, samples, pred_group, pred_vals):
+        '''
+        @samples: ndarray, ith index correspond to possible values for ith
+        index of pred_group["keys"], and last index is the count of the
+        combined values.
+
+        @pred_vals: all the predicates in the base sql string that have already
+        been assigned a value. This will be updated after we assign values to
+        the unspecified columns in the present pred_group.
+
+        @pred_group: [[template.predicate]] section of the toml that this
+        predicate corresponds to.
+        '''
+        keys = pred_group["keys"]
+        columns = pred_group["columns"]
+        pred_type = pred_group["pred_type"]
+        assert len(keys) == len(columns)
+
+        for i, key in enumerate(keys):
+            # key will be replaced with a predicate string
+            pred_str = ""
+            none_cond = None
+            column = columns[i]
+            vals = []
+            assert len(samples) == 1
+            val = samples[0]
+            if val:
+                val = str(val)
+                val = "'{}'".format(val.replace("'",""))
+                # print(val)
+                pred_str = column + " " + pred_type + " " + val
+            else:
+                # print("NULL val")
+                # continue
+                # None value
+                pred_str = column + " IS NULL"
+
+            # pred_str = column + " " + pred_type + " " + val
+            pred_vals[key] = pred_str
 
     def _update_sql_in(self, samples, pred_group, pred_vals):
         '''
@@ -128,7 +171,11 @@ class QueryGenerator():
         for pred_group in templated_preds:
             if "multi" in pred_group:
                 # multiple predicate conditions, choose any one
+                # print(pred_group)
+                # pdb.set_trace()
                 pred_group = random.choice(pred_group["multi"])
+                # print(pred_group)
+
             if "sql" in pred_group["type"]:
                 # cur_sql will be the sql used to sample for this predicate
                 # value
@@ -149,9 +196,10 @@ class QueryGenerator():
                 else:
                     if cur_sql in self.bad_sqls:
                         return None
+
                     output = cached_execute_query(cur_sql, self.user,
                             self.db_host, self.port, self.pwd, self.db_name,
-                            100, "./.lc_cache/sql_outputs/", None)
+                            100, "./lc_cache/sql_outputs/", None)
                     if pred_group["pred_type"].lower() == "ilike":
                         cur_sql_key = deterministic_hash(cur_sql)
                         if cur_sql_key in self.trie_archive.archive:
@@ -199,7 +247,36 @@ class QueryGenerator():
                     # no point in doing shit
                     return None
 
-                if pred_group["pred_type"].lower() == "in":
+                if pred_group["pred_type"].lower() in EQ_PRED_GROUPS:
+                    # choose single item
+                    assert pred_group["min_samples"] == pred_group["max_samples"] == 1
+                    num_samples = 1
+                    if pred_group["sampling_method"] == "quantile":
+                        num_quantiles = pred_group["num_quantiles"]
+                        curp = random.randint(0, num_quantiles-1)
+                        chunk_len = int(len(output) / num_quantiles)
+                        tmp_output = output[curp*chunk_len: (curp+1)*chunk_len]
+                        if len(tmp_output) == 0:
+                            # really shouldn't be happenning right?
+                            return None
+
+                        if len(tmp_output) <= num_samples:
+                            samples = [random.choice(tmp_output) for _ in
+                                    range(num_samples)]
+                        else:
+                            samples = random.sample(tmp_output, num_samples)
+
+                        self._update_sql_eq(samples,
+                                pred_group, pred_vals)
+
+                    else:
+
+                        samples = [random.choice(output) for _ in
+                                range(num_samples)]
+                        self._update_sql_eq(samples[0],
+                                pred_group, pred_vals)
+
+                elif pred_group["pred_type"].lower() in ["in","like","not like"]:
                     # now use one of the different sampling methods
                     num_samples = random.randint(pred_group["min_samples"],
                             pred_group["max_samples"])
@@ -376,10 +453,16 @@ class QueryGenerator():
                             pred_vals[cur_key] = pred_choice
                             pdb.set_trace()
                         else:
+                            # print(options)
+                            # pdb.set_trace()
                             # probably only deals with `=` ?
-                            assert len(pred_group["keys"]) == 1
-                            self._update_sql_in([[pred_choice]],
-                                    pred_group, pred_vals)
+                            if pred_group["pred_type"].lower() in EQ_PRED_GROUPS:
+                                self._update_sql_eq(pred_choice,
+                                        pred_group, pred_vals)
+                            else:
+                                assert len(pred_group["keys"]) == 1
+                                self._update_sql_in([[pred_choice]],
+                                        pred_group, pred_vals)
             else:
                 assert False
 
@@ -393,17 +476,19 @@ class QueryGenerator():
         print("going to generate ", num_samples)
         start = time.time()
         all_query_strs = []
-
+        i = 0
         while len(all_query_strs) < num_samples:
+            if i % 100000 == 0:
+                print(i)
+            i += 1
             for template in self.templates:
                 query_str = self._gen_query_str(template["predicates"])
                 if query_str is not None:
                     all_query_strs.append(query_str)
-                    print(query_str)
+                    # print(query_str)
                     # pdb.set_trace()
                 else:
                     pass
-                    # print("query str was None")
 
         print("{} took {} seconds to generate".format(len(all_query_strs),
             time.time()-start))

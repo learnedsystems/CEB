@@ -61,9 +61,10 @@ def read_flags():
     parser.add_argument("--db_host", type=str, required=False,
             default="localhost")
     parser.add_argument("--user", type=str, required=False,
-            default="")
+            default="ceb")
     parser.add_argument("--pwd", type=str, required=False,
-            default="")
+            default="password")
+
     parser.add_argument("--card_cache_dir", type=str, required=False,
             default="./cardinality_cache")
     parser.add_argument("--port", type=str, required=False,
@@ -209,9 +210,10 @@ def get_cardinality(qrep, card_type, key_name, db_host, db_name, user, pwd,
         print("query: ", idx)
 
     # load the cache for few types
-    if card_type in CACHE_CARD_TYPES:
-        sql_cache = klepto.archives.dir_archive(cache_dir,
-                cached=True, serialized=True)
+    # if card_type in CACHE_CARD_TYPES:
+        # sql_cache = klepto.archives.dir_archive(cache_dir,
+                # cached=True, serialized=True)
+
     found_in_cache = 0
     existing = 0
     num_timeout = 0
@@ -234,6 +236,7 @@ def get_cardinality(qrep, card_type, key_name, db_host, db_name, user, pwd,
         card_key = str(db_year) + card_key
 
     for subqi, subset in enumerate(node_list):
+
         info = qrep["subset_graph"].nodes()[subset]
         if card_key not in info:
             info[card_key] = {}

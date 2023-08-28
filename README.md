@@ -1,16 +1,24 @@
 # Cardinality Estimation Benchmark
 
+This benchmark consolidates the code and workloads from two papers:
+[Flow Loss: learning cardinality estimates that matter](https://dl.acm.org/doi/10.14778/3476249.3476259) and [Robust Qery Driven Cardinality Estimation under Changing
+Workloads](https://www.vldb.org/pvldb/vol16/p1520-negi.pdf). Please cite the
+Flow-Loss paper for introducing the CEB benchmark; it does not explore other
+workloads as much, and the focus is on describing and implementing the new loss
+function (Flow-Loss). The robust-cardinalities paper focuses on improved featurizations with a focus on training on different workloads, and develops particular techniques for improving robustness. In general, both approaches can be used together, but the approaches in the robust-cardinalities paper are much easier to implement and describe. For a further discussion about the differences between these approaches, check out the Related Works section in the [robust-cardinalities paper](https://www.vldb.org/pvldb/vol16/p1520-negi.pdf), and a direct comparison of the experiments in an online [appendix](https://parimarjan.github.io/robust_cardinality_appendix.pdf).
+
 ## Contents
   * [Setup](#setup)
-      - [MLSystems workshop](#mlsys-workshop)
+      - [Workload](#workload)
+      - [Notebooks](#notebooks)
       - [PostgreSQL](#postgresql)
         - [Docker](#docker)
         - [Virtualbox](#virtualbox)
         - [Local Setup](#local-setup)
-      - [Workload](#workload)
       - [Python requirements](#python-requirements)
-  * [Usage](#usage)
-      - [Query Representation](#query-representation)
+  * [Running experiments](#running-experiments)
+  * [More details](#more-details)
+      - [Query Format](#query-format)
       - [Evaluating Estimates](#evaluating-estimates)
       - [Getting Runtimes](#getting-runtimes)
       - [Visualizing Results](#visualizing-results)
@@ -23,25 +31,62 @@
       - [Generating Queries](#generating-queries)
       - [Generating Cardinalities](#generating-cardinalities)
   * [Future Work](#futurework)
-  * [License](#license)
 
 ## Setup
 
-If you are only interested in evaluating the cardinalities, using a loss function such as Q-Error, or if you just want to use the queries for some other task, then you just need to download the workload. But the main goal of this dataset is to make it easy to evaluate the impact of cardinality estimates on query optimization. For this, we use PostgreSQL (and eventually plan to add support for other open source DBMS' like MySQL). We provide a dockerized setup with the appropriate setup to get started right away; Instead, you can also easily adapt it to your own installation of PostgreSQL. Docker is the easiest way to started with CEB.
+### Workload
 
-### MLSystems Workshop
+Our goal is to use multiple database / query workloads to evaluate learned
+models for estimation accuracy, and performance on downstream query
+optimization tasks. We use a custom networkx based format for representing the
+query data (see [Query Format](#query-format) for details). This is because CEB
+contains ground truth data, and bitmap features, for millions of SQLs (query +
+    all its subplans), and storing everything in plain-text is very
+inefficient.
 
-Standalone evaluation setup that does not depend on PostgreSQL, and has minimal dependencies.
+#### IMDb Workloads
+
+We'll suggest to start with around 3000 representative queries from the 16 IMDb
+CEB templates with:
+
+There have been several query workloads released on IMDb over the years.
+Download all the cardinalities, and featurization bitmap information for JOB,CEB, and JOBLight-train with:
 
 ```bash
-bash scripts/download_mlsys1.sh
+bash scripts/download_imdb_workload.sh
 ```
 
-Installing python dependencies.
+This downloads all the queries to queries/\<workload\>. It also downloads
+sample bitmaps and join bitmaps (used for featurizing queries) to
+queries/allbitmaps/\<workload\>. Note: there are two versions of the IMDb-CEB
+workload: the full version, `ceb-imdb-full` with ~13K queries, and a smaller subset,
+  with ~3K queries, `ceb-imdb`. In most experiments, the 3k queries
+  version seems good enough to use.
+
+#### Ergast CEB
+
+#### StackExchange CEB
 
 ```bash
-pip3 install -r requirements.txt
+bash scripts/download_stack_workload.sh
 ```
+
+### Notebooks
+
+Standalone training / evaluation notebooks. These should be convenient to get
+started, but using the main.py script, as described in [Learned
+Models](#learned-models) is more flexible for running experiments.
+
+Also, for PostgreSQL based evaluation (e.g., for plan costs or runtimes, you
+will need to setup PostgreSQL as described in [PostgreSQL](#postgresql).)
+
+```bash
+pip3 install jupyter
+```
+
+And then go to any of the notebooks in <b> Notebooks/ </b> and execute the cells in order.
+
+### Optional
 
 <b> Optional </b> For some of the plan graph visualizations, we will need graphviz. Note: This is not neccessary to run the benchmark, and can be hard to install with some system configurations. You can usually install it with:
 
@@ -49,7 +94,21 @@ pip3 install -r requirements.txt
 sudo apt-get install graphviz
 ```
 
-And then go to <b> mlsys-1.ipynb </b> and execute the cells in order.
+If you want to use captum for visualizing neural net feature importance attributions
+
+```bash
+pip3 install captum
+```
+
+<b> Flow-Loss </b> FlowLoss implementation is done in C for efficiency reasons;
+On Linux machines, do:
+
+```bash
+cd flow_loss_cpp && make
+```
+
+This isn't required if you aren't using flow-loss training runs.
+
 
 ### PostgreSQL
 
@@ -90,9 +149,7 @@ constructing the database from the StackExchange dump, and restore the database
 from a PostgreSQL snapshot (see stack_setup.sh for its download link).
 The StackExchange database holds a lot of potential to develop more challenging query templates as well, although we have not explored it as much as IMDb. Refer to the [workload](#workload) section for a comparison between IMDb and StackExchange workloads.
 
-Here are a few useful commands to check / debug your setup. Note that the
-<b> password </b> for the psql connection will be `password`.
-
+Here are a few useful commands to check / debug your setup:
 ```bash
 # if your instance gets restarted / docker image gets shutdown
 sudo docker restart card-db
@@ -116,70 +173,6 @@ After setting up the database, you should be able to use the scripts here by
 passing in the appropriate user, db_name, db_host, and ports to appropriate python
 function calls.
 
-### Workload
-
-Our goal is to eventually add multiple database / query workloads to evaluate
-these models; CEB contains IMDb and StackExchange databases. Moreover, we
-provide other known workloads on IMDb, like the Join Order Benchmark (JOB), or
-its simpler versions JOB-M, JOB-light in the same format as well, which makes
-it easy to use the various tools for computing plan costs, runtimes etc. on
-those queries (see next sections for the description of the CEB format etc).
-
-Note that you only need to download one of these workloads in order to get
-started with CEB, and can choose which one fits your needs best.
-
-#### IMDb CEB
-
-Download the full IMDb CEB workload to `queries/imdb`.
-
-```bash
-bash scripts/download_imdb_workload.sh
-```
-
-Each directory represents a query template. Each query, and all it's subplans, is represented using a pickle file, of the form `1a100.pkl`. This workload has over 13k queries; for most purposes, especially when testing out new models, you should probably use a smaller subset of the workload as evaluating on the whole dataset can take more time. For instance, we provide flags to run on only some templates, or to have only up to N queries per template.
-
-One useful subset of the data is by considering the PostgreSQL query plans when
-using true cardinalities; We can deduplicate all the queries where the true
-cardinalities map to the same query plan. This has about 3k queries; We have not explored the difference in the model performance' in these two scenarios, but for most practical purposes, this should be a sufficiently large dataset as well. We can download this by:
-
-```bash
-bash scripts/download_imdb_uniqueplans.sh
-```
-
-If you only care about the SQL queries (and not the cardinalities of all
-    sub-plans etc.), then you can just run:
-
-```bash
-bash scripts/download_all_sqls.sh
-```
-
-
-#### JOB
-
-```bash
-bash scripts/download_job_workloads.sh
-```
-
-This will download both the JOB and JOB-M workloads to the queries/job or
-queries/jobm directories. In terms of the various Plan-Cost metrics (see
-    Section [Evaluating Estimates](#evaluating-estimates)), these workloads are
-somewhat less challenging than CEB, but do have a few non-trivial queries where
-cardinality estimates become very important.
-
-For the JOB-light workload, see the [generating
-cardinalities](#generating-cardinalities) section. Since the JOB-light workload
-has relatively small queries, it serves as a nice example of the tools to take
-in input sqls and generate the cardinalities of all the subplans, and store
-them in the format we support. As a drawback, even PostgreSQL estimates do very
-well on JOB-light in terms of the Plan Cost metrics, thus it is not very
-challenging from the perspective of query optimization.
-
-#### StackExchange CEB
-
-```bash
-bash scripts/download_stack_workload.sh
-```
-
 ### Python Requirements
 
 These can be installed with
@@ -194,9 +187,65 @@ To test the whole setup, including the docker installation, run
 python3 tests/test_installation.py
 ```
 
-## Usage
+## Running Experiments
 
-### Query Representation
+We provide several config files that set up the different experiments in
+directiory `configs/`. Running the experiment would look like:
+
+```bash
+python3 main.py --config configs/config-custom.yaml
+```
+
+Several of the losses (Q-Error, Relative-PostgresPlanCost) on different
+workloads are printed after every epoch. Please see the papers for the
+definition of PostgresPlanCost ---- this is a proxy for runtimes, and can be
+computed efficiently if you have PostgreSQL setup as described in
+[setup](#setup). Clear differences in plan costs are often reflected in clear
+runtime differences as well --- see [getting runtimes
+section](#getting-runtimes).
+
+Here are some interesting parameters in the config files to control these:
+
+* `model:eval_epoch: N` # computes losses every N epochs.
+* `eval:use_wandb`: 0/1` # if 1, uses wandb to log results.
+
+Next, lets briefly describe each of the config files and the key fields.
+
+* config-joblight.yaml ---> default MSCN setup; trained on joblight, and
+evaluated on JOB or CEB.
+
+* config-joblight-robust.yaml ---> Robust-MSCN setup; trained on joblight, and
+evaluated on JOB or CEB. The differences compared to default MSCN is
+parameters:
+  * `featurizer:job\_bitmap : 1` # uses join bitmap
+  * `featurizer:sample\_bitmap : 0` # doesn't use sample bitmap
+  * `model: onehot\_dropout : 1` # uses the query masking
+  * `model: onehot\_mask\_truep : 0.8` # prob used for not masking features
+
+For instance, running the two files above with:
+```bash
+python3 main.py --config configs/config-joblight.yaml
+python3 main.py --config configs/config-joblight-robust.yaml
+```
+And comparing the numbers for 'PostgresPlanCost-C-Relative-JOB' would show the
+kind of benefits we can get using our techniues. And, in general, you can use these files as templates and change the following directories to use a different train / test setup. For e.g., the following would train on queries from CEB, and test on all of JOB.
+    * `data:query\_dir: "./queries/ceb"`
+    * `data:eval\_query\_dir: "./queries/job/"`
+
+* config-custom.yaml and config-custom-robust.yaml: similar to the config files
+above, these specify a small, self-contained experiment with just two templates
+that show the key ideas with the query masking approach. These are results
+mentioned in A.2 in our [appendix](https://parimarjan.github.io/robust_cardinality_appendix.pdf) .
+
+* config-flowloss.yaml --> compared to previous files, we change `loss\_fn\_name` to flowloss.
+In general, the flowloss loss function can be used with any of the experiments
+before. In the [Flow-Loss paper](https://dl.acm.org/doi/10.14778/3476249.3476259), we ran the key experiments with:
+  * data:train_test_split_kind : "template"
+  * data:diff_templates_seed: 1 # in the paper, seeds=1-10 for 10 experiments
+
+## More details
+
+### Query Format
 
 First, let us explore the basic properties of the queries that we store:
 
@@ -551,7 +600,7 @@ can use:
 python3 query_gen/gen_queries.py --query_output_dir qreps --template_dir ./templates/imdb/3a/ -n 10 --user ceb --pwd password --db_name imdb --port 5432
 ```
 
-### Generating Cardinalities (TODO)
+### Generating Cardinalities
 
 Here, we will provide an example that shows how to go from a bunch of sql files
 to the qrep objects which contain all the cardinality estimates for subplans,
@@ -575,8 +624,11 @@ python3 scripts/get_query_cardinalities.py --port 5432 --db_name imdb --query_di
 # evaluation setup you have etc. Also, be careful with the resource utilization
 #by this script: by default, it parallelizes the executions, but this might
 #cause PostgreSQL to crash in case there is not enough resources (check flags
-#    --no_parallel 1 to do it one query at a time)
+#    --no\_parallel 1 to do it one query at a time)
 python3 scripts/get_query_cardinalities.py --port 5432 --db_name imdb --query_dir queries/joblight/all_joblight/ --card_type actual --key_name actual --pwd password --user ceb
+
+## TODO: generate bitmaps for these
+
 ```
 
 ### TODO: Using wanderjoin

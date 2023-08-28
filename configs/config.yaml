@@ -1,0 +1,150 @@
+%YAML 1.2
+---
+
+data:
+    query_dir: "./queries/ceb-imdb"
+    eval_query_dir: ""
+    bitmap_dir: "./queries/allbitmaps/"
+    query_templates: "1a"
+    eval_templates: "all"
+    num_samples_per_template : -1
+
+    # query, custom, templates
+    train_test_split_kind : "query"
+    test_size : 0.2
+    val_size : 0.2
+    # only used if split == custom
+    train_tmps : null
+    test_tmps : null
+
+    #=1, will skip templates having regex queries
+    no_regex_templates : 0
+
+    #since 7a  is a template with a very large joingraph, we have a flag to
+    #skip it to make things run faster
+    skip7a : 0
+
+    seed : 123
+    # Seed used when train_test_split_kind == template
+    diff_templates_seed : 1
+
+    ### experimental
+    only_pgplan_data : 0
+
+# only need these features for computing plan costs
+db:
+  db_name : "imdb"
+  db_host : "localhost"
+  user    : "ceb"
+  pwd     : "password"
+  port    : 5432
+
+## used for neural net featurization of queries;;
+featurizer:
+  # featureres for `y`, the output cardinalities
+  ynormalization : "log"
+
+  # 1 :: set a maxy based only on the training workloads; or incl. all test
+  # workloads
+  feat_onlyseen_maxy : 1
+  like_char_features : 0
+  global_feat_tables : 0
+  # save feats and re-use them if all args match
+  use_saved_feats : 0
+  bitmap_dir : "./queries/allbitmaps/"
+
+  sample_bitmap : 0
+  sample_bitmap_num : 1000
+  sample_bitmap_buckets : 1000
+  join_bitmap : 1
+  bitmap_onehotmask : 1 # if using onehot_dropout
+
+  feat_separate_alias : 0 # treat aliases as separate tables
+  feat_separate_like_ests : 0
+
+  feat_mcvs : 0
+  heuristic_features : 1
+
+  table_features: 1
+  pred_features : 1
+  global_features : 1
+
+  join_features : "onehot"
+  set_column_feature : "onehot"
+
+  max_discrete_featurizing_buckets : 1
+  max_like_featurizing_buckets : 1
+
+  # ignore predicate filter featurization using hashing if they are not seen
+  # e.g., in categorical filters, like genre = 'action', only featurize using
+  # hashes if seen in training (else, won't make sense, so zero out).
+  # e.g., in sample bitmap: if bitmap idxs never seen in training, dont use.
+  feat_onlyseen_preds : 1
+
+  clamp_timeouts : 1
+
+  ### experimental
+  true_base_cards : 0 # testing if true cardinalities of base tables makes a big diff
+  embedding_fn : null
+  embedding_pooling : null
+  implied_pred_features : 0
+
+model:
+  # note: combined with featurizer.ynormalization : log, this is essentially optimizing q-error
+  loss_func_name : "mse"
+  max_epochs : 50
+  lr : 0.0001
+  random_bitmap_idx : 0
+  test_random_bitmap : 0
+  reg_loss : 0
+  max_num_tables : -1
+  early_stopping : 0
+  inp_dropout : 0.0
+  hl_dropout : 0.0
+  comb_dropout : 0.0
+  normalize_flow_loss : 1
+  cost_model : "C"
+  hidden_layer_size : 128
+
+  # logging things during training
+  eval_fns : "qerr,ppc"
+  eval_epoch : 1000 # how often to evaluate on eval_fns during training
+
+  load_padded_mscn_feats : 1
+  mb_size : 1024
+  weight_decay : 0.0
+  load_query_together : 0 # used just for flow-loss
+
+  onehot_dropout : 0
+  onehot_mask_truep : 0.8
+
+  num_hidden_layers : 2
+
+  optimizer_name : "adamw"
+  clip_gradient : 20.0
+
+
+  ## experimental
+  mask_unseen_subplans : 0
+  subplan_level_outputs: 0
+  heuristic_unseen_preds : null
+  other_hid_units : null
+
+  onehot_reg : 0
+  onehot_reg_decay : 0.01
+
+  ## unused
+  training_opt : ""
+  opt_lr : 0.005
+  swa_start : 5
+
+eval:
+  use_wandb : 0
+  #result_dir : "./results"
+  save_test_preds : 0
+  save_pdf_plans : 0
+
+  # for parallelizing computing plan costs
+  num_processes : -1
+
+...

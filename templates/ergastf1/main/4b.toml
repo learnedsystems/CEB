@@ -1,0 +1,111 @@
+title = ""
+# filter conditions find best performing results / racers; find
+# same as 3.toml, but adding all the constructor things too
+
+[base_sql]
+
+sql = '''
+SELECT c1.name, SUM(ps.milliseconds)
+FROM constructors c1,
+drivers d1,
+results res1,
+races r1,
+"pitStops" ps,
+"constructorResults" cr,
+"constructorStandings" cs
+WHERE
+ps."raceId" = r1."raceId"
+AND c1."constructorId" = cr."constructorId"
+AND c1."constructorId" = cs."constructorId"
+AND cr."raceId" = r1."raceId"
+AND cr."raceId" = cs."raceId"
+AND ps."driverId" = d1."driverId"
+AND c1."constructorId" = res1."constructorId"
+AND res1."driverId" = d1."driverId"
+AND r1."raceId" = res1."raceId"
+AND (Xpoints)
+AND (Xposition1)
+AND (Xposition2)
+AND (Xcpoints1)
+AND (Xcpoints2)
+GROUP BY c1.name
+'''
+
+[[templates]]
+
+  name = ""
+
+  [[templates.predicates]]
+  [[templates.predicates.multi]]
+  type = "sqls"
+  columns = ["res1.position"]
+  keys = ["Xposition1"]
+  dependencies = 0
+  sampling_method = "uniform"
+  pred_type = "<="
+  sqls = ["""SELECT position FROM results WHERE position <= 3""",
+	"""SELECT position FROM results WHERE position > 3 AND position <= 6""",
+	]
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates.multi]]
+  type = "sqls"
+  columns = ["res1.position"]
+  keys = ["Xposition1"]
+  dependencies = 0
+  sampling_method = "uniform"
+  pred_type = ">"
+  sqls = ["""SELECT position FROM results WHERE position <= 3""",
+	"""SELECT position FROM results WHERE position > 10"""
+	]
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates]]
+
+  type = "sqls"
+  columns = ['res1."positionOrder"']
+  keys = ["Xposition2"]
+  dependencies = 1
+  sampling_method = "uniform"
+  pred_type = "<="
+  sqls = ["""SELECT "positionOrder" FROM results AS res1 WHERE (Xposition1)"""]
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates]]
+  [[templates.predicates.multi]]
+  type = "sql"
+  columns = ["res1.points"]
+  keys = ["Xpoints"]
+  dependencies = 1
+  sampling_method = "uniform"
+  pred_type = ">="
+  sql = """SELECT points FROM results AS res1 WHERE (Xposition1)"""
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates]]
+  [[templates.predicates.multi]]
+  type = "sql"
+  columns = ["cr.points"]
+  keys = ["Xcpoints1"]
+  dependencies = 1
+  sampling_method = "uniform"
+  pred_type = ">="
+  sql = """SELECT MIN(points) FROM results AS res1 WHERE (Xpoints)"""
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates]]
+  [[templates.predicates.multi]]
+  type = "sql"
+  columns = ["cs.points"]
+  keys = ["Xcpoints2"]
+  dependencies = 1
+  sampling_method = "uniform"
+  pred_type = ">="
+  sql = """SELECT MIN(points) FROM results AS res1 WHERE (Xpoints)"""
+  min_samples = 1
+  max_samples = 1

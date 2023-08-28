@@ -1,0 +1,252 @@
+title = ""
+# filter conditions find best performing results / racers; find
+# same as 3.toml, but adding all the constructor things too
+# statusId independent of each otehr; raceId1-2 as well.
+
+[base_sql]
+
+sql = '''
+SELECT d1."nationality", COUNT(*)
+FROM results res1,
+results res2,
+status s1,
+status s2,
+drivers d1,
+drivers d2,
+races r1,
+races r2
+WHERE
+res1."raceId" = r1."raceId"
+AND res2."raceId" = r2."raceId"
+AND res1."statusId" = s1."statusId"
+AND res2."statusId" = s2."statusId"
+AND d1."driverId" = res1."driverId"
+AND d2."driverId" = res2."driverId"
+AND d1."driverId" = d2."driverId"
+AND (Xstatus1)
+AND (Xposition1)
+AND (Xposition2)
+AND (Xstatus2)
+AND (X2position1)
+AND (X2position2)
+GROUP BY d1."nationality" ORDER BY COUNT(*) DESC
+'''
+
+[[templates]]
+
+  name = ""
+
+  [[templates.predicates]]
+  [[templates.predicates.multi]]
+  type = "sqls"
+  columns = ["res1.position"]
+  keys = ["Xposition1"]
+  dependencies = 0
+  sampling_method = "uniform"
+  pred_type = "<="
+  sqls = ["""SELECT position FROM results WHERE position <= 3""",
+	"""SELECT position FROM results WHERE position > 3 AND position <= 6""",
+	]
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates.multi]]
+  type = "sqls"
+  columns = ["res1.position"]
+  keys = ["Xposition1"]
+  dependencies = 0
+  sampling_method = "uniform"
+  pred_type = ">"
+  sqls = ["""SELECT position FROM results WHERE position <= 3""",
+	"""SELECT position FROM results WHERE position > 10"""
+	]
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates]]
+
+  type = "sqls"
+  columns = ['res1."positionOrder"']
+  keys = ["Xposition2"]
+  dependencies = 1
+  sampling_method = "uniform"
+  pred_type = "<="
+  sqls = ["""SELECT "positionOrder" FROM results AS res1 WHERE (Xposition1)"""]
+  min_samples = 1
+  max_samples = 1
+
+  #[[templates.predicates]]
+  #[[templates.predicates.multi]]
+  #type = "sql"
+  #columns = ["res1.points"]
+  #keys = ["Xpoints"]
+  #dependencies = 1
+  #sampling_method = "uniform"
+  #pred_type = ">="
+  #sql = """SELECT points FROM results AS res1 WHERE (Xposition1)"""
+  #min_samples = 1
+  #max_samples = 1
+  #[[templates.predicates.multi]]
+  #type = "sql"
+  #columns = ["res1.points"]
+  #keys = ["Xpoints"]
+  #dependencies = 1
+  #sampling_method = "uniform"
+  #pred_type = "<="
+  #sql = """SELECT points FROM results AS res1 WHERE (Xposition1)"""
+  #min_samples = 1
+  #max_samples = 1
+
+  [[templates.predicates]]
+  [[templates.predicates.multi]]
+  type = "sqls"
+  columns = ["s1.status"]
+  keys = ["Xstatus1"]
+  dependencies = 0
+  sampling_method = "uniform"
+  pred_type = "NOT LIKE"
+  sqls = ["""SELECT status FROM status s, results res
+  WHERE s."statusId" = res."statusId"
+  GROUP BY s.status
+  HAVING COUNT(*) >= 1000
+  """,
+  """SELECT status FROM status s, results res
+    WHERE s."statusId" = res."statusId"
+    GROUP BY s.status
+    HAVING COUNT(*) >= 10000
+    """]
+
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates.multi]]
+  type = "sqls"
+  columns = ["s1.status"]
+  keys = ["Xstatus1"]
+  dependencies = 0
+  sampling_method = "uniform"
+  pred_type = "LIKE"
+
+  sqls = ["""SELECT status FROM status s, results res
+  WHERE s."statusId" = res."statusId"
+  GROUP BY s.status
+  HAVING COUNT(*) >= 1000
+  """,
+  """SELECT status FROM status s, results res
+    WHERE s."statusId" = res."statusId"
+    GROUP BY s.status
+    HAVING COUNT(*) >= 10000
+    """]
+
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates]]
+  [[templates.predicates.multi]]
+  type = "sqls"
+  columns = ["s2.status"]
+  keys = ["Xstatus2"]
+  dependencies = 0
+  sampling_method = "uniform"
+  pred_type = "NOT LIKE"
+  sqls = ["""SELECT status FROM status s, results res
+  WHERE s."statusId" = res."statusId"
+  GROUP BY s.status
+  HAVING COUNT(*) >= 1000
+  """,
+  """SELECT status FROM status s, results res
+    WHERE s."statusId" = res."statusId"
+    GROUP BY s.status
+    HAVING COUNT(*) >= 10000
+    """]
+
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates.multi]]
+  type = "sqls"
+  columns = ["s2.status"]
+  keys = ["Xstatus2"]
+  dependencies = 0
+  sampling_method = "uniform"
+  pred_type = "LIKE"
+
+  sqls = ["""SELECT status FROM status s, results res
+  WHERE s."statusId" = res."statusId"
+  GROUP BY s.status
+  HAVING COUNT(*) >= 5000
+  """,
+  """SELECT status FROM status s, results res
+    WHERE s."statusId" = res."statusId"
+    GROUP BY s.status
+    HAVING COUNT(*) >= 10000
+    """]
+
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates]]
+  [[templates.predicates.multi]]
+  type = "sqls"
+  columns = ["res2.position"]
+  keys = ["X2position1"]
+  dependencies = 0
+  sampling_method = "uniform"
+  pred_type = "<="
+  sqls = ["""SELECT position FROM results WHERE position <= 3""",
+	"""SELECT position FROM results WHERE position > 3 AND position <= 6""",
+	]
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates.multi]]
+  type = "sqls"
+  columns = ["res2.position"]
+  keys = ["X2position1"]
+  dependencies = 0
+  sampling_method = "uniform"
+  pred_type = ">"
+  sqls = ["""SELECT position FROM results WHERE position <= 3""",
+  """SELECT position FROM results WHERE position > 10"""
+  ]
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates]]
+
+  type = "sqls"
+  columns = ['res2."positionOrder"']
+  keys = ["X2position2"]
+  dependencies = 1
+  sampling_method = "uniform"
+  pred_type = "<="
+  sqls = ["""SELECT "positionOrder" FROM results AS res2 WHERE (X2position1)"""]
+  min_samples = 1
+  max_samples = 1
+
+  #[[templates.predicates]]
+  #[[templates.predicates.multi]]
+  #type = "sqls"
+  #columns = ["r1.year"]
+  #keys = ["Xyear1"]
+  #dependencies = 0
+  #sampling_method = "uniform"
+  #pred_type = "<="
+  #sqls = ["""SELECT year FROM races"""
+	#]
+  #min_samples = 1
+  #max_samples = 1
+
+  #[[templates.predicates]]
+  #[[templates.predicates.multi]]
+  #type = "sqls"
+  #columns = ["r2.year"]
+  #keys = ["Xyear2"]
+  #dependencies = 1
+  #sampling_method = "uniform"
+  #pred_type = "<="
+  #sqls = ["""SELECT MAX(year) FROM races r1 WHERE (Xyear1)
+  #"""
+	#]
+  #min_samples = 1
+  #max_samples = 1

@@ -1,0 +1,31 @@
+title = "Template 1a"
+
+[base_sql]
+sql = '''SELECT COUNT(*)
+FROM synth_mix_gaussian3 AS s
+WHERE
+(Xcol1)
+'''
+
+# template 1
+[[templates]]
+
+  name = "1a"
+
+  [[templates.predicates]]
+  type = "sql"
+  columns = ["s.col1"]
+  keys = ["Xcol1"]
+  pred_type = "IN"
+  dependencies = 0
+
+  sql = '''
+  SELECT col1, COUNT(*)
+  FROM synth_mix_gaussian3
+  GROUP BY col1
+  HAVING COUNT(*) < 100
+  '''
+
+  sampling_method = "random"
+  min_samples = 1
+  max_samples = 4

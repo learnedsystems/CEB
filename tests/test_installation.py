@@ -5,7 +5,7 @@ from evaluation.eval_fns import *
 import glob
 import random
 
-query_dir = "./queries/imdb/"
+query_dir = "./queries/ceb-imdb-full/"
 test_queries = ["4a/4a100.pkl", "1a/1a10.pkl"]
 
 def test_load():

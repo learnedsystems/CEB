@@ -1,0 +1,100 @@
+title = ""
+
+[base_sql]
+
+sql = '''
+SELECT COUNT(*)
+FROM
+district d1,
+account a1,
+trans t1,
+district d2,
+account a2,
+trans t2
+WHERE
+d1.district_id = a1.district_id
+AND a1.account_id = t1.account_id
+AND d2.district_id = a2.district_id
+AND a2.account_id = t2.account_id
+AND a1.account_id = a2.account_id
+AND (Xtrans1)
+AND (Xdistrict1)
+AND (Xtrans2)
+AND (Xdistrict2)
+'''
+
+[[templates]]
+
+  name = ""
+
+  [[templates.predicates]]
+  [[templates.predicates.multi]]
+  type = "sqls"
+  columns = ["t1.bank", "d1.district_id"]
+  keys = ["Xtrans1", "Xdistrict1"]
+  dependencies = 0
+  sqls=["""SELECT t.bank, d.district_id, COUNT(*)
+  FROM district d, account a, trans t
+  WHERE d.district_id = a.district_id AND a.account_id = t.account_id
+  GROUP BY
+  t.bank, d.district_id ORDER BY COUNT(*) DESC"""]
+
+  sampling_method = "quantile"
+  num_quantiles = 4
+  pred_type = "in"
+  min_samples = 1
+  max_samples = 4
+
+  [[templates.predicates.multi]]
+  type = "sqls"
+  columns = ["t1.k_symbol", "d1.district_id"]
+  keys = ["Xtrans1", "Xdistrict1"]
+  dependencies = 0
+  sqls=["""SELECT t.k_symbol, d.district_id, COUNT(*)
+  FROM district d, account a, trans t
+  WHERE d.district_id = a.district_id AND a.account_id = t.account_id
+  GROUP BY
+  t.k_symbol,d.district_id ORDER BY COUNT(*) DESC"""]
+
+  sampling_method = "quantile"
+  num_quantiles = 4
+  pred_type = "in"
+  min_samples = 1
+  max_samples = 4
+
+
+  [[templates.predicates]]
+  [[templates.predicates.multi]]
+  type = "sqls"
+  columns = ["t2.bank", "d2.district_id"]
+  keys = ["Xtrans2", "Xdistrict2"]
+  dependencies = 0
+  sqls=["""SELECT t.bank, d.district_id, COUNT(*)
+  FROM district d, account a, trans t
+  WHERE d.district_id = a.district_id AND a.account_id = t.account_id
+  GROUP BY
+  t.bank, d.district_id ORDER BY COUNT(*) DESC"""]
+
+  sampling_method = "quantile"
+  num_quantiles = 4
+  pred_type = "in"
+  min_samples = 1
+  max_samples = 4
+
+  [[templates.predicates.multi]]
+  type = "sqls"
+  columns = ["t2.k_symbol", "d2.district_id"]
+  keys = ["Xtrans2", "Xdistrict2"]
+  dependencies = 0
+  sqls=["""SELECT t.k_symbol, d.district_id, COUNT(*)
+  FROM district d, account a, trans t
+  WHERE d.district_id = a.district_id AND a.account_id = t.account_id
+  GROUP BY
+  t.k_symbol,d.district_id ORDER BY COUNT(*) DESC"""]
+
+  sampling_method = "quantile"
+  num_quantiles = 4
+  pred_type = "in"
+  min_samples = 1
+  max_samples = 4
+

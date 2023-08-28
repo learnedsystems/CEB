@@ -1,0 +1,87 @@
+title = ""
+
+[base_sql]
+
+sql = '''SELECT COUNT(*)
+FROM
+title as t,
+movie_companies as mc,
+company_type as ct
+WHERE
+t.id = mc.movie_id
+AND ct.id = mc.company_type_id
+AND (Xtitle)
+'''
+
+# template 1
+[[templates]]
+
+  [[templates.predicates]]
+  [[templates.predicates.multi]]
+
+  type = "sql"
+  columns = ["t.id"]
+  keys = ["Xtitle"]
+  pred_type = "<"
+  dependencies = 0
+
+  sql = '''
+  SELECT t.id
+  FROM title as t
+  '''
+
+  sampling_method = ""
+  min_samples = 1
+  max_samples = 1
+
+
+  [[templates.predicates.multi]]
+
+  type = "sql"
+  columns = ["t.production_year"]
+  keys = ["Xtitle"]
+  pred_type = "<"
+  dependencies = 0
+
+  sql = '''
+  SELECT t.production_year
+  FROM title as t
+  '''
+
+  sampling_method = ""
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates.multi]]
+
+  type = "sql"
+  columns = ["t.kind_id"]
+  keys = ["Xtitle"]
+  pred_type = "="
+  dependencies = 0
+
+  sql = '''
+  SELECT t.kind_id
+  FROM title as t
+  '''
+
+  sampling_method = ""
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates.multi]]
+
+  type = "sql"
+  columns = ["t.kind_id"]
+  keys = ["Xtitle"]
+  pred_type = "<"
+  dependencies = 0
+
+  sql = '''
+  SELECT t.kind_id
+  FROM title as t
+  '''
+
+  sampling_method = ""
+  min_samples = 1
+  max_samples = 1

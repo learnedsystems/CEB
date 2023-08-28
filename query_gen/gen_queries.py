@@ -8,14 +8,12 @@ import klepto
 from multiprocessing import Pool
 import multiprocessing
 import toml
-# from db_utils.query_storage import *
-from utils.utils import *
+
 import json
 import pickle
 
-# from sql_rep.query import parse_sql
-# from sql_rep.utils import *
 from query_representation.query import *
+from query_representation.utils import *
 from query_gen.query_generator import *
 import time
 import glob
@@ -25,6 +23,7 @@ def verify_queries(query_strs):
     for cur_sql in query_strs:
         start = time.time()
         test_sql = "EXPLAIN " + cur_sql
+        print(test_sql)
         output = cached_execute_query(test_sql, args.user,
                 args.db_host, args.port, args.pwd, args.db_name,
                 100, "./qgen_cache", None)
@@ -42,7 +41,7 @@ def remove_doubles(query_strs):
     seen_samples = set()
     for q in query_strs:
         if q in seen_samples:
-            print(q)
+            # print(q)
             continue
         seen_samples.add(q)
         newq.append(q)
@@ -67,6 +66,10 @@ def main():
         start = time.time()
         assert ".toml" in fn
         template_name = os.path.basename(fn).replace(".toml", "")
+        if args.templates != "all":
+            if not template_name in args.templates.split(","):
+                continue
+
         # tmp_dir = qdir + template_name
         # make_dir(tmp_dir)
         out_dir = args.query_output_dir + "/" + template_name
@@ -80,7 +83,8 @@ def main():
         print("after verifying, and removing doubles: ", len(query_strs))
 
         for i, sql in enumerate(query_strs):
-            qrep = parse_sql(sql)
+            qrep = parse_sql(sql, args.user, args.db_name, args.db_host,
+                    args.port, args.pwd, compute_ground_truth=False)
             qrep_fn = out_dir + "/" + str(deterministic_hash(sql)) + ".pkl"
             with open(qrep_fn, "wb") as f:
                 pickle.dump(qrep, f, protocol=pickle.HIGHEST_PROTOCOL)
@@ -93,15 +97,17 @@ def read_flags():
     parser.add_argument("--db_host", type=str, required=False,
             default="localhost")
     parser.add_argument("--user", type=str, required=False,
-            default="arthurfleck")
+            default="ceb")
     parser.add_argument("--pwd", type=str, required=False,
             default="password")
     parser.add_argument("--template_dir", type=str, required=False,
             default=None)
     parser.add_argument("--port", type=str, required=False,
-            default=5401)
+            default=5432)
     parser.add_argument("--query_output_dir", type=str, required=False,
             default=None)
+    parser.add_argument("--templates", type=str, required=False,
+            default="all")
     parser.add_argument("-n", "--num_samples_per_template", type=int,
             required=False, default=10)
 

@@ -1,10 +1,7 @@
 import sqlparse
 from sqlparse.sql import IdentifierList, Identifier
 from sqlparse.tokens import Keyword, DML
-from moz_sql_parser import parse
 import time
-# from networkx.drawing.nx_agraph import graphviz_layout, to_agraph
-# from networkx.algorithms import bipartite
 import networkx as nx
 import itertools
 import hashlib
@@ -13,8 +10,12 @@ import shelve
 import pdb
 import os
 import errno
-import klepto
 import getpass
+
+import glob
+from .query import *
+import random
+
 
 # used for shortest-path or flow based framing of QO
 # we add a new source node to the subset_graph, and add edges to each of the
@@ -26,10 +27,517 @@ MAX_JOINS = 16
 ALIAS_FORMAT = "{TABLE} AS {ALIAS}"
 RANGE_PREDS = ["gt", "gte", "lt", "lte"]
 COUNT_SIZE_TEMPLATE = "SELECT COUNT(*) FROM {FROM_CLAUSE}"
+REGEX_TEMPLATES = ['10a', '11a', '11b', '3b', '9b', '9a']
+TIMEOUT_CARD = 150001000000
 
-'''
-functions copied over from ryan's utils files
-'''
+def update_job_parsing(qrep):
+    '''
+    fixes some error in the predicates parsed from JOB.
+    '''
+    for node,data in qrep["join_graph"].nodes(data=True):
+        if "pred_vals" not in data:
+            continue
+
+        if len(data["predicates"]) != len(data["pred_vals"]):
+            newvals = []
+            newcols = []
+            newtypes = []
+
+            for di,dpred in enumerate(data["predicates"]):
+                if "!=" in dpred:
+                    newtypes.append("not eq")
+                    dpreds = dpred.split("!=")
+                    assert len(dpreds) == 2
+                    newcols.append(dpreds[0])
+                    newvals.append(dpreds[1])
+
+            data["pred_vals"] += newvals
+            data["pred_cols"] += newcols
+            data["pred_types"] += newtypes
+
+    for node,data in qrep["subset_graph"].nodes(data=True):
+        if data["cardinality"]["actual"] == 0:
+            data["cardinality"]["actual"] = 1
+
+def load_rts():
+    RTDIRS = ["/flash1/pari/MyCEB/runtime_plans/pg"]
+    rtdfs = []
+    for RTDIR in RTDIRS:
+        rdirs = os.listdir(RTDIR)
+        for rd in rdirs:
+            rtfn = os.path.join(RTDIR, rd, "Runtimes.csv")
+            if os.path.exists(rtfn):
+                rtdfs.append(pd.read_csv(rtfn))
+
+    rtdf = pd.concat(rtdfs)
+    print("Num RTs: ", len(rtdf))
+    return rtdf
+
+def load_qdata_onlypg_plan(fns, data_params, skip_timeouts=False):
+    qreps = []
+    rtdf = load_rts()
+
+    for qfn in fns:
+        qrep = load_qrep(qfn)
+        qname = os.path.basename(qrep["name"])
+        if qname not in rtdf["qname"].values:
+            continue
+        tmp = rtdf[rtdf["qname"] == qrep["name"]]
+        exp = tmp["exp_analyze"].values[0]
+        try:
+            exp = eval(exp)
+        except:
+            continue
+        G = explain_to_nx(exp)
+        seen_subplans = [ndata["aliases"] for n,ndata in
+                G.nodes(data=True)]
+        qrep["subplan_mask"] = seen_subplans
+
+        if "job" in qfn and "joblight" not in qfn:
+            update_job_parsing(qrep)
+
+        skip = False
+        for node in qrep["subset_graph"].nodes():
+            if "cardinality" not in qrep["subset_graph"].nodes()[node]:
+                skip = True
+                break
+
+            if "actual" not in qrep["subset_graph"].nodes()[node]["cardinality"]:
+                skip = True
+                continue
+
+            if qrep["subset_graph"].nodes()[node]["cardinality"]["actual"] \
+                    < 1:
+                skip = True
+                break
+
+            if "expected" not in qrep["subset_graph"].nodes()[node]["cardinality"]:
+                skip = True
+                break
+
+        if skip and skip_timeouts:
+            continue
+
+        qreps.append(qrep)
+        template_name = os.path.basename(os.path.dirname(qfn))
+        wkname = os.path.basename(os.path.dirname(os.path.dirname(qfn)))
+        qrep["name"] = os.path.basename(qfn)
+        qrep["template_name"] = template_name
+        qrep["workload"] = wkname
+
+    return qreps
+
+def load_qdata(fns):
+    qreps = []
+    for qfn in fns:
+        qrep = load_qrep(qfn)
+        if "job" in qfn and "joblight" not in qfn:
+            update_job_parsing(qrep)
+
+        skip = False
+        for node in qrep["subset_graph"].nodes():
+            if "cardinality" not in qrep["subset_graph"].nodes()[node]:
+                skip = True
+                break
+            if "actual" not in qrep["subset_graph"].nodes()[node]["cardinality"]:
+                skip = True
+                continue
+
+            # if qrep["subset_graph"].nodes()[node]["cardinality"]["actual"] \
+                    # >= TIMEOUT_CARD:
+                # skip = True
+                # continue
+
+            # skips zeros
+            if qrep["subset_graph"].nodes()[node]["cardinality"]["actual"] \
+                    < 1:
+                skip = True
+                break
+
+            if "expected" not in qrep["subset_graph"].nodes()[node]["cardinality"]:
+                skip = True
+                break
+
+        if skip:
+            continue
+
+        qreps.append(qrep)
+        template_name = os.path.basename(os.path.dirname(qfn))
+        wkname = os.path.basename(os.path.dirname(os.path.dirname(qfn)))
+        qrep["name"] = os.path.basename(qfn)
+        qrep["template_name"] = template_name
+        qrep["workload"] = wkname
+
+    return qreps
+
+from sklearn.model_selection import train_test_split
+def get_query_splits(data_params):
+    from types import SimpleNamespace
+    data_params = SimpleNamespace(**data_params)
+
+    fns = list(glob.glob(data_params.query_dir + "/*"))
+    fns = [fn for fn in fns if os.path.isdir(fn)]
+    skipped_templates = []
+    train_qfns = []
+    test_qfns = []
+    val_qfns = []
+
+    if data_params.no_regex_templates:
+        new_templates = []
+        for template_dir in fns:
+            isregex = False
+            for regtmp in REGEX_TEMPLATES:
+                if regtmp in template_dir:
+                    isregex = True
+            if isregex:
+                skipped_templates.append(template_dir)
+            else:
+                new_templates.append(template_dir)
+        fns = new_templates
+
+    if data_params.train_test_split_kind == "template":
+        # the train/test split will be on the template names
+        sorted_fns = copy.deepcopy(fns)
+        sorted_fns.sort()
+        train_tmps, test_tmps = train_test_split(sorted_fns,
+                test_size=data_params.test_size,
+                random_state=data_params.diff_templates_seed)
+
+    elif data_params.train_test_split_kind == "custom":
+        train_tmp_names = data_params.train_tmps.split(",")
+        test_tmp_names = data_params.test_tmps.split(",")
+        train_tmps = []
+        test_tmps = []
+
+        for fn in fns:
+            for ctmp in train_tmp_names:
+                if "/" + ctmp in fn:
+                    train_tmps.append(fn)
+                    break
+
+            for ctmp in test_tmp_names:
+                if "/" + ctmp in fn or ctmp == "all":
+                    test_tmps.append(fn)
+                    break
+
+    for qi,qdir in enumerate(fns):
+        if ".json" in qdir:
+            continue
+        if not os.path.isdir(qdir):
+            continue
+
+        template_name = os.path.basename(qdir)
+        if data_params.query_templates != "all":
+            query_templates = data_params.query_templates.split(",")
+            if template_name not in query_templates:
+                skipped_templates.append(template_name)
+                continue
+        if data_params.skip7a and template_name == "7a":
+            skipped_templates.append(template_name)
+            continue
+
+        # let's first select all the qfns we are going to load
+        qfns = list(glob.glob(qdir+"/*.pkl"))
+        qfns.sort()
+
+        if data_params.num_samples_per_template == -1 \
+                or data_params.num_samples_per_template >= len(qfns):
+            qfns = qfns
+        elif data_params.num_samples_per_template < len(qfns):
+            qfns = qfns[0:data_params.num_samples_per_template]
+        else:
+            assert False
+
+        if data_params.train_test_split_kind == "template":
+            cur_val_fns = []
+            if qdir in train_tmps:
+                cur_train_fns = qfns
+                if data_params.val_size != 0.0:
+                    cur_val_fns, cur_train_fns = train_test_split(cur_train_fns,
+                            test_size=1-data_params.val_size,
+                            random_state=data_params.seed)
+
+                cur_test_fns = []
+            elif qdir in test_tmps:
+                cur_train_fns = []
+                cur_test_fns = qfns
+            else:
+                continue
+        elif data_params.train_test_split_kind == "custom":
+            if qdir in train_tmps:
+                cur_val_fns, cur_train_fns = train_test_split(qfns,
+                        test_size=1-data_params.val_size,
+                        random_state=data_params.seed)
+                cur_test_fns = []
+            elif qdir in test_tmps:
+                # no validation set from here
+                cur_val_fns = []
+                cur_train_fns = []
+                cur_test_fns = qfns
+            else:
+                continue
+
+        elif data_params.train_test_split_kind == "query":
+            if data_params.val_size == 0.0:
+                cur_val_fns = []
+            else:
+                cur_val_fns, qfns = train_test_split(qfns,
+                        test_size=1-data_params.val_size,
+                        random_state=data_params.diff_templates_seed)
+
+            if data_params.test_size == 0:
+                cur_test_fns = []
+                cur_train_fns = qfns
+            else:
+                cur_train_fns, cur_test_fns = train_test_split(qfns,
+                        test_size=data_params.test_size,
+                        random_state=data_params.diff_templates_seed)
+
+        train_qfns += cur_train_fns
+        val_qfns += cur_val_fns
+        test_qfns += cur_test_fns
+
+    print("Skipped templates: ", " ".join(skipped_templates))
+    trainqnames = [os.path.basename(qfn) for qfn in train_qfns]
+
+    eval_qfns = []
+    eval_qdirs = data_params.eval_query_dir.split(",")
+    for qdir in eval_qdirs:
+        if qdir == "":
+            eval_qfns.append([])
+            continue
+
+        if "imdb" in qdir and not \
+            ("imdb-unique-plans1950" in data_params.query_dir or \
+                    "imdb-unique-plans1980" in data_params.query_dir or \
+                    "1a" in data_params.query_templates):
+            # with open("ceb_runtime_qnames.pkl", "rb") as f:
+                # qkeys = pickle.load(f)
+                # with open('ceb_runtimes_qnames.txt', 'w') as f:
+                    # for line in qkeys:
+                        # f.writeline(f"{line}\n")
+            with open(os.path.join("queries", "ceb_runtime_qnames.txt"), "r") as f:
+                qkeys = f.read()
+            qkeys = qkeys.split("\n")
+            print("going to read only {} CEB queries".format(len(qkeys)-1))
+
+        elif "ergast" in qdir:
+            with open("ergast_runtime_qnames.pkl", "rb") as f:
+                qkeys = pickle.load(f)
+        else:
+            qkeys = None
+
+        cur_eval_qfns = []
+        fns = list(glob.glob(qdir + "/*"))
+        fns = [fn for fn in fns if os.path.isdir(fn)]
+
+        for qi,qdir in enumerate(fns):
+            if ".json" in qdir:
+                continue
+
+            template_name = os.path.basename(qdir)
+            if data_params.eval_templates != "all" and \
+                template_name not in data_params.eval_templates.split(","):
+                print("skipping eval template: ", template_name)
+                continue
+
+            if data_params.skip7a and template_name == "7a":
+                skipped_templates.append(template_name)
+                continue
+
+            # let's first select all the qfns we are going to load
+            qfns = list(glob.glob(qdir+"/*.pkl"))
+            qfns.sort()
+
+            if qkeys is not None:
+                qfns = [qf for qf in qfns if os.path.basename(qf) in qkeys]
+
+            if ("imdb-unique-plans1950" in data_params.query_dir or \
+                    "imdb-unique-plans1980" in data_params.query_dir or \
+                    "1a" in data_params.query_templates):
+                qfns = [qf for qf in qfns if os.path.basename(qf) not in trainqnames]
+
+            cur_eval_qfns += qfns
+
+        random.shuffle(cur_eval_qfns)
+        eval_qfns.append(cur_eval_qfns)
+
+    if data_params.train_test_split_kind == "query":
+        pass
+    else:
+        train_tmp_names = [os.path.basename(tfn) for tfn in train_tmps]
+        test_tmp_names = [os.path.basename(tfn) for tfn in test_tmps]
+
+        print("""Selected {} train templates, {} test templates"""\
+                .format(len(train_tmp_names), len(test_tmp_names)))
+        print("""Training templates: {}\nEvaluation templates: {}""".\
+                format(",".join(train_tmp_names), ",".join(test_tmp_names)))
+
+    # going to shuffle all these lists, so queries are evenly distributed. Plan
+    # Cost functions for some of these templates take a lot longer; so when we
+    # compute them in parallel, we want the queries to be shuffled so the
+    # workload is divided evely
+    random.shuffle(train_qfns)
+    random.shuffle(test_qfns)
+    random.shuffle(val_qfns)
+
+    return train_qfns, test_qfns, val_qfns, eval_qfns
+
+def _find_all_tables(plan):
+    '''
+    '''
+    # find all the scan nodes under the current level, and return those
+    table_names = extract_values(plan, "Relation Name")
+    alias_names = extract_values(plan, "Alias")
+    table_names.sort()
+    alias_names.sort()
+
+    return table_names, alias_names
+
+def extract_aliases2(plan):
+    aliases = extract_values(plan, "Alias")
+    return aliases
+
+def explain_to_nx(explain):
+    '''
+    '''
+    # JOIN_KEYS = ["Hash Join", "Nested Loop", "Join"]
+    base_table_nodes = []
+    join_nodes = []
+
+    def _get_node_name(tables):
+        name = ""
+        if len(tables) > 1:
+            name = str(deterministic_hash(str(tables)))[0:5]
+            join_nodes.append(name)
+        else:
+            name = tables[0]
+            if len(name) >= 6:
+                # no aliases, shorten it
+                name = "".join([n[0] for n in name.split("_")])
+                if name in base_table_nodes:
+                    name = name + "2"
+            base_table_nodes.append(name)
+        return name
+
+    def _add_node_stats(node, plan):
+        # add stats for the join
+        G.nodes[node]["Plan Rows"] = plan["Plan Rows"]
+        if "Actual Rows" in plan:
+            G.nodes[node]["Actual Rows"] = plan["Actual Rows"]
+        else:
+            G.nodes[node]["Actual Rows"] = -1.0
+        if "Actual Total Time" in plan:
+            G.nodes[node]["total_time"] = plan["Actual Total Time"]
+
+            if "Plans" not in plan:
+                children_time = 0.0
+            elif len(plan["Plans"]) == 2:
+                children_time = plan["Plans"][0]["Actual Total Time"] \
+                        + plan["Plans"][1]["Actual Total Time"]
+            elif len(plan["Plans"]) == 1:
+                children_time = plan["Plans"][0]["Actual Total Time"]
+            else:
+                assert False
+
+            G.nodes[node]["cur_time"] = plan["Actual Total Time"]-children_time
+
+        else:
+            G.nodes[node]["Actual Total Time"] = -1.0
+
+        if "Node Type" in plan:
+            G.nodes[node]["Node Type"] = plan["Node Type"]
+
+        total_cost = plan["Total Cost"]
+        G.nodes[node]["Total Cost"] = total_cost
+        aliases = G.nodes[node]["aliases"]
+        if len(G.nodes[node]["tables"]) > 1:
+            children_cost = plan["Plans"][0]["Total Cost"] \
+                    + plan["Plans"][1]["Total Cost"]
+
+            # +1 to avoid cases which are very close
+            if not total_cost+1 >= children_cost:
+                print("aliases: {} children cost: {}, total cost: {}".format(\
+                        aliases, children_cost, total_cost))
+                # pdb.set_trace()
+            G.nodes[node]["cur_cost"] = total_cost - children_cost
+            G.nodes[node]["node_label"] = plan["Node Type"][0]
+            G.nodes[node]["scan_type"] = ""
+        else:
+            G.nodes[node]["cur_cost"] = total_cost
+            G.nodes[node]["node_label"] = node
+            # what type of scan was this?
+            node_types = extract_values(plan, "Node Type")
+            for i, full_n in enumerate(node_types):
+                shortn = ""
+                for n in full_n.split(" "):
+                    shortn += n[0]
+                node_types[i] = shortn
+
+            scan_type = "\n".join(node_types)
+            G.nodes[node]["scan_type"] = scan_type
+
+    def traverse(obj):
+        if isinstance(obj, dict):
+            if "Plans" in obj:
+                if len(obj["Plans"]) == 2:
+                    # these are all the joins
+                    left_tables, left_aliases = _find_all_tables(obj["Plans"][0])
+                    right_tables, right_aliases = _find_all_tables(obj["Plans"][1])
+                    if len(left_tables) == 0 or len(right_tables) == 0:
+                        return
+                    all_tables = left_tables + right_tables
+                    all_aliases = left_aliases + right_aliases
+                    all_aliases.sort()
+                    all_tables.sort()
+
+                    if len(left_aliases) > 0:
+                        node0 = _get_node_name(left_aliases)
+                        node1 = _get_node_name(right_aliases)
+                        node_new = _get_node_name(all_aliases)
+                    else:
+                        node0 = _get_node_name(left_tables)
+                        node1 = _get_node_name(right_tables)
+                        node_new = _get_node_name(all_tables)
+
+                    # update graph
+                    # G.add_edge(node0, node_new)
+                    # G.add_edge(node1, node_new)
+                    G.add_edge(node_new, node0)
+                    G.add_edge(node_new, node1)
+                    G.edges[(node_new, node0)]["join_direction"] = "left"
+                    G.edges[(node_new, node1)]["join_direction"] = "right"
+
+                    # add other parameters on the nodes
+                    G.nodes[node0]["tables"] = left_tables
+                    G.nodes[node1]["tables"] = right_tables
+                    G.nodes[node0]["aliases"] = left_aliases
+                    G.nodes[node1]["aliases"] = right_aliases
+                    G.nodes[node_new]["tables"] = all_tables
+                    G.nodes[node_new]["aliases"] = all_aliases
+
+                    # TODO: if either the left, or right were a scan, then add
+                    # scan stats
+                    _add_node_stats(node_new, obj)
+
+                    if len(left_tables) == 1:
+                        _add_node_stats(node0, obj["Plans"][0])
+                    if len(right_tables) == 1:
+                        _add_node_stats(node1, obj["Plans"][1])
+
+            for k, v in obj.items():
+                if isinstance(v, (dict, list)):
+                    traverse(v)
+
+        elif isinstance(obj, list) or isinstance(obj,tuple):
+            for item in obj:
+                traverse(item)
+
+    G = nx.DiGraph()
+    traverse(explain)
+    G.base_table_nodes = base_table_nodes
+    G.join_nodes = join_nodes
+    return G
 
 def connected_subgraphs(g):
     # for i in range(2, len(g)+1):
@@ -43,7 +551,6 @@ def generate_subset_graph(g):
     subset_graph = nx.DiGraph()
     for csg in connected_subgraphs(g):
         subset_graph.add_node(csg)
-
     # group by size
     max_subgraph_size = max(len(x) for x in subset_graph.nodes)
     subgraph_groups = [[] for _ in range(max_subgraph_size)]
@@ -183,7 +690,8 @@ def extract_aliases(plan, jg=None):
             alias = plan["Alias"]
             real_name = jg.nodes[alias]["real_name"]
             # yield f"{real_name} as {alias}"
-            yield "{} as {}".format(real_name, alias)
+            # yield "{} as {}".format(real_name, alias)
+            yield "\"{}\" as {}".format(real_name, alias)
         else:
             yield plan["Alias"]
 
@@ -232,6 +740,10 @@ def nodes_to_sql(nodes, join_graph):
     return sql_str
 
 def nx_graph_to_query(G, from_clause=None):
+    '''
+    @G: join_graph in the query_represntation format
+    '''
+
     froms = []
     conds = []
     for nd in G.nodes(data=True):
@@ -257,8 +769,58 @@ def nx_graph_to_query(G, from_clause=None):
     if len(conds) > 0:
         wheres = ' AND '.join(conds)
         from_clause += " WHERE " + wheres
-    count_query = COUNT_SIZE_TEMPLATE.format(FROM_CLAUSE=from_clause)
-    return count_query
+
+    if "aggr_cmd" not in G.graph or G.graph["aggr_cmd"] == "":
+        ret_query = COUNT_SIZE_TEMPLATE.format(FROM_CLAUSE=from_clause)
+    else:
+        SQL_TMP = "{} FROM {}"
+        ret_query = SQL_TMP.format(G.graph["aggr_cmd"],
+                        from_clause)
+
+    return ret_query
+
+# def extract_join_clause(query):
+    # '''
+    # FIXME: this can be optimized further / or made to handle more cases
+    # '''
+    # parsed = sqlparse.parse(query)[0]
+    # # let us go over all the where clauses
+    # start = time.time()
+    # where_clauses = None
+    # for token in parsed.tokens:
+        # if (type(token) == sqlparse.sql.Where):
+            # where_clauses = token
+    # if where_clauses is None:
+        # return []
+    # join_clauses = []
+
+    # froms, aliases, table_names = extract_from_clause(query)
+    # if len(aliases) > 0:
+        # tables = [k for k in aliases]
+    # else:
+        # tables = table_names
+    # matches = find_all_clauses(tables, where_clauses)
+
+    # for match in matches:
+        # if "=" not in match or match.count("=") > 1:
+            # continue
+        # if "<=" in match or ">=" in match:
+            # continue
+        # match = match.replace(";", "")
+        # if "!" in match:
+            # left, right = match.split("!=")
+            # if "." in right:
+                # # must be a join, so add it.
+                # join_clauses.append(left.strip() + " != " + right.strip())
+            # continue
+        # left, right = match.split("=")
+
+        # # ugh dumb hack
+        # if "." in right:
+            # # must be a join, so add it.
+            # join_clauses.append(left.strip() + " = " + right.strip())
+
+    # return join_clauses
 
 def extract_join_clause(query):
     '''
@@ -288,15 +850,25 @@ def extract_join_clause(query):
         if "<=" in match or ">=" in match:
             continue
         match = match.replace(";", "")
-        if "!" in match:
+
+        if "!=" in match:
             left, right = match.split("!=")
-            if "." in right:
+
+            if not ("id" in left.lower() and "id" in right.lower()):
+                continue
+
+            if right.count(".") == 1 and "'" not in right:
                 # must be a join, so add it.
                 join_clauses.append(left.strip() + " != " + right.strip())
             continue
+
         left, right = match.split("=")
+
+        if not ("id" in left.lower() and "id" in right.lower()):
+            continue
+
         # ugh dumb hack
-        if "." in right:
+        if right.count(".") == 1 and "'" not in right:
             # must be a join, so add it.
             join_clauses.append(left.strip() + " = " + right.strip())
 
@@ -448,7 +1020,7 @@ def extract_predicates(query):
         parsed_query = parse(query)
     except:
         print(query)
-        print("moz sql parser failed to parse this!")
+        print("sql parser failed to parse this!")
         pdb.set_trace()
     pred_vals = get_all_wheres(parsed_query)
 
@@ -707,8 +1279,9 @@ def get_pg_join_order(join_graph, explain):
 
     try:
         return __extract_jo(explain[0][0][0]["Plan"]), physical_join_ops, scan_ops
-    except:
-        print(explain)
+    except Exception as e:
+        # print(explain)
+        print(e)
         pdb.set_trace()
 
 def extract_join_graph(sql):
@@ -736,6 +1309,7 @@ def extract_join_graph(sql):
 
         join_graph.add_edge(t1, t2)
         join_graph[t1][t2]["join_condition"] = j
+
         if t1 in aliases:
             table1 = aliases[t1]
             table2 = aliases[t2]
@@ -750,6 +1324,11 @@ def extract_join_graph(sql):
         if (type(token) == sqlparse.sql.Where):
             where_clauses = token
     assert where_clauses is not None
+
+    if len(join_graph.nodes()) == 0:
+        for alias in aliases:
+            join_graph.add_node(alias)
+            join_graph.nodes()[alias]["real_name"] = aliases[alias]
 
     for t1 in join_graph.nodes():
         tables = [t1]
@@ -789,28 +1368,16 @@ def cached_execute_query(sql, user, db_host, port, pwd, db_name,
         execution_cache_threshold, sql_cache_dir=None,
         timeout=120000):
     '''
+    Note: removed the cache to get rid of klepto dependency.
     @timeout:
     @db_host: going to ignore it so default localhost is used.
     executes the given sql on the DB, and caches the results in a
     persistent store if it took longer than self.execution_cache_threshold.
     '''
-    sql_cache = None
-    if sql_cache_dir is not None:
-        assert isinstance(sql_cache_dir, str)
-        sql_cache = klepto.archives.dir_archive(sql_cache_dir,
-                cached=True, serialized=True)
-
     hashed_sql = deterministic_hash(sql)
-
-    # archive only considers the stuff stored in disk
-    if sql_cache is not None and hashed_sql in sql_cache.archive:
-        return sql_cache.archive[hashed_sql], False
-
     start = time.time()
 
     os_user = getpass.getuser()
-    # con = pg.connect(user=user, port=port,
-            # password=pwd, database=db_name)
     con = pg.connect(user=user, host=db_host, port=port,
             password=pwd, database=db_name)
     cursor = con.cursor()
@@ -819,7 +1386,8 @@ def cached_execute_query(sql, user, db_host, port, pwd, db_name,
     try:
         cursor.execute(sql)
     except Exception as e:
-        # print("query failed to execute: ", sql)
+        print(e)
+        print("query failed to execute: ", sql)
         # FIXME: better way to do this.
         cursor.execute("ROLLBACK")
         con.commit()
@@ -881,10 +1449,5 @@ def get_all_cardinalities(samples, ckey):
                 continue
             cards.append(info[ckey]["actual"])
             if cards[-1] == 0:
-                # print(qrep["sql"])
-                # print(node)
-                # print(qrep["template_name"])
-                # print(info["cardinality"])
                 assert False
     return cards
-

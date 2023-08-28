@@ -1,0 +1,77 @@
+title = ""
+# filter conditions find best performing results / racers; find
+
+[base_sql]
+
+sql = '''
+SELECT COUNT(*)
+FROM constructors c1,
+drivers d1,
+results res1,
+races r1,
+"pitStops" ps
+WHERE
+ps."raceId" = r1."raceId"
+AND ps."driverId" = d1."driverId"
+AND c1."constructorId" = res1."constructorId"
+AND res1."driverId" = d1."driverId"
+AND r1."raceId" = res1."raceId"
+AND (Xpoints)
+AND (Xposition1)
+AND (Xposition2)
+'''
+
+[[templates]]
+
+  name = ""
+
+  [[templates.predicates]]
+  [[templates.predicates.multi]]
+  type = "sqls"
+  columns = ["res1.position"]
+  keys = ["Xposition1"]
+  dependencies = 0
+  sampling_method = "uniform"
+  pred_type = "<="
+  sqls = ["""SELECT position FROM results WHERE position <= 3""",
+	"""SELECT position FROM results WHERE position > 3 AND position <= 6""",
+	]
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates.multi]]
+  type = "sqls"
+  columns = ["res1.position"]
+  keys = ["Xposition1"]
+  dependencies = 0
+  sampling_method = "uniform"
+  pred_type = ">"
+  sqls = ["""SELECT position FROM results WHERE position <= 3""",
+	"""SELECT position FROM results WHERE position > 10"""
+	]
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates]]
+
+  type = "sqls"
+  columns = ['res1."positionOrder"']
+  keys = ["Xposition2"]
+  dependencies = 1
+  sampling_method = "uniform"
+  pred_type = "<="
+  sqls = ["""SELECT "positionOrder" FROM results AS res1 WHERE (Xposition1)"""]
+  min_samples = 1
+  max_samples = 1
+
+  [[templates.predicates]]
+  [[templates.predicates.multi]]
+  type = "sql"
+  columns = ["res1.points"]
+  keys = ["Xpoints"]
+  dependencies = 1
+  sampling_method = "uniform"
+  pred_type = ">="
+  sql = """SELECT points FROM results AS res1 WHERE (Xposition1)"""
+  min_samples = 1
+  max_samples = 1

@@ -1,11 +1,11 @@
 # Cardinality Estimation Benchmark
 
 This benchmark consolidates the code and workloads from two papers:
-[Flow Loss: learning cardinality estimates that matter](#https://dl.acm.org/doi/10.14778/3476249.3476259) and [Robust Qery Driven Cardinality Estimation under Changing
+[Flow Loss: learning cardinality estimates that matter](https://dl.acm.org/doi/10.14778/3476249.3476259) and [Robust Qery Driven Cardinality Estimation under Changing
 Workloads](https://www.vldb.org/pvldb/vol16/p1520-negi.pdf). Please cite the
 Flow-Loss paper for introducing the CEB benchmark; it does not explore other
 workloads as much, and the focus is on describing and implementing the new loss
-function (Flow-Loss). The robust-cardinalities paper focuses on improved featurizations with a focus on training on different workloads, and develops particular techniques for improving robustness. In general, both approaches can be used together, but the approaches in the robust-cardinalities paper are much easier to implement and describe. For a further discussion about the differences between these approaches, check out the Related Works section in the robust-cardinalities paper, and a direct comparison of the experiments in an online [appendix](https://parimarjan.github.io/robust_cardinality_appendix.pdf).
+function (Flow-Loss). The robust-cardinalities paper focuses on improved featurizations with a focus on training on different workloads, and develops particular techniques for improving robustness. In general, both approaches can be used together, but the approaches in the robust-cardinalities paper are much easier to implement and describe. For a further discussion about the differences between these approaches, check out the Related Works section in the [robust-cardinalities paper](https://www.vldb.org/pvldb/vol16/p1520-negi.pdf), and a direct comparison of the experiments in an online [appendix](https://parimarjan.github.io/robust_cardinality_appendix.pdf).
 
 ## Contents
   * [Setup](#setup)
@@ -16,8 +16,8 @@ function (Flow-Loss). The robust-cardinalities paper focuses on improved featuri
         - [Virtualbox](#virtualbox)
         - [Local Setup](#local-setup)
       - [Python requirements](#python-requirements)
-  * [Running experiments](#runningexperiments)
-  * [More details](#moredetails)
+  * [Running experiments](#running-experiments)
+  * [More details](#more-details)
       - [Query Format](#query-format)
       - [Evaluating Estimates](#evaluating-estimates)
       - [Getting Runtimes](#getting-runtimes)
@@ -206,8 +206,8 @@ section](#getting-runtimes).
 
 Here are some interesting parameters in the config files to control these:
 
-* `model:eval_epoch`: N # computes losses every N epochs.
-* `eval:use_wandb`: 0/1; # if 1, uses wandb to log results.
+* `model:eval_epoch: N` # computes losses every N epochs.
+* `eval:use_wandb`: 0/1` # if 1, uses wandb to log results.
 
 Next, lets briefly describe each of the config files and the key fields.
 
@@ -217,20 +217,31 @@ evaluated on JOB or CEB.
 * config-joblight-robust.yaml ---> Robust-MSCN setup; trained on joblight, and
 evaluated on JOB or CEB. The differences compared to default MSCN is
 parameters:
-  * featurizer:job\_bitmap : 1 # uses join bitmap
-  * featurizer:sample\_bitmap : 0 # doesn't use sample bitmap
-  * model: onehot\_dropout : 1 # uses the query masking
-  * model: onehot\_mask\_truep : 0.8 # prob used for not masking features
+  * `featurizer:job\_bitmap : 1` # uses join bitmap
+  * `featurizer:sample\_bitmap : 0` # doesn't use sample bitmap
+  * `model: onehot\_dropout : 1` # uses the query masking
+  * `model: onehot\_mask\_truep : 0.8` # prob used for not masking features
 
-In general, you can use these files as templates and change the following
-directories to use a different train / test setup. For e.g., the following
-would train on queries from CEB, and test on all of JOB.
-  * data:query\_dir: "./queries/ceb"
-  * data:eval\_query\_dir: "./queries/job/"
+For instance, running the two files above with:
+```bash
+python3 main.py --config configs/config-joblight.yaml
+python3 main.py --config configs/config-joblight-robust.yaml
+```
+And comparing the numbers for 'PostgresPlanCost-C-Relative-JOB' would show the
+kind of benefits we can get using our techniues. And, in general, you can use these files as templates and change the following directories to use a different train / test setup. For e.g., the following would train on queries from CEB, and test on all of JOB.
+    * `data:query\_dir: "./queries/ceb"`
+    * `data:eval\_query\_dir: "./queries/job/"`
 
-* config-custom.yaml and config-custom-robust.yaml:
+* config-custom.yaml and config-custom-robust.yaml: similar to the config files
+above, these specify a small, self-contained experiment with just two templates
+that show the key ideas with the query masking approach. These are results
+mentioned in A.2 in our [appendix](https://parimarjan.github.io/robust_cardinality_appendix.pdf) .
 
-* config-flowloss.yaml --> changes loss\_fn\_name to flowloss.
+* config-flowloss.yaml --> compared to previous files, we change `loss\_fn\_name` to flowloss.
+In general, the flowloss loss function can be used with any of the experiments
+before. In the [Flow-Loss paper](https://dl.acm.org/doi/10.14778/3476249.3476259), we ran the key experiments with:
+  * data:train_test_split_kind : "template"
+  * data:diff_templates_seed: 1 # in the paper, seeds=1-10 for 10 experiments
 
 ## More details
 

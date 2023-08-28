@@ -14,7 +14,8 @@ eval:
 data:
     query_dir: "./queries/joblight_train"
     eval_query_dir: "./queries/job/,./queries/ceb-imdb"
-    bitmap_dir: "./queries/allbitmaps-debug2/"
+    #bitmap_dir: "./queries/allbitmaps-debug2/"
+    bitmap_dir: "./queries/allbitmaps"
     query_templates: "all"
     eval_templates: "all"
     num_samples_per_template : -1

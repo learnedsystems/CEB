@@ -64,7 +64,6 @@ featurizer:
   global_feat_tables : 0
   # save feats and re-use them if all args match
   use_saved_feats : 1
-  bitmap_dir : "./queries/allbitmaps/"
 
   sample_bitmap : 0
   sample_bitmap_num : 1000

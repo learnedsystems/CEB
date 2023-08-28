@@ -1,7 +1,6 @@
 %YAML 1.2
 ---
 ## Train on JOBLight; Eval on JOB,CEB;
-### uses query masking + join bitmap
 
 eval:
   use_wandb : 1
@@ -14,7 +13,7 @@ eval:
 data:
     query_dir: "./queries/joblight_train"
     eval_query_dir: "./queries/job/"
-    bitmap_dir: "./queries/allbitmaps-debug2/"
+    bitmap_dir: "./queries/allbitmaps/"
     query_templates: "all"
     eval_templates: "all"
     num_samples_per_template : -1
